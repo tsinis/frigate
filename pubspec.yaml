@@ -7,6 +7,8 @@ environment:
 
 dependencies:
   code_assets: ^1.0.0
+  flutter:
+    sdk: flutter
   hooks: ^1.0.2
   native_toolchain_rust: ^1.0.3
 
@@ -15,4 +17,6 @@ dev_dependencies:
   ffi: ^2.2.0
   ffigen: ^20.1.1
   flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
   test: ^1.28.0

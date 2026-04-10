@@ -175,23 +175,17 @@ dart_code_metrics:
     - use-setstate-synchronously: true
 
     # Dart specific:
+    - avoid-non-ascii-symbols: true
     - prefer-static-method:
         ignore-public: true
         ignore-private: false
     # With configs:
-    - avoid-non-ascii-symbols:
-        exclude:
-          - "**/data/**.data.dart"
-          - "**/translations/**.l10n.dart"
-    - avoid-collection-equality-checks:
-        exclude:
-          - "**/model/**"
+    - avoid-collection-equality-checks: true
     - avoid-high-cyclomatic-complexity:
         threshold: 40
     - avoid-long-functions:
         exclude:
           - "**/**_test.dart"
-          - "**/painters/**_painter.dart"
     - prefer-named-parameters:
         max-number: 3
     - avoid-nested-conditional-expressions:
@@ -235,7 +229,6 @@ dart_code_metrics:
         exclude:
           - test/**
           - lib/**/constants.dart
-          - "**/translations/**.l10n.dart"
     - member-ordering:
         order:
           - constructors
@@ -244,22 +237,14 @@ dart_code_metrics:
     - format-comment:
         ignored-patterns:
           - ^coverage.*
-    - prefer-match-file-name:
-        exclude:
-          - "**/data/**.data.dart"
-    - avoid-non-empty-constructor-bodies:
-        exclude:
-          - "**/src/**/**.data.dart"
+    - prefer-match-file-name: true
+    - avoid-non-empty-constructor-bodies: true
     - prefer-class-destructuring:
         min-occurrences: 4
     - prefer-single-declaration-per-file:
         exclude:
-          - "**/data/**.data.dart"
           - "**/test/**"
-    - avoid-collection-mutating-methods:
-        exclude:
-          - "**/data/**_l10n.data.dart"
-          - "**/lib/l10n_*.dart"
+    - avoid-collection-mutating-methods: true
 
     # Disabled:
     # Shorthands:
@@ -580,6 +565,7 @@ linter:
     unnecessary_final: false # Conflicts with: prefer_final_locals.
     unnecessary_library_name: false # To prevent breaking changes for those who use this libs.
     diagnostic_describe_all_properties: false # TODO? Enable and fix this in the far-future.
+    public_member_api_docs: false # TODO! After beta.
     prefer_double_quotes: false
     prefer_single_quotes: true # Conflicts with: prefer_double_quotes.
 
@@ -737,7 +723,6 @@ linter:
     prefer_typing_uninitialized_variables: true
     prefer_void_to_null: true
     provide_deprecation_message: true
-    public_member_api_docs: true
     recursive_getters: true
     remove_deprecations_in_breaking_versions: true
     require_trailing_commas: true
