@@ -1,4 +1,4 @@
-import 'package:frigate_draw/frigate_draw.dart';
+import 'package:frigate_draw/src/frigate_draw_dart.dart';
 import 'package:test/test.dart';
 
 void main() => group(RectElement, () {
