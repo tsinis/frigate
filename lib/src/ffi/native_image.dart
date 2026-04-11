@@ -1,10 +1,7 @@
-// ignore_for_file: avoid-collection-mutating-methods, omit-local-variable-types
-
 import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
-import 'package:flutter/foundation.dart';
 
 /// Owns image bytes in native heap (malloc).
 ///
@@ -18,15 +15,16 @@ import 'package:flutter/foundation.dart';
 /// Lifecycle: create once at image load, dispose when done. NEVER dispose while an export is in
 /// progress.
 final class NativeImage {
-  NativeImage._(this._ptr, this.height, this.length, this.width);
+  NativeImage._(this._pointer, this.height, this.length, this.width);
 
   /// Copy [dartBytes] into native heap once. The source can then be GC'd.
   // ignore: avoid-non-empty-constructor-bodies, this factory constructor is the only way to create a NativeImage.
   factory NativeImage.fromBytes(Uint8List dartBytes, {required int height, required int width}) {
-    final len = dartBytes.length;
-    final ptr = malloc<Uint8>(len)..asTypedList(len).setRange(0, len, dartBytes);
+    final length = dartBytes.length;
+    // ignore: avoid-collection-mutating-methods,setRange is more efficient than Uint8List.fromList.
+    final pointer = malloc<Uint8>(length)..asTypedList(length).setRange(0, length, dartBytes);
 
-    return NativeImage._(ptr, height, len, width);
+    return NativeImage._(pointer, height, length, width);
   }
 
   /// Byte length of the encoded image (PNG/JPEG bytes, NOT raw RGBA).
@@ -44,15 +42,15 @@ final class NativeImage {
   /// memory, not a copy. The native memory is stable (malloc, not GC-managed), so the view remains
   /// valid until [dispose].
   // ignore: avoid-explicit-type-declaration, it's a self-documenting Uint8List view.
-  late final Uint8List bytes = _ptr.asTypedList(length);
+  late final Uint8List bytes = _pointer.asTypedList(length);
+
+  final Pointer<Uint8> _pointer;
 
   /// Raw pointer address as int — safe to send between isolates.
   ///
   /// WHY int and not Pointer: `Pointer` cannot cross isolate boundaries. int can. Reconstruct with
   /// `Pointer.fromAddress(address)`.
-  int get address => _ptr.address;
-
-  final Pointer<Uint8> _ptr;
+  int get address => _pointer.address;
 
   bool _isDisposed = false;
 
@@ -61,6 +59,6 @@ final class NativeImage {
   void dispose() {
     if (_isDisposed) return;
     _isDisposed = true;
-    malloc.free(_ptr);
+    malloc.free(_pointer);
   }
 }

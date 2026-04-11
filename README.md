@@ -9,6 +9,8 @@ between Dart and Rust via FFI.
 
 ### 1. Source image: one copy on load, zero copies on export
 
+Dart SDK [GitHub Issue](https://github.com/dart-lang/sdk/issues/51632).
+
 **The problem:** A Dart `Uint8List` lives on the GC-managed heap.
 The GC can relocate it at any time — passing its address to Rust is unsafe.
 There are only two escape routes, and neither gives us everything:

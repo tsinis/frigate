@@ -1,7 +1,8 @@
 import 'package:flutter/rendering.dart';
 
-import '../model/draw_element.dart';
-import '../model/handle_position.dart';
+import '../frigate_draw_dart.dart';
+import '../helpers/draw_element_extension.dart';
+import '../helpers/rect_element_extension.dart';
 
 class DrawPainter extends CustomPainter {
   const DrawPainter(this.elements, {this.selectedIndex});
@@ -18,7 +19,7 @@ class DrawPainter extends CustomPainter {
       switch (element) {
         case RectElement():
           final strokePaint = Paint()
-            ..color = element.color.toColor()
+            ..color = element.uiColor
             ..style = .stroke
             ..strokeWidth = element.strokeWidth;
           canvas.drawRect(element.rect, strokePaint);
@@ -26,7 +27,7 @@ class DrawPainter extends CustomPainter {
     }
 
     final index = selectedIndex;
-    if (index == null || index < 0 || index >= elements.length) return;
+    if (index == null || index.isNegative || index >= elements.length) return;
 
     final selected = elements.elementAtOrNull(index);
     if (selected case RectElement()) {

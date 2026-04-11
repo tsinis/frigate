@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import '../model/draw_element.dart';
+import '../frigate_draw_dart.dart';
 
 /// Platform-agnostic export contract.
 ///
