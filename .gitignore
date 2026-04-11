@@ -94,6 +94,7 @@ version
 .packages.generated
 
 # Flutter/Dart/Pub related
+pubspec.lock
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
