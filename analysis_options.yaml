@@ -1,3 +1,6 @@
+formatter:
+  page_width: 100
+
 analyzer:
   language:
     strict-casts: true
@@ -276,7 +279,13 @@ dart_code_metrics:
     - avoid-unsafe-collection-methods: true
     - enum-constants-ordering: true
     - match-getter-setter-field-names: true
-    - parameters-ordering: true
+    - parameters-ordering:
+        default: 'last'
+        super: 'unset'
+        required: 'first'
+        ignore-overridden: false
+        only-named: false
+        alphabetize: true
     - no-empty-string: true
     - arguments-ordering: true
     - prefer-boolean-prefixes: true
@@ -564,6 +573,7 @@ linter:
     specify_nonobvious_local_variable_types: false # Conflicts with: avoid-explicit-type-declaration.
     unnecessary_final: false # Conflicts with: prefer_final_locals.
     unnecessary_library_name: false # To prevent breaking changes for those who use this libs.
+    lines_longer_than_80_chars: false # Conflicts with: formatter: page_width: 100.
     diagnostic_describe_all_properties: false # TODO? Enable and fix this in the far-future.
     public_member_api_docs: false # TODO! After beta.
     prefer_double_quotes: false
@@ -662,7 +672,6 @@ linter:
     library_names: true
     library_prefixes: true
     library_private_types_in_public_api: true
-    lines_longer_than_80_chars: true
     literal_only_boolean_expressions: true
     matching_super_parameters: true
     missing_code_block_language_in_doc_comment: true

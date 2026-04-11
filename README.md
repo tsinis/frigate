@@ -1,1 +1,134 @@
 # frigate_draw
+
+## Performance Architecture: Zero-Copy Export Pipeline
+
+Two complementary techniques eliminate redundant copies when passing data
+between Dart and Rust via FFI.
+
+---
+
+### 1. Source image: one copy on load, zero copies on export
+
+**The problem:** A Dart `Uint8List` lives on the GC-managed heap.
+The GC can relocate it at any time — passing its address to Rust is unsafe.
+There are only two escape routes, and neither gives us everything:
+
+| Approach                                     | No copy             | GC not frozen       |
+| -------------------------------------------- | ------------------- | ------------------- |
+| `malloc` + stable pointer **(our approach)** | ❌ one copy on load | ✅                  |
+| `isLeaf: true` FFI call (GC frozen)          | ✅                  | ❌ blocks UI thread |
+| **Both at once**                             | **impossible**      | **impossible**      |
+
+**Our solution: `NativeImage`** — copy once into `malloc` on `loadImage()`,
+then pass only a stable `int address` on every subsequent `export()`.
+
+```mermaid
+sequenceDiagram
+    participant D as Dart (main)
+    participant M as malloc heap
+    participant I as Background Isolate
+    participant R as Rust FFI
+
+    D->>M: loadImage() — copy bytes once
+    Note over M: address is stable forever<br/>(GC cannot move malloc)
+
+    D->>I: compute(_doExport, {imgAddress: int, ...})
+    Note over D,I: int crosses isolate boundary<br/>zero bytes copied
+
+    I->>R: Pointer.fromAddress(imgAddress)
+    Note over I,R: same memory, zero copy
+
+    R->>I: JPEG output bytes
+    I->>D: Uint8List.fromList(result)
+    Note over I,D: one unavoidable copy<br/>(result back to GC heap)
+```
+
+**Total copies in the full pipeline:**
+
+```mermaid
+flowchart LR
+    A["Dart Uint8List\n(GC heap, unstable)"]
+    B["NativeImage\n(malloc, stable)"]
+    C["int address\n(isolate boundary)"]
+    D["Rust FFI\n(reads same buffer)"]
+    E["JPEG Uint8List\n(GC heap)"]
+
+    A -->|"✅ copy once\nunavoidable"| B
+    B -->|"❌ no copy\njust an int"| C
+    C -->|"❌ no copy\nPointer.fromAddress"| D
+    D -->|"✅ copy once\nunavoidable"| E
+```
+
+**Two copies total** — the minimum physically possible — regardless of image
+size or how many times the user taps "Export".
+
+---
+
+### 2. Overlay elements: zero-copy isolate transfer via `@pragma('vm:deeply-immutable')`
+
+**The problem:** `compute()` runs in a background isolate. Sending a
+`List<RectElement>` normally triggers a full deep copy of every object.
+
+The naive fix is to serialize everything into a `Float64List` before sending.
+That works but loses type safety and adds boilerplate.
+
+**Our solution:** mark the entire type chain as deeply immutable.
+The Dart VM then shares the list across isolates **by reference — zero copies**.
+
+```mermaid
+flowchart TD
+    subgraph "Type chain — all deeply immutable"
+        A["@pragma('vm:deeply-immutable')\nsealed class DrawElement\n─────────────────\nfinal double x\nfinal double y\nfinal double strokeWidth\nfinal FfiColor color"]
+        B["@pragma('vm:deeply-immutable')\nfinal class RectElement extends DrawElement\n─────────────────\nfinal double width\nfinal double height"]
+        C["@pragma('vm:deeply-immutable')\nfinal class FfiColor\n─────────────────\nfinal int a, r, g, b"]
+        B --> A
+        A --> C
+    end
+
+    D["List&lt;RectElement&gt;"] -->|"compute() — VM sends\nby reference, zero copy"| E["Background Isolate"]
+```
+
+> **Rule:** every field in the entire graph must be a primitive or another
+> `@pragma('vm:deeply-immutable')` type. One mutable field anywhere breaks
+> the guarantee and forces the VM back to copying.
+
+**With vs without:**
+
+```mermaid
+flowchart LR
+    subgraph "Without pragma"
+        W1["List&lt;RectElement&gt;"] -->|"deep copy\nevery element"| W2["Isolate copy"]
+        W2 -->|"or manually serialize"| W3["Float64List\n(type-unsafe)"]
+    end
+
+    subgraph "With pragma ✅"
+        P1["List&lt;RectElement&gt;"] -->|"shared by pointer\nzero copy"| P2["Isolate\n(same objects)"]
+    end
+```
+
+---
+
+### Combined export flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant D as Dart
+    participant I as Isolate
+    participant R as Rust
+
+    U->>D: tap Export
+    D->>I: compute(_doExport, _ExportArgs)
+    Note over D,I: rects — by reference, deeply-immutable, zero copy
+    Note over D,I: imgAddress — stable malloc int, zero copy
+
+    I->>R: export_image(ptr, len, rects, ...)
+    Note over I,R: zero copy — pointer arithmetic only
+
+    R->>I: ByteBuffer (JPEG)
+    I->>D: Uint8List (result copy)
+    D->>U: save / upload
+```
+
+The source image and overlay data reach Rust with **zero redundant copies**
+after the initial `loadImage()` call.

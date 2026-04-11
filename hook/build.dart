@@ -1,10 +1,10 @@
 import 'package:hooks/hooks.dart';
 import 'package:native_toolchain_rust/native_toolchain_rust.dart';
 
-void main(List<String> args) async => await build(
-  args,
-  (input, output) => const RustBuilder(
-    assetName: 'src/bindings.dart',
-    cratePath: 'rust',
-  ).run(input: input, output: output),
-);
+Future<void> main(List<String> args) => build(args, _buildRust);
+
+// ignore: prefer-static-class, it's a convention for build hooks to export a top-level function.
+Future<void> _buildRust(BuildInput input, BuildOutputBuilder output) => const RustBuilder(
+  assetName: 'src/ffi/bindings.dart',
+  cratePath: 'rust',
+).run(input: input, output: output);
