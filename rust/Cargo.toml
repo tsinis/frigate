@@ -1,6 +1,6 @@
 [package]
-name = "frigate_draw_rust"
-version = "0.1.0"
+name = "frigate_draw"
+version = "0.0.1"
 edition = "2024"
 
 [lib]

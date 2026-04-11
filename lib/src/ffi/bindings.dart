@@ -1,7 +1,7 @@
 // ignore_for_file: prefer-named-parameters, prefer-static-class
 // ignore_for_file: non_constant_identifier_names, prefer-typedefs-for-callbacks
 
-/// Hand-written `@Native()` FFI bindings for the Rust crate `frigate_draw_rust`.
+/// Hand-written `@Native()` FFI bindings for the Rust crate `frigate_draw`.
 ///
 /// NOT code-generated — ffigen is not used. The `@Native()` annotation auto-resolves the compiled
 /// Rust library via the code asset system (`native_toolchain_rust` + build hook), so no

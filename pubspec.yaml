@@ -1,17 +1,16 @@
 version: 0.0.1
 name: frigate_draw
-description: "A new Dart FFI package project."
+description: "Geometric-first image editor/annotation canvas"
 
 environment:
   sdk: ^3.11.4
 
 dependencies:
-  code_assets: ^1.0.0
-  ffi: ^2.2.0
+  ffi: ^2.2.0 # For FFI bindings and memory management.
   flutter:
     sdk: flutter
-  hooks: ^1.0.2
-  native_toolchain_rust: ^1.0.3
+  hooks: ^1.0.2 # For hook/build.dart integration (transitive dependency of native_toolchain_rust).
+  native_toolchain_rust: ^1.0.3  # For hook/build.dart integration.
 
 dev_dependencies:
   dart_code_metrics_presets: ^2.30.0
