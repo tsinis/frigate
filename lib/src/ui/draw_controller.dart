@@ -2,9 +2,7 @@
 
 import 'package:flutter/foundation.dart' show ChangeNotifier;
 
-import '../command/command_stack.dart';
-import '../command/element_command.dart';
-import '../model/draw_element.dart';
+import '../frigate_draw_dart.dart';
 
 class DrawController extends ChangeNotifier {
   final commandStack = CommandStack();

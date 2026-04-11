@@ -5,8 +5,7 @@ import 'dart:math';
 
 import 'package:flutter/widgets.dart';
 
-import '../model/draw_element.dart';
-import '../model/handle_position.dart';
+import '../frigate_draw_dart.dart';
 import 'draw_controller.dart';
 import 'draw_painter.dart';
 

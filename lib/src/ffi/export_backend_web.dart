@@ -1,8 +1,6 @@
-// ignore_for_file: prefer-single-declaration-per-file, file-name-should-match-class
-
 import 'dart:typed_data';
 
-import '../model/draw_element.dart';
+import '../frigate_draw_dart.dart';
 import 'export_backend.dart';
 
 // TODO! The Rust crate would need to be compiled separately with

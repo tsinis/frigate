@@ -179,6 +179,21 @@ dart_code_metrics:
 
     # Dart specific:
     - avoid-non-ascii-symbols: true
+    - avoid-banned-imports:
+        entries:
+          - paths: ['lib/dart/.*\.dart']
+            deny:
+              - 'package:flutter/.*'
+              - 'package:flutter_test/.*'
+            message: 'lib/dart must be pure Dart — no Flutter imports allowed.'
+            severity: error
+
+          - paths: ['test/dart/.*\.dart']
+            deny:
+              - 'package:flutter/.*'
+              - 'package:flutter_test/.*'
+            message: 'test/dart must be pure Dart — no Flutter imports allowed.'
+            severity: error
     - prefer-static-method:
         ignore-public: true
         ignore-private: false

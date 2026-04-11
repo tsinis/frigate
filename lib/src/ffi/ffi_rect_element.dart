@@ -1,8 +1,7 @@
-// ignore_for_file: prefer-single-declaration-per-file, avoid-mutating-parameters
-
+// ignore_for_file: prefer-single-declaration-per-file
 import 'dart:ffi';
 
-import '../model/draw_element.dart';
+import '../frigate_draw_dart.dart';
 
 /// Matches Rust `#[repr(C)] FfiRectElement` exactly. 44 bytes data: 5x f64 (40) + 1x u32 (4),
 /// padded to 48.
@@ -33,10 +32,10 @@ extension RectElementFfi on RectElement {
   /// Normalize and write this element's data into pre-allocated native memory.
   ///
   /// Coordinates are divided by image dimensions to produce 0.0-1.0 range. Rust denormalizes using
-  /// its own decoded dimensions, eliminating any Flutter↔Rust decoder dimension mismatch.
-  void writeTo(Pointer<FfiRectElement> ptr, {required int imgHeight, required int imgWidth}) {
-    final RectElement(:color, :height, :strokeWidth, :width, :x, :y) = this;
-    ptr.ref
+  /// its own decoded dimensions, eliminating any Dart↔Rust decoder dimension mismatch.
+  void writeTo(Pointer<FfiRectElement> pointer, {required int imgHeight, required int imgWidth}) {
+    // ignore: avoid-mutating-parameters, it's purpose is to mutate the pointed-to struct fields.
+    pointer.ref
       ..x = x / imgWidth
       ..y = y / imgHeight
       ..width = width / imgWidth
@@ -53,12 +52,12 @@ extension RectElementListFfi on List<RectElement> {
     required int imgHeight,
     required int imgWidth,
   }) {
-    final ptr = allocator<FfiRectElement>(length);
+    final pointer = allocator<FfiRectElement>(length);
     for (int i = 0; i < length; i += 1) {
       // ignore: avoid-unsafe-collection-methods, bounded by 0..length loop.
-      this[i].writeTo(ptr + i, imgHeight: imgHeight, imgWidth: imgWidth);
+      this[i].writeTo(pointer + i, imgHeight: imgHeight, imgWidth: imgWidth);
     }
 
-    return ptr;
+    return pointer;
   }
 }

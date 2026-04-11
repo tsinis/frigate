@@ -23,7 +23,7 @@ import 'ffi_rect_element.dart';
 /// Rust decodes the source image (PNG/JPEG), draws stroked rects with
 /// tiny-skia, and encodes the composited result as JPEG.
 ///
-/// Rect coordinates are **normalized** (0.0–1.0 relative to image size).
+/// Rect coordinates are **normalized** (0.0-1.0 relative to image size).
 /// Rust denormalizes using decoded image dimensions — no width/height
 /// params needed, eliminates Flutter↔Rust decoder dimension mismatch.
 ///

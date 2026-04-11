@@ -14,10 +14,8 @@ final class RectElement extends DrawElement {
   final double width;
   final double height;
 
-  Rect get rect => .fromLTWH(x, y, width, height);
-
   @override
-  String toString({bool short = false}) =>
+  String toString() =>
       'RectElement(x: $x, y: $y, width: $width, height: $height, color: $color, '
       'strokeWidth: $strokeWidth)';
 

@@ -1,13 +1,10 @@
-// ignore_for_file: prefer-single-declaration-per-file, avoid-collection-mutating-methods
-// ignore_for_file: file-name-should-match-class
-
 import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart' show compute;
 
-import '../model/draw_element.dart';
+import '../frigate_draw_dart.dart';
 import 'bindings.dart' as ffi;
 import 'export_backend.dart';
 import 'ffi_rect_element.dart';
@@ -22,14 +19,14 @@ ExportBackend createExportBackend() {
   return _NativeExportBackend();
 }
 
-/// Zero-copy export backend using dart:ffi + Rust.
+/// Zero-copy export backend using `dart:ffi` + Rust.
 ///
 /// WHY [NativeImage]: Dart GC can relocate Uint8List at any time. [NativeImage] stores bytes in
 /// malloc'd memory (stable address), so we pass `int address` to the export isolate — no copy of
 /// the source image during export.
 ///
-/// Manual free: result bytes are copied to a Dart [Uint8List] and the Rust-allocated
-/// buffer is freed immediately. Simple, safe, no finalizer signature mismatch.
+/// Manual free: result bytes are copied to a Dart [Uint8List] and the Rust-allocated buffer is
+/// freed immediately. Simple, safe, no finalizer signature mismatch.
 // ignore: prefer-match-file-name, it's conditional import target.
 final class _NativeExportBackend implements ExportBackend {
   NativeImage? _image;
@@ -67,9 +64,9 @@ final class _NativeExportBackend implements ExportBackend {
 
   /// Runs in a background isolate via [compute].
   ///
-  /// WHY Pointer.fromAddress: Pointer cannot cross isolate boundaries,
-  /// but int can. The underlying native memory is the same — zero copy.
-  /// RectElement is @pragma('vm:deeply-immutable') — zero-copy transfer.
+  /// WHY Pointer.fromAddress: Pointer cannot cross isolate boundaries, but int can. The underlying
+  /// native memory is the same — zero copy. RectElement is @pragma('vm:deeply-immutable') —
+  /// zero-copy transfer.
   static Uint8List _doExport(_ExportArgs args) {
     final _ExportArgs(:imgAddress, :imgHeight, :imgLen, :imgWidth, :jpegQuality, :rects) = args;
     final rectsPtr = rects.toNative(malloc, imgHeight: imgHeight, imgWidth: imgWidth);
@@ -81,9 +78,9 @@ final class _NativeExportBackend implements ExportBackend {
     if (result.data == nullptr) {
       throw StateError('Rust export_image failed (panic in native render)');
     }
-    // Copy result to Dart-managed memory, then free the Rust-allocated buffer.
-    // Manual free — safe, no finalizer signature issues.
-    // try/finally guarantees free_bytes runs even on OOM (real on mobile with large images).
+    // Copy result to Dart-managed memory, then free the Rust-allocated buffer. Manual free — safe,
+    // no finalizer signature issues. try/finally guarantees free_bytes runs even on OOM (real on
+    // mobile with large images).
     final Uint8List output;
     try {
       output = Uint8List.fromList(result.data.asTypedList(result.length));
