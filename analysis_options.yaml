@@ -183,17 +183,34 @@ dart_code_metrics:
         entries:
           - paths: ['lib/dart/.*\.dart']
             deny:
+              # Ban any Flutter imports in lib/dart/ — both relative and package.
               - 'package:flutter/.*'
-              - 'package:flutter_test/.*'
+              # Ban lib/frigate_draw.dart — both relative and package.
+              - 'package:frigate_draw/frigate_draw\.dart'
+              - '.*frigate_draw\.dart'
+              # Ban lib/src/ — both relative and package.
+              - 'package:frigate_draw/src/.*'
+              - '.*/src/.*'
+              # Ban hook/ — in any form.
+              - '.*hook/.*'
+              - 'hook/.*'
             message: 'lib/dart must be pure Dart — no Flutter imports allowed.'
             severity: error
 
           - paths: ['test/dart/.*\.dart']
             deny:
+              # Ban any Flutter imports in lib/dart/ — both relative and package.
               - 'package:flutter/.*'
               - 'package:flutter_test/.*'
+              # Ban lib/frigate_draw.dart — both relative and package.
+              - 'package:frigate_draw/frigate_draw\.dart'
+              - '.*frigate_draw\.dart'
+              # Ban lib/src/ — both relative and package.
+              - 'package:frigate_draw/src/.*'
+              - '.*/src/.*'
             message: 'test/dart must be pure Dart — no Flutter imports allowed.'
             severity: error
+
     - prefer-static-method:
         ignore-public: true
         ignore-private: false
