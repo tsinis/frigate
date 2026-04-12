@@ -93,7 +93,7 @@ final class _NativeExportBackend implements ExportBackend {
 }
 
 /// Arguments for [_NativeExportBackend._doExport], sent to a background isolate.
-class _ExportArgs {
+final class _ExportArgs {
   const _ExportArgs({
     required this.imgAddress,
     required this.imgHeight,
