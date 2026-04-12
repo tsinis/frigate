@@ -27,12 +27,14 @@ jobs:
       - name: 📚 Git checkout
         uses: actions/checkout@v6.0.2
 
-      - name: 🧹 Pubspec Flutter clean
+      - name: 🧹 Pubspec Flutter Removal
         uses: actions/github-script@v9.0.0
         with:
           script: |
-            const f = 'pubspec.yaml', c = await require('fs').promises.readFile(f, 'utf8')
-            await require('fs').promises.writeFile(f, c.replace(/^.*flutter.*$/gm, m => '#' + m))
+            const fs = require('fs').promises
+            const f = 'pubspec.yaml', c = await fs.readFile(f, 'utf8')
+            await fs.writeFile(f, c.replace(/^.*flutter.*$/gm, m => '#' + m))
+            await fs.rm('example', { recursive: true, force: true })
 
       - name: 🎯 Setup Dart
         uses: dart-lang/setup-dart@v1.7.2
