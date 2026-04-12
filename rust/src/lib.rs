@@ -26,6 +26,12 @@ pub struct ByteBuffer {
 ///
 /// Returns `ByteBuffer { null, 0 }` on panic (e.g. corrupt image).
 /// Caller must check for null before using the result.
+///
+/// # Safety
+///
+/// - `img_ptr` must point to `img_len` valid bytes (the encoded image).
+/// - `rects_ptr` must point to `rects_count` valid `FfiRectElement` structs.
+/// - Both slices must remain valid for the duration of this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn export_image(
     img_ptr: *const u8,
@@ -65,6 +71,12 @@ pub unsafe extern "C" fn export_image(
 ///
 /// Capacity == len is guaranteed because `export_image` uses
 /// `into_boxed_slice()` before extracting the raw pointer.
+///
+/// # Safety
+///
+/// - `ptr` must have been returned by `export_image` (via `Box::into_raw`).
+/// - `len` must be the matching `ByteBuffer.length`.
+/// - Must only be called once per buffer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn free_bytes(ptr: *mut u8, len: usize) {
     if ptr.is_null() {
@@ -126,4 +138,68 @@ fn render(img_bytes: &[u8], rects: &[FfiRectElement], jpeg_quality: u8) -> Vec<u
         .unwrap();
 
     buf.into_inner()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Encode a tiny 2×2 red PNG in memory for tests.
+    fn tiny_png() -> Vec<u8> {
+        use image::{ImageEncoder, RgbaImage};
+        let img = RgbaImage::from_pixel(2, 2, image::Rgba([255, 0, 0, 255]));
+        let mut buf = std::io::Cursor::new(Vec::new());
+        image::codecs::png::PngEncoder::new(&mut buf)
+            .write_image(img.as_raw(), 2, 2, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        buf.into_inner()
+    }
+
+    #[test]
+    fn render_no_rects_returns_jpeg() {
+        let png = tiny_png();
+        let jpeg = render(&png, &[], 80);
+        // JPEG files start with the SOI marker 0xFF 0xD8.
+        assert!(jpeg.len() > 2);
+        assert_eq!(&jpeg[..2], &[0xFF, 0xD8]);
+    }
+
+    #[test]
+    fn render_with_rect_returns_jpeg() {
+        let png = tiny_png();
+        let rect = FfiRectElement {
+            x: 0.1,
+            y: 0.1,
+            width: 0.8,
+            height: 0.8,
+            stroke_width: 0.05,
+            color_argb: 0xFF00FF00, // opaque green
+        };
+        let jpeg = render(&png, &[rect], 90);
+        assert!(jpeg.len() > 2);
+        assert_eq!(&jpeg[..2], &[0xFF, 0xD8]);
+    }
+
+    #[test]
+    fn ffi_rect_element_is_48_bytes() {
+        // Mirrors the compile-time assert but also exercises it at test time.
+        assert_eq!(std::mem::size_of::<FfiRectElement>(), 48);
+    }
+
+    #[test]
+    #[should_panic(expected = "failed to decode image")]
+    fn render_corrupt_image_panics() {
+        render(&[0, 1, 2, 3], &[], 80);
+    }
+
+    #[test]
+    fn export_image_returns_null_on_corrupt_input() {
+        // Use a dangling-but-aligned pointer for the empty rects slice —
+        // slice::from_raw_parts requires non-null even when count is 0.
+        let rects_ptr = std::ptr::NonNull::<FfiRectElement>::dangling().as_ptr();
+        let buf = unsafe { export_image(b"bad".as_ptr(), 3, rects_ptr, 0, 80) };
+        // catch_unwind inside export_image turns the panic into a null buffer.
+        assert!(buf.data.is_null());
+        assert_eq!(buf.length, 0);
+    }
 }
