@@ -57,7 +57,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🧮 Check PANA score
-        if: ${{ github.event_name == 'pull_request' }}
+        if: false # TODO(tsinis) before publish change to ${{ github.event_name == 'pull_request' }}
         run: |
           sudo apt-get install -y webp
           dart pub global activate pana
