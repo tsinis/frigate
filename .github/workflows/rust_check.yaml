@@ -69,13 +69,14 @@ jobs:
 
       - name: 🧮 Generate coverage report # TODO(tsinis) - adjust min coverage.
         if: ${{ matrix.runner == 'ubuntu-latest' }}
-        run: cargo llvm-cov --all-features --lcov --output-path ../coverage/lcov.info
+        run: cargo llvm-cov --all-features --lcov --output-path coverage/lcov.info
 
       - name: 💯 Upload to Codecov
         if: ${{ matrix.runner == 'ubuntu-latest' }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6.0.0
         with:
           fail_ci_if_error: true
+          working-directory: rust
           files: coverage/lcov.info
           flags: rust-${{ runner.arch }}
           name: rust-${{ runner.arch }}

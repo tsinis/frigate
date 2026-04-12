@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:frigate_draw/frigate_draw.dart';
+import 'package:meta/meta.dart';
 
 void main() => runApp(const DrawingApp());
 
@@ -9,9 +10,10 @@ class DrawingApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      MaterialApp(theme: ThemeData.dark(useMaterial3: true), home: const DrawingScreen());
+      MaterialApp(home: const DrawingScreen(), theme: ThemeData.dark(useMaterial3: true));
 }
 
+// ignore: prefer-single-widget-per-file, prefer-single-declaration-per-file, TODO(tsinis): split it
 class DrawingScreen extends StatefulWidget {
   const DrawingScreen({super.key});
 
@@ -24,10 +26,11 @@ class _DrawingScreenState extends State<DrawingScreen> {
   static const _imageHeight = 600;
 
   final _controller = DrawController();
-  final _backend = createExportBackend();
+  // ignore: avoid-explicit-type-declaration, against specify_nonobvious_property_types.
+  final ExportBackend _backend = createExportBackend();
 
-  bool _exporting = false;
-  bool _imageLoaded = false;
+  bool _isExporting = false;
+  bool _isImageLoaded = false;
 
   @override
   void initState() {
@@ -35,45 +38,49 @@ class _DrawingScreenState extends State<DrawingScreen> {
     _loadImage();
   }
 
+  @awaitNotRequired
   Future<void> _loadImage() async {
     final data = await rootBundle.load('assets/sample.png');
     await _backend.loadImage(data.buffer.asUint8List(), height: _imageHeight, width: _imageWidth);
-    if (mounted) setState(() => _imageLoaded = true);
+    if (mounted) setState(() => _isImageLoaded = true);
   }
 
-  void _addRectInCenter() {
+  void _handleAddRect() {
     _controller.addElement(
-      RectElement(height: 100, width: 100, x: _imageWidth / 2 - 50, y: _imageHeight / 2 - 50),
+      const RectElement(height: 100, width: 100, x: _imageWidth / 2 - 50, y: _imageHeight / 2 - 50),
     );
   }
 
-  Future<void> _onSave() async {
+  @awaitNotRequired
+  Future<ScaffoldFeatureController<SnackBar, SnackBarClosedReason>?> _handleSave() async {
     final rects = _controller.elements.whereType<RectElement>().toList();
     if (rects.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('No rectangles to export')));
+      if (!mounted) return null;
 
-      return;
+      return ScaffoldMessenger.of(
+        context, // Dart 3.8 Formatting.
+      ).showSnackBar(const SnackBar(content: Text('No rectangles to export')));
     }
 
-    setState(() => _exporting = true);
+    setState(() => _isExporting = true);
 
     try {
       final jpegBytes = await _backend.export(rects: rects);
 
-      if (!mounted) return;
+      if (!mounted) return null;
       await showDialog<void>(
+        builder: (_) => Dialog(child: Image.memory(jpegBytes, semanticLabel: 'Exported Image')),
         context: context,
-        builder: (_) => Dialog(child: Image.memory(jpegBytes)),
       );
-    } on Object catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+    } on Object catch (error) {
+      if (!mounted) return null;
+
+      return ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $error')));
     } finally {
-      if (mounted) setState(() => _exporting = false);
+      if (mounted) setState(() => _isExporting = false);
     }
+
+    return null;
   }
 
   @override
@@ -86,18 +93,19 @@ class _DrawingScreenState extends State<DrawingScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('Frigate Draw'),
       actions: [
         IconButton(icon: const Icon(Icons.undo), onPressed: _controller.undo),
         IconButton(icon: const Icon(Icons.redo), onPressed: _controller.redo),
-        if (_exporting)
+        if (_isExporting)
           const Padding(
-            padding: EdgeInsets.all(12),
+            padding: .all(12),
             child: SizedBox.square(dimension: 24, child: CircularProgressIndicator(strokeWidth: 2)),
           )
         else
-          IconButton(icon: const Icon(Icons.save), onPressed: _imageLoaded ? _onSave : null),
+          // ignore: avoid-passing-async-when-sync-expected, await is not required (annotated).
+          IconButton(icon: const Icon(Icons.save), onPressed: _isImageLoaded ? _handleSave : null),
       ],
+      title: const Text('Frigate Draw'),
     ),
     body: DrawEditor(
       controller: _controller,
@@ -106,7 +114,9 @@ class _DrawingScreenState extends State<DrawingScreen> {
       imageWidth: _imageWidth.toDouble(),
     ),
     floatingActionButton: FloatingActionButton(
-      onPressed: _addRectInCenter,
+      heroTag: 'Add',
+      onPressed: _handleAddRect,
+      tooltip: 'Add Rectangle',
       child: const Icon(Icons.add),
     ),
   );

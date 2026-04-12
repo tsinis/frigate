@@ -318,8 +318,12 @@ dart_code_metrics:
         ignore-overridden: false
         only-named: false
         alphabetize: true
+    - arguments-ordering:
+        alphabetize: true
+        last:
+          - child
+          - children
     - no-empty-string: true
-    - arguments-ordering: true
     - prefer-boolean-prefixes: true
 
     # Enabled:
