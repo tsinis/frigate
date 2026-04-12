@@ -1,6 +1,7 @@
 version: 0.0.1
 name: frigate_draw
 description: "Geometric-first image editor/annotation canvas"
+repository: https://github.com/tsinis/frigate_draw
 
 environment:
   sdk: ^3.11.4
