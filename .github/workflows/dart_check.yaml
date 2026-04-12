@@ -4,11 +4,13 @@ on:
   push:
     branches: [main]
     paths:
+      - ".github/dart_workflow.yaml"
       - "lib/dart/**/*.dart"
       - "test/dart/**/*.dart"
       - "pubspec.yaml"
   pull_request:
     paths:
+      - ".github/dart_workflow.yaml"
       - "lib/dart/**/*.dart"
       - "test/dart/**/*.dart"
       - "pubspec.yaml"
@@ -34,6 +36,9 @@ jobs:
             const fs = require('fs').promises
             const f = 'pubspec.yaml', c = await fs.readFile(f, 'utf8')
             await fs.writeFile(f, c.replace(/^.*flutter.*$/gm, m => '#' + m))
+            await fs.rm('lib/frigate_draw.dart', { recursive: true, force: true })
+            await fs.rm('test/src', { recursive: true, force: true })
+            await fs.rm('lib/src', { recursive: true, force: true })
             await fs.rm('example', { recursive: true, force: true })
 
       - name: 🎯 Setup Dart
@@ -51,12 +56,8 @@ jobs:
           format: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🏜️ Publish dry-run
-        if: ${{ github.event_name == 'pull_request' }}
-        run: dart pub publish --dry-run
-
       - name: 🧮 Check PANA score
-        if: ${{ github.event_name == 'pull_request' }}
+        if: false # TODO(tsinis) before publish change to ${{ github.event_name == 'pull_request' }}
         run: |
           sudo apt-get install -y webp
           dart pub global activate pana
@@ -68,6 +69,7 @@ jobs:
       - name: 💯 Upload to Codecov
         uses: codecov/codecov-action@v6.0.0
         with:
+          disable_file_fixes: true
           fail_ci_if_error: true
           files: coverage/lcov.info
           flags: dart

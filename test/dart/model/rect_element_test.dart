@@ -14,7 +14,7 @@ class _RectElementTest extends AsyncBenchmarkBase {
   @override
   Future<void> setup() async => _rects = List.generate(
     count,
-    (i) => RectElement(height: 1, width: 2, x: 3, y: 4, color: FfiColor(i)),
+    (i) => RectElement(color: FfiColor(i), height: 1, width: 2, x: 3, y: 4),
   );
 
   @override
@@ -46,7 +46,7 @@ void main() => group(RectElement, () {
   });
 
   test('copyWith preserves unchanged fields', () {
-    const original = RectElement(height: 50, width: 100, x: 10, y: 20, strokeWidth: 5);
+    const original = RectElement(height: 50, strokeWidth: 5, width: 100, x: 10, y: 20);
     final RectElement(:color, :height, :strokeWidth, :width, :x, :y) = original.copyWith(x: 30);
 
     expect(x, 30);
@@ -66,22 +66,22 @@ void main() => group(RectElement, () {
   });
 
   test('no copy in isolates outside of the list', () async {
-    const rect = RectElement(height: 50, width: 100, x: 10, y: 20, strokeWidth: 5);
+    const rect = RectElement(height: 50, strokeWidth: 5, width: 100, x: 10, y: 20);
 
-    final recievePort = ReceivePort();
+    final receivePort = ReceivePort();
     final result = await Isolate.spawn(
       // ignore: avoid-type-casts, avoid-unsafe-collection-methods, it's just a test.,
       (a) => (a.first as SendPort).send(identityHashCode(a.elementAtOrNull(1))),
-      [recievePort.sendPort, rect],
+      [receivePort.sendPort, rect],
     );
     expect(result, isA<Isolate>());
-    expect(await recievePort.first, identityHashCode(rect));
-    recievePort.close();
+    expect(await receivePort.first, identityHashCode(rect));
+    receivePort.close();
   });
 
   test('no copy in isolates inside of the list', () async {
     // ignore: prefer_const_constructors, just a test.
-    final rect = RectElement(height: 50, width: 100, x: 10, y: 20, strokeWidth: 5);
+    final rect = RectElement(height: 50, strokeWidth: 5, width: 100, x: 10, y: 20);
     final list = [rect];
 
     final receivePort = ReceivePort();

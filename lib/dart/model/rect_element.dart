@@ -28,11 +28,11 @@ final class RectElement extends DrawElement {
     double? x,
     double? y,
   }) => .new(
+    color: color ?? this.color,
     height: height ?? this.height,
+    strokeWidth: strokeWidth ?? this.strokeWidth,
     width: width ?? this.width,
     x: x ?? this.x,
     y: y ?? this.y,
-    color: color ?? this.color,
-    strokeWidth: strokeWidth ?? this.strokeWidth,
   );
 }

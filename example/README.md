@@ -1,4 +1,4 @@
-# frigate_draw_example
+# frigatebird
 
 Demonstrates how to use the frigate_draw package.
 

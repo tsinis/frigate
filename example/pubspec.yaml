@@ -1,8 +1,8 @@
+version: 0.0.1
 name: frigatebird
 description: "Demonstrates how to use the frigate_draw package."
 publish_to: none
 
-version: 0.0.1
 
 environment:
   sdk: ^3.11.4
@@ -12,6 +12,7 @@ dependencies:
     sdk: flutter
   frigate_draw:
     path: ../
+  meta: any
 
 dev_dependencies:
   dart_code_metrics_presets: ^2.30.0

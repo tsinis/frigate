@@ -160,10 +160,9 @@ class _DrawEditorState extends State<DrawEditor> {
       scaleEnabled: !_isDragging,
       transformationController: _transformController,
       child: SizedBox(
-        width: widget.imageWidth,
         height: widget.imageHeight,
+        width: widget.imageWidth,
         child: ListenableBuilder(
-          listenable: _controller,
           builder: (_, child) => CustomPaint(
             foregroundPainter: DrawPainter(
               _controller.elements,
@@ -171,12 +170,13 @@ class _DrawEditorState extends State<DrawEditor> {
             ),
             child: child,
           ),
+          listenable: _controller,
           child: Image(
+            fit: .fill,
+            height: widget.imageHeight,
             image: widget.image,
             semanticLabel: 'Background Image', // TODO!
             width: widget.imageWidth,
-            height: widget.imageHeight,
-            fit: .fill,
           ),
         ),
       ),

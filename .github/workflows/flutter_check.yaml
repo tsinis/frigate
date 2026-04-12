@@ -4,11 +4,13 @@ on:
   push:
     branches: [main]
     paths:
+      - ".github/workflows/flutter_check.yaml"
       - "lib/src/**/*.dart"
       - "test/src/**/*.dart"
       - "pubspec.yaml"
   pull_request:
     paths:
+      - ".github/workflows/flutter_check.yaml"
       - "lib/src/**/*.dart"
       - "test/src/**/*.dart"
       - "pubspec.yaml"
@@ -49,7 +51,7 @@ jobs:
         run: dart pub publish --dry-run
 
       - name: 🧮 Check PANA score
-        if: ${{ github.event_name == 'pull_request' }}
+        if: false # TODO(tsinis) before publish change to ${{ github.event_name == 'pull_request' }}
         run: |
           sudo apt-get install -y webp
           dart pub global activate pana
@@ -62,7 +64,7 @@ jobs:
         run: flutter test test/src --coverage --no-pub
 
       - name: 💯 Upload to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6.0.0
         with:
           fail_ci_if_error: true
           files: coverage/lcov.info
