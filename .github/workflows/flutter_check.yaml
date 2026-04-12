@@ -62,7 +62,7 @@ jobs:
         run: flutter test test/src --coverage --no-pub
 
       - name: 💯 Upload to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           fail_ci_if_error: true
           files: coverage/lcov.info
