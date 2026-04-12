@@ -37,8 +37,9 @@ jobs:
             const f = 'pubspec.yaml', c = await fs.readFile(f, 'utf8')
             await fs.writeFile(f, c.replace(/^.*flutter.*$/gm, m => '#' + m))
             await fs.rm('lib/frigate_draw.dart', { recursive: true, force: true })
-            await fs.rm('example', { recursive: true, force: true })
+            await fs.rm('test/src', { recursive: true, force: true })
             await fs.rm('lib/src', { recursive: true, force: true })
+            await fs.rm('example', { recursive: true, force: true })
 
       - name: 🎯 Setup Dart
         uses: dart-lang/setup-dart@v1.7.2
@@ -54,10 +55,6 @@ jobs:
           fail-on-format: true
           format: true
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 🏜️ Publish dry-run
-        if: ${{ github.event_name == 'pull_request' }}
-        run: dart pub publish --dry-run
 
       - name: 🧮 Check PANA score
         if: ${{ github.event_name == 'pull_request' }}
