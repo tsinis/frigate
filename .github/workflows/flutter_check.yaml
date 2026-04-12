@@ -4,11 +4,13 @@ on:
   push:
     branches: [main]
     paths:
+      - ".github/workflows/flutter_check.yaml"
       - "lib/src/**/*.dart"
       - "test/src/**/*.dart"
       - "pubspec.yaml"
   pull_request:
     paths:
+      - ".github/workflows/flutter_check.yaml"
       - "lib/src/**/*.dart"
       - "test/src/**/*.dart"
       - "pubspec.yaml"

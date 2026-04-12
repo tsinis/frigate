@@ -2,18 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:frigate_draw/frigate_draw.dart';
 
-void main() {
-  runApp(const DrawingApp());
-}
+void main() => runApp(const DrawingApp());
 
 class DrawingApp extends StatelessWidget {
   const DrawingApp({super.key});
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    theme: ThemeData.dark(useMaterial3: true),
-    home: const DrawingScreen(),
-  );
+  Widget build(BuildContext context) =>
+      MaterialApp(theme: ThemeData.dark(useMaterial3: true), home: const DrawingScreen());
 }
 
 class DrawingScreen extends StatefulWidget {
@@ -41,22 +37,13 @@ class _DrawingScreenState extends State<DrawingScreen> {
 
   Future<void> _loadImage() async {
     final data = await rootBundle.load('assets/sample.png');
-    await _backend.loadImage(
-      data.buffer.asUint8List(),
-      height: _imageHeight,
-      width: _imageWidth,
-    );
+    await _backend.loadImage(data.buffer.asUint8List(), height: _imageHeight, width: _imageWidth);
     if (mounted) setState(() => _imageLoaded = true);
   }
 
   void _addRectInCenter() {
     _controller.addElement(
-      RectElement(
-        height: 100,
-        width: 100,
-        x: _imageWidth / 2 - 50,
-        y: _imageHeight / 2 - 50,
-      ),
+      RectElement(height: 100, width: 100, x: _imageWidth / 2 - 50, y: _imageHeight / 2 - 50),
     );
   }
 
@@ -83,9 +70,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
       );
     } on Object catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export failed: $e')));
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -108,16 +93,10 @@ class _DrawingScreenState extends State<DrawingScreen> {
         if (_exporting)
           const Padding(
             padding: EdgeInsets.all(12),
-            child: SizedBox.square(
-              dimension: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+            child: SizedBox.square(dimension: 24, child: CircularProgressIndicator(strokeWidth: 2)),
           )
         else
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: _imageLoaded ? _onSave : null,
-          ),
+          IconButton(icon: const Icon(Icons.save), onPressed: _imageLoaded ? _onSave : null),
       ],
     ),
     body: DrawEditor(
