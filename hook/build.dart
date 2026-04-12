@@ -7,4 +7,5 @@ Future<void> main(List<String> args) => build(args, _buildRust);
 Future<void> _buildRust(BuildInput input, BuildOutputBuilder output) => const RustBuilder(
   assetName: 'src/ffi/bindings.dart',
   cratePath: 'rust',
+  // TODO(tsinis): run proper build mod.
 ).run(input: input, output: output);

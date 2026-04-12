@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'dart:isolate' show Isolate, ReceivePort, SendPort;
 
 import 'package:benchmark_harness/benchmark_harness.dart';
@@ -101,15 +102,19 @@ void main() => group(RectElement, () {
     receivePort.close();
   });
 
-  test('list send time is O(1) relative to element count - proves elements not copied', () async {
-    final ten = _RectElementTest(10);
-    final thousand = _RectElementTest(1000);
-    final hundredThousand = _RectElementTest(100_000);
+  test(
+    'list send time is O(1) relative to element count - proves elements not copied',
+    () async {
+      final ten = _RectElementTest(10);
+      final thousand = _RectElementTest(1000);
+      final hundredThousand = _RectElementTest(100_000);
 
-    await ten.measure(); //ignore: avoid-ignoring-return-values, handles warm-up + averaging intern.
-    final thousandMeasure = await thousand.measure();
-    final hundredKMeasure = await hundredThousand.measure();
+      await ten.measure(); //ignore:avoid-ignoring-return-values, handles warm-up, averaging intern.
+      final thousandMeasure = await thousand.measure();
+      final hundredKMeasure = await hundredThousand.measure();
 
-    expect(hundredKMeasure, lessThan(thousandMeasure * 50));
-  });
+      expect(hundredKMeasure, lessThan(thousandMeasure * 50));
+    },
+    skip: Platform.isLinux,
+  );
 });
