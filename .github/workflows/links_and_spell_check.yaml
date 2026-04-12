@@ -22,7 +22,6 @@ jobs:
         uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
-          persist-credentials: false
 
       - name: 🔗 Link checker
         uses: tcort/github-action-markdown-link-check@v1.1.2
