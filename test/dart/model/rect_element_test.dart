@@ -68,15 +68,15 @@ void main() => group(RectElement, () {
   test('no copy in isolates outside of the list', () async {
     const rect = RectElement(height: 50, strokeWidth: 5, width: 100, x: 10, y: 20);
 
-    final recievePort = ReceivePort();
+    final receivePort = ReceivePort();
     final result = await Isolate.spawn(
       // ignore: avoid-type-casts, avoid-unsafe-collection-methods, it's just a test.,
       (a) => (a.first as SendPort).send(identityHashCode(a.elementAtOrNull(1))),
-      [recievePort.sendPort, rect],
+      [receivePort.sendPort, rect],
     );
     expect(result, isA<Isolate>());
-    expect(await recievePort.first, identityHashCode(rect));
-    recievePort.close();
+    expect(await receivePort.first, identityHashCode(rect));
+    receivePort.close();
   });
 
   test('no copy in isolates inside of the list', () async {
