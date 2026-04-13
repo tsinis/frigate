@@ -78,8 +78,8 @@ jobs:
           fail_ci_if_error: true
           working-directory: rust
           files: lcov.info
-          flags: rust-${{ runner.arch }}
-          name: rust-${{ runner.arch }}
+          flags: rust
+          name: rust
           override_branch: ${{ github.base_ref }}
           token: ${{ secrets.CODECOV_TOKEN }}
           verbose: true
