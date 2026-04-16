@@ -1,6 +1,6 @@
 {
-    "name": "frigatedraw_example",
-    "short_name": "frigatedraw_example",
+    "name": "frigatedraw",
+    "short_name": "frigatedraw",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

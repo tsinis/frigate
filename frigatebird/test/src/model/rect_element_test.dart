@@ -9,7 +9,7 @@ import 'package:test/test.dart';
 class _RectElementTest extends AsyncBenchmarkBase {
   _RectElementTest(this.count) : super('IsolateSend($count rects)');
   final int count;
-  late final List<RectElement> _rects;
+  List<RectElement> _rects = <RectElement>[];
 
   @override
   Future<void> setup() async => _rects = List.generate(

@@ -29,7 +29,7 @@ analyzer:
 
 dart_code_metrics:
   extends:
-    - package:dart_code_metrics_presets/flutter_all.yaml
+    - package:dart_code_metrics_presets/dart_all.yaml
   exclude:
     metrics:
       - "**/example/**"
@@ -112,76 +112,11 @@ dart_code_metrics:
     - prefer-commenting-pubspec-ignores: true
     - prefer-correct-topics: true
   rules:
-    # Flutter specific:
-    - avoid-returning-widgets:
-        allow-nullable: true
+    # Dart specific:
     - avoid-similar-names:
         similarity-threshold: 0.8
-        ignored-names:
-          - path
-    - prefer-widget-private-members:
-        ignore-static: true
-    - always-remove-listener: true
-    - avoid-border-all: true
-    - avoid-disposing-late-fields: true
-    - avoid-empty-setstate: true
-    - avoid-expanded-as-spacer: true
-    - avoid-flexible-outside-flex: true
-    - avoid-incorrect-image-opacity: true
-    - avoid-inherited-widget-in-initstate: true
-    - avoid-late-context: true
-    - avoid-missing-controller: true
-    - avoid-missing-image-alt: true
-    - avoid-mounted-in-setstate: true
-    - avoid-recursive-widget-calls: true
-    - avoid-shrink-wrap-in-lists: true
-    - avoid-single-child-column-or-row: true
-    - avoid-state-constructors: true
-    - avoid-stateless-widget-initialized-fields: true
-    - avoid-undisposed-instances: true
-    - avoid-unnecessary-gesture-detector: true
-    - avoid-unnecessary-overrides-in-state: true
-    - avoid-unnecessary-setstate: true
-    - avoid-unnecessary-stateful-widgets: true
-    - avoid-wrapping-in-padding: true
-    - check-for-equals-in-render-object-setters: true
-    - consistent-update-render-object: true
-    - dispose-fields: true
-    - pass-existing-future-to-future-builder: true
-    - pass-existing-stream-to-stream-builder: true
-    - prefer-action-button-tooltip: true
-    - prefer-align-over-container: true
-    - prefer-async-callback: true
-    - prefer-center-over-align: true
-    - prefer-compute-over-isolate-run: true
-    - prefer-const-border-radius: true
-    - prefer-constrained-box-over-container: true
-    - prefer-container: true
-    - prefer-correct-edge-insets-constructor: true
-    - prefer-correct-static-icon-provider: true
-    - prefer-dedicated-media-query-methods: true
-    - prefer-define-hero-tag: true
-    - prefer-extracting-callbacks: true
-    - prefer-for-loop-in-children: true
-    - prefer-padding-over-container: true
-    - prefer-single-setstate: true
-    - prefer-single-widget-per-file: true
-    - prefer-sized-box-square: true
-    - prefer-sliver-prefix: true
-    - prefer-spacing: true
-    - prefer-text-rich: true
-    - prefer-transform-over-container: true
-    - prefer-using-list-view: true
-    - prefer-void-callback: true
-    - proper-super-calls: true
-    - use-closest-build-context: true
-    - use-setstate-synchronously: true
-
-    # Dart specific:
     - avoid-non-ascii-symbols: true
-    - prefer-static-method:
-        ignore-public: true
-        ignore-private: false
+    - prefer-static-method: true
     # With configs:
     - avoid-collection-equality-checks: true
     - avoid-high-cyclomatic-complexity:
@@ -280,9 +215,9 @@ dart_code_metrics:
     - enum-constants-ordering: true
     - match-getter-setter-field-names: true
     - parameters-ordering:
-        default: 'last'
-        super: 'unset'
-        required: 'first'
+        default: "last"
+        super: "unset"
+        required: "first"
         ignore-overridden: false
         only-named: false
         alphabetize: true
@@ -578,24 +513,9 @@ linter:
     unnecessary_final: false # Conflicts with: prefer_final_locals.
     unnecessary_library_name: false # To prevent breaking changes for those who use this libs.
     lines_longer_than_80_chars: false # Conflicts with: formatter: page_width: 100.
-    diagnostic_describe_all_properties: false # TODO? Enable and fix this in the far-future.
     public_member_api_docs: false # TODO! After beta.
     prefer_double_quotes: false
     prefer_single_quotes: true # Conflicts with: prefer_double_quotes.
-
-    # Flutter specific:
-    avoid_equals_and_hash_code_on_mutable_classes: true
-    avoid_unnecessary_containers: true
-    avoid_web_libraries_in_flutter: true
-    no_logic_in_create_state: true
-    sized_box_for_whitespace: true
-    sized_box_shrink_expand: true
-    sort_child_properties_last: true
-    use_build_context_synchronously: true
-    use_colored_box: true
-    use_decorated_box: true
-    use_full_hex_values_for_flutter_colors: true
-    use_key_in_widget_constructors: true
 
     # Enabled:
     always_declare_return_types: true

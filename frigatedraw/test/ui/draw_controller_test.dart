@@ -14,7 +14,7 @@ void _handleNotification() {
 
 void main() {
   group('DrawController', () {
-    late DrawController controller;
+    DrawController controller = DrawController();
     const rect = RectElement(height: 50, width: 100, x: 10, y: 20);
 
     setUp(() {

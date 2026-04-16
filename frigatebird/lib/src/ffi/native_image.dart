@@ -15,7 +15,8 @@ import 'package:ffi/ffi.dart';
 /// Lifecycle: create once at image load, dispose when done. NEVER dispose while an export is in
 /// progress.
 final class NativeImage {
-  NativeImage._(this._pointer, this.height, this.length, this.width);
+  NativeImage._(this._pointer, this.height, this.length, this.width)
+    : bytes = _pointer.asTypedList(length);
 
   /// Copy [dartBytes] into native heap once. The source can then be GC'd.
   // ignore: avoid-non-empty-constructor-bodies, this factory constructor is the only way to create a NativeImage.
@@ -41,8 +42,7 @@ final class NativeImage {
   /// WHY asTypedList and not Uint8List.fromList: asTypedList creates a VIEW backed by native
   /// memory, not a copy. The native memory is stable (malloc, not GC-managed), so the view remains
   /// valid until [dispose].
-  // ignore: avoid-explicit-type-declaration, it's a self-documenting Uint8List view.
-  late final Uint8List bytes = _pointer.asTypedList(length);
+  final Uint8List bytes;
 
   final Pointer<Uint8> _pointer;
 

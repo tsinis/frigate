@@ -16,7 +16,7 @@ dependencies:
     path: ../frigatebird
 
 dev_dependencies:
-  dart_code_metrics_presets: ^2.30.0
+  dart_code_metrics_presets: any # Constrained in the workspace pubspec.yaml
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter

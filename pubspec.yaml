@@ -1,10 +1,10 @@
 name: frigate
-publish_to: none
 description: Workspace for frigate ecosystem
+publish_to: none
 maintainer: Roman Cinis
-homepage: https://tsin.is/frigate/
 repository: https://github.com/tsinis/frigate
 issue_tracker: https://github.com/tsinis/frigate/issues
+homepage: https://tsin.is/frigate/
 topics:
   - draw
   - image
