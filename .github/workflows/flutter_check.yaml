@@ -49,7 +49,7 @@ jobs:
           working-directory: frigatedraw
 
       - name: 🏜️ Publish dry-run
-        if: ${{ github.event_name == 'pull_request' }}
+        if: false # TODO(tsinis) before publish change to ${{ github.event_name == 'pull_request' }}
         run: dart pub publish --dry-run
 
       - name: 🧮 Check PANA score
