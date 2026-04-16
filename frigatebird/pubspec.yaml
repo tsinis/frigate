@@ -1,0 +1,21 @@
+version: 0.0.1
+name: frigatebird
+description: "Pure Dart FFI core for geometric image annotation with Rust-powered export."
+repository: https://github.com/tsinis/frigate_draw/tree/main/frigatebird
+
+resolution: workspace
+
+environment:
+  sdk: ^3.11.4
+
+dependencies:
+  ffi: ^2.2.0
+  hooks: ^1.0.2
+  native_toolchain_rust: ^1.0.3
+
+dev_dependencies:
+  benchmark_harness: ^2.4.0
+  dart_code_metrics_presets: ^2.30.0
+  ffigen: ^20.1.1
+  lints: any
+  test: any

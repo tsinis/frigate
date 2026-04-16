@@ -5,13 +5,13 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/rust_check.yaml"
-      - "rust/**/**.rs"
-      - "rust/*.toml"
+      - "frigatebird/rust/**/**.rs"
+      - "frigatebird/rust/*.toml"
   pull_request:
     paths:
       - ".github/workflows/rust_check.yaml"
-      - "rust/**/**.rs"
-      - "rust/*.toml"
+      - "frigatebird/rust/**/**.rs"
+      - "frigatebird/rust/*.toml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: rust
+        working-directory: frigatebird/rust
     strategy:
       matrix:
         runner: [ubuntu-latest, ubuntu-24.04-arm]
@@ -44,8 +44,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            rust/target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+            frigatebird/rust/target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('frigatebird/rust/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-${{ runner.arch }}-cargo-
 
       - name: 📦 Check Cargo dependencies
@@ -76,7 +76,7 @@ jobs:
         uses: codecov/codecov-action@v6.0.0
         with:
           fail_ci_if_error: true
-          working-directory: rust
+          working-directory: frigatebird/rust
           files: lcov.info
           flags: rust-${{ runner.arch }}
           name: rust-${{ runner.arch }}

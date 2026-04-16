@@ -1,0 +1,10 @@
+include: ../analysis_options.yaml
+
+dart_code_metrics:
+  extends:
+    - package:dart_code_metrics_presets/dart_all.yaml
+  rules:
+    - prefer-compute-over-isolate-run: false
+  pubspec-rules:
+    - prefer-publish-to-none: false
+    - add-resolution-workspace: true

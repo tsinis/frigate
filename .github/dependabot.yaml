@@ -3,7 +3,7 @@ enable-beta-ecosystems: true
 updates:
   # Maintain dependencies for Rust
   - package-ecosystem: "cargo"
-    directory: "/rust"
+    directory: "/frigatebird/rust"
     schedule:
       interval: "weekly"
       day: "sunday"
@@ -36,10 +36,13 @@ updates:
       - "github_actions"
     open-pull-requests-limit: 10
 
-  # Maintain dependencies for Dart package
+  # Maintain dependencies for Dart packages
   - package-ecosystem: "pub"
     versioning-strategy: increase
-    directory: "/"
+    directories:
+      - "/frigatebird"
+      - "/frigatedraw"
+      - "/frigatedraw/example"
     schedule:
       interval: "weekly"
       day: "sunday"
@@ -55,7 +58,7 @@ updates:
 
   # Maintain dependencies for Android example
   - package-ecosystem: "gradle"
-    directory: "/example/android"
+    directory: "/frigatedraw/example/android"
     schedule:
       interval: "weekly"
       day: "sunday"

@@ -158,6 +158,8 @@ esktop
 fbd
 ffi
 fifa
+frigatebird
+frigatedraw
 fileno
 filesystem
 flagcdn

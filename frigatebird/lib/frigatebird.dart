@@ -1,0 +1,11 @@
+// ignore_for_file: avoid-barrel-files
+export 'src/command/command.dart';
+export 'src/command/command_stack.dart';
+export 'src/command/element_command.dart';
+export 'src/ffi/export_backend.dart';
+export 'src/ffi/export_backend_stub.dart'
+    if (dart.library.ffi) 'src/ffi/export_backend_native.dart'
+    if (dart.library.js_interop) 'src/ffi/export_backend_web.dart';
+export 'src/model/draw_element.dart';
+export 'src/model/ffi_color.dart';
+export 'src/model/handle_position.dart';

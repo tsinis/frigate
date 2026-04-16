@@ -1,24 +1,28 @@
-version: 0.0.1
-name: frigate_draw
-description: "Geometric-first image editor/annotation canvas"
-repository: https://github.com/tsinis/frigate_draw
+name: frigate
+publish_to: none
+description: Workspace for frigate ecosystem
+maintainer: Roman Cinis
+homepage: https://tsin.is/frigate/
+repository: https://github.com/tsinis/frigate
+issue_tracker: https://github.com/tsinis/frigate/issues
+topics:
+  - draw
+  - image
+  - imageproc
+  - annotation
+  - rust
 
 environment:
   sdk: ^3.11.4
 
-dependencies:
-  ffi: ^2.2.0 # For FFI bindings and memory management.
-  flutter:
-    sdk: flutter
-  hooks: ^1.0.2 # For hook/build.dart integration (transitive dependency of native_toolchain_rust).
-  native_toolchain_rust: ^1.0.3  # For hook/build.dart integration.
+workspace:
+  - frigatebird
+  - frigatedraw
+  - frigatedraw/example
 
 dev_dependencies:
-  benchmark_harness: ^2.4.0
-  dart_code_metrics_presets: ^2.30.0
-  ffigen: ^20.1.1
-  flutter_lints: ^6.0.0
-  flutter_test:
-    sdk: flutter
-  lints: any
-  test: any
+  benchmark_harness: ^2.4.0 # From Google. Defines top level dependency constraint.
+  coverage: ^1.15.0 # From Google. Defines top level dependency constraint.
+  dart_code_metrics_presets: ^2.30.0 # DCM. Defines top level dependency constraint.
+  lints: ^6.1.0 # From Google. Defines top level dependency constraint.
+  test: ^1.30.0 # From Google. Defines top level dependency constraint.

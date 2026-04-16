@@ -1,4 +1,16 @@
-# frigate_draw
+# frigatedraw
+
+Dart workspace for geometric image annotation with Rust-powered export.
+
+## Packages
+
+| Package                       | Description                                                            |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| [`frigatebird`](frigatebird/) | Pure Dart FFI core — models, commands, Rust build hook, export backend |
+| [`frigatedraw`](frigatedraw/) | Flutter UI layer — `DrawEditor`, `DrawPainter`, `DrawController`       |
+
+User provides an image, draws geometric overlays (move, resize via 8 handles), and exports the final
+bitmap with overlays baked in. Preview is Flutter Canvas, export via Rust.
 
 ## Performance Architecture: Zero-Copy Export Pipeline
 
@@ -15,11 +27,11 @@ Dart SDK [GitHub Issue](https://github.com/dart-lang/sdk/issues/51632).
 The GC can relocate it at any time — passing its address to Rust is unsafe.
 There are only two escape routes, and neither gives us everything:
 
-| Approach                                     | No copy             | GC not frozen       |
-| -------------------------------------------- | ------------------- | ------------------- |
-| `malloc` + stable pointer **(our approach)** | ❌ one copy on load | ✅                  |
-| `isLeaf: true` FFI call (GC frozen)          | ✅                  | ❌ blocks UI thread |
-| **Both at once**                             | **impossible**      | **impossible**      |
+| Approach                                     | No copy              | GC not frozen        |
+| -------------------------------------------- | -------------------- | -------------------- |
+| `malloc` + stable pointer **(our approach)** | :x: one copy on load | :white_check_mark:   |
+| `isLeaf: true` FFI call (GC frozen)          | :white_check_mark:   | :x: blocks UI thread |
+| **Both at once**                             | **impossible**       | **impossible**       |
 
 **Our solution: `NativeImage`** — copy once into `malloc` on `loadImage()`,
 then pass only a stable `int address` on every subsequent `export()`.
@@ -34,7 +46,7 @@ sequenceDiagram
     D->>M: loadImage() — copy bytes once
     Note over M: address is stable forever<br/>(GC cannot move malloc)
 
-    D->>I: compute(_doExport, {imgAddress: int, ...})
+    D->>I: Isolate.run(() => _doExport({imgAddress: int, ...}))
     Note over D,I: int crosses isolate boundary<br/>zero bytes copied
 
     I->>R: Pointer.fromAddress(imgAddress)
@@ -55,10 +67,10 @@ flowchart LR
     D["Rust FFI\n(reads same buffer)"]
     E["JPEG Uint8List\n(GC heap)"]
 
-    A -->|"✅ copy once\nunavoidable"| B
-    B -->|"❌ no copy\njust an int"| C
-    C -->|"❌ no copy\nPointer.fromAddress"| D
-    D -->|"✅ copy once\nunavoidable"| E
+    A -->|"copy once\nunavoidable"| B
+    B -->|"no copy\njust an int"| C
+    C -->|"no copy\nPointer.fromAddress"| D
+    D -->|"copy once\nunavoidable"| E
 ```
 
 **Two copies total** — the minimum physically possible — regardless of image
@@ -68,7 +80,7 @@ size or how many times the user taps "Export".
 
 ### 2. Overlay elements: zero-copy isolate transfer via `@pragma('vm:deeply-immutable')`
 
-**The problem:** `compute()` runs in a background isolate. Sending a
+**The problem:** `Isolate.run()` runs in a background isolate. Sending a
 `List<RectElement>` normally triggers a full deep copy of every object.
 
 The naive fix is to serialize everything into a `Float64List` before sending.
@@ -87,26 +99,12 @@ flowchart TD
         A --> C
     end
 
-    D["List&lt;RectElement&gt;"] -->|"compute() — VM sends\nby reference, zero copy"| E["Background Isolate"]
+    D["List&lt;RectElement&gt;"] -->|"Isolate.run() — VM sends\nby reference, zero copy"| E["Background Isolate"]
 ```
 
 > **Rule:** every field in the entire graph must be a primitive or another
 > `@pragma('vm:deeply-immutable')` type. One mutable field anywhere breaks
 > the guarantee and forces the VM back to copying.
-
-**With vs without:**
-
-```mermaid
-flowchart LR
-    subgraph "Without pragma"
-        W1["List&lt;RectElement&gt;"] -->|"deep copy\nevery element"| W2["Isolate copy"]
-        W2 -->|"or manually serialize"| W3["Float64List\n(type-unsafe)"]
-    end
-
-    subgraph "With pragma ✅"
-        P1["List&lt;RectElement&gt;"] -->|"shared by pointer\nzero copy"| P2["Isolate\n(same objects)"]
-    end
-```
 
 ---
 
@@ -120,7 +118,7 @@ sequenceDiagram
     participant R as Rust
 
     U->>D: tap Export
-    D->>I: compute(_doExport, _ExportArgs)
+    D->>I: Isolate.run(() => _doExport(_ExportArgs))
     Note over D,I: rects — by reference, deeply-immutable, zero copy
     Note over D,I: imgAddress — stable malloc int, zero copy
 
