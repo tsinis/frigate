@@ -1,6 +1,7 @@
 version: 0.0.1
 name: frigatedraw
 description: "Geometric-first image editor/annotation canvas for Flutter."
+publish_to: none
 repository: https://github.com/tsinis/frigate_draw/tree/main/frigatedraw
 
 resolution: workspace
