@@ -26,7 +26,8 @@
 - [ ] 📝 Documentation
 - [ ] ⚙️ CI/CD or workflow change
 - [ ] 📦 Chore or dependency update
-- [ ] 🦀 Rust/FFI change
+- [ ] 🦀 Rust/FFI-only change
+- [ ] 🐦 Flutter-only change
 - [ ] 🎯 Dart-only change
 
 ## Testing
