@@ -16,7 +16,7 @@ import 'package:ffi/ffi.dart';
 /// progress.
 final class NativeImage {
   NativeImage._(this._pointer, this.height, this.length, this.width)
-      : bytes = _pointer.asTypedList(length);
+    : bytes = _pointer.asTypedList(length);
 
   /// Copy [dartBytes] into native heap once. The source can then be GC'd.
   // ignore: avoid-non-empty-constructor-bodies, this factory constructor is the only way to create a NativeImage.
