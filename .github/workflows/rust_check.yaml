@@ -36,6 +36,9 @@ jobs:
       - name: 🦀 Rust version
         run: rustc --version && cargo --version
 
+      - name: 🛠️ Install Rust components
+        run: rustup component add rustfmt clippy
+
       - name: 🗃️ Cache Cargo registry
         uses: actions/cache@v5.0.5
         with:
