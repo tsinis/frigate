@@ -4,16 +4,14 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/dart_workflow.yaml"
-      - "lib/dart/**/*.dart"
-      - "test/dart/**/*.dart"
-      - "pubspec.yaml"
+      - ".github/workflows/dart_check.yaml"
+      - "frigatebird/**/*.dart"
+      - "frigatebird/pubspec.yaml"
   pull_request:
     paths:
-      - ".github/dart_workflow.yaml"
-      - "lib/dart/**/*.dart"
-      - "test/dart/**/*.dart"
-      - "pubspec.yaml"
+      - ".github/workflows/dart_check.yaml"
+      - "frigatebird/**/*.dart"
+      - "frigatebird/pubspec.yaml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -24,6 +22,9 @@ jobs:
     name: 🎯 Dart Check
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frigatebird
 
     steps:
       - name: 📚 Git checkout
@@ -35,11 +36,7 @@ jobs:
           script: |
             const fs = require('fs').promises
             const f = 'pubspec.yaml', c = await fs.readFile(f, 'utf8')
-            await fs.writeFile(f, c.replace(/^.*flutter.*$/gm, m => '#' + m))
-            await fs.rm('lib/frigate_draw.dart', { recursive: true, force: true })
-            await fs.rm('test/src', { recursive: true, force: true })
-            await fs.rm('lib/src', { recursive: true, force: true })
-            await fs.rm('example', { recursive: true, force: true })
+            await fs.writeFile(f, c.replace(/^.*frigatedraw.*$/gm, m => '#' + m))
 
       - name: 🎯 Setup Dart
         uses: dart-lang/setup-dart@v1.7.2
@@ -55,6 +52,7 @@ jobs:
           fail-on-format: true
           format: true
           token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: frigatebird
 
       - name: 🧮 Check PANA score
         if: false # TODO(tsinis) before publish change to ${{ github.event_name == 'pull_request' }}
@@ -64,14 +62,14 @@ jobs:
           dart pub global run pana . --no-warning --exit-code-threshold 0
 
       - name: 🧪 Run tests with coverage # TODO(tsinis) - adjust --fail-under value.
-        run: dart run coverage:test_with_coverage test/dart --fail-under=1
+        run: dart run coverage:test_with_coverage --fail-under=1
 
       - name: 💯 Upload to Codecov
         uses: codecov/codecov-action@v6.0.0
         with:
           disable_file_fixes: true
           fail_ci_if_error: true
-          files: coverage/lcov.info
+          files: frigatebird/coverage/lcov.info
           flags: dart
           name: dart
           override_branch: ${{ github.base_ref }}

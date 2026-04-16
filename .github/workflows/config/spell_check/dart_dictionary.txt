@@ -158,6 +158,11 @@ esktop
 fbd
 ffi
 fifa
+frigatebird
+ltwh
+malloc
+rects
+frigatedraw
 fileno
 filesystem
 flagcdn

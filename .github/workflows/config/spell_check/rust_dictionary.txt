@@ -1,3 +1,8 @@
 # Keywords/terms specific to the Rust
 aarrggbb
+argb
 ffi
+pixmap
+rects
+skia
+xywh

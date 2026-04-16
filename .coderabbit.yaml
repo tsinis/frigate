@@ -50,11 +50,11 @@ reviews:
 
     # Language / scope tags.
     - label: "dart"
-      instructions: "PR touches Dart code (lib/dart, test/dart Dart files)."
+      instructions: "PR touches pure Dart code (frigatebird/ Dart files)."
     - label: "rust"
-      instructions: "PR touches Rust code (rust/ directory and/or .rs files)."
+      instructions: "PR touches Rust code (frigatebird/rust/ directory)."
     - label: "flutter"
-      instructions: "PR touches Dart code (lib/src, test/src Dart files)."
+      instructions: "PR touches Flutter code (frigatedraw/ Dart files)."
 
   path_filters:
     - "!**/*.lock"
@@ -64,7 +64,7 @@ reviews:
     - "!**/*.g.dart"
 
   path_instructions:
-    - path: "rust/src/**/*.rs"
+    - path: "frigatebird/rust/src/**/*.rs"
       instructions: >
         Review Rust code with extra care for idiomatic patterns and safety:
 
@@ -79,29 +79,29 @@ reviews:
           denormalizes using decoded image dimensions.
         - Color format is 0xAARRGGBB (alpha high byte, blue low byte).
 
-    - path: "lib/**/ffi/**/*.dart"
+    - path: "frigatebird/lib/**/ffi/**/*.dart"
       instructions: >
         FFI binding layer — the most safety-critical Dart code in the project.
 
-        - `@Native` annotations must use `@DefaultAsset('bindings.dart')`.
+        - `@Native` annotations must use `@DefaultAsset('package:frigatebird/src/ffi/bindings.dart')`.
         - FFI struct field order MUST match the Rust `#[repr(C)]` definition exactly.
         - Use `Size` (not `IntPtr`) for buffer lengths — maps to C `size_t` / Rust `usize`.
         - Mark trivial FFI functions with `isLeaf: true` only if they never call back into Dart.
         - No `dart:ffi` or `dart:io` imports in shared (non-conditional-import) files.
         - Conditional imports pattern: `dart.library.ffi` for native, `dart.library.js_interop` for web.
         - Caller MUST free Rust-allocated buffers via `free_bytes`. Check for null before use.
-        - Export runs in `compute()` isolate — pass `int address` across isolates, not Pointer.
+        - Export runs in `Isolate.run()` — pass `int address` across isolates, not Pointer.
 
-    - path: "lib/dart/**/*.dart"
+    - path: "frigatebird/lib/src/**/*.dart"
       instructions: >
-        Pure Dart domain models (no Flutter dependency). These cross the FFI boundary.
+        Pure Dart domain models and commands (no Flutter dependency). These cross the FFI boundary.
 
         - All coordinates are in document space (image pixels), never screen space.
         - Prefer these types: int, double, bool, String, Pointer, Float32x4, Float64x2, Int32x4.
         - FfiColor stores 0xAARRGGBB as a single int.
         - Command pattern: snapshot on drag start, commit on drag end.
 
-    - path: "lib/src/ui/**/*.dart"
+    - path: "frigatedraw/lib/src/ui/**/*.dart"
       instructions: >
         Flutter UI layer — widgets and painters.
 
@@ -112,7 +112,7 @@ reviews:
         - Use `getMaxScaleOnAxis()` for scale-aware deltas.
         - Minimum rect size: 10x10 pixels enforced during resize.
 
-    - path: "hook/build.dart"
+    - path: "frigatebird/hook/build.dart"
       instructions: >
         Dart build hook that invokes RustBuilder from native_toolchain_rust.
         This runs automatically during `flutter build`/`flutter run`.
@@ -122,9 +122,9 @@ reviews:
     - path: ".github/workflows/*.yaml"
       instructions: >
         GitHub Actions CI workflows. This project has multiple separate workflows:
-        dart_check.yaml (pure Dart analysis and tests for lib/dart + test/dart),
-        flutter_check.yaml (Flutter analysis and tests for lib/src + test/src),
-        rust_check.yaml (Cargo clippy, fmt, test, coverage in rust/).
+        dart_check.yaml (pure Dart analysis and tests for frigatebird/),
+        flutter_check.yaml (Flutter analysis and tests for frigatedraw/),
+        rust_check.yaml (Cargo clippy, fmt, test, coverage in frigatebird/rust/).
         Workflow files live directly in .github/workflows/ (not .github/).
         Check that path triggers match the corresponding source directories.
 
@@ -266,36 +266,41 @@ code_generation:
   docstrings:
     language: "en-US"
     path_instructions:
-      - path: "rust/src/**/*.rs"
+      - path: "frigatebird/rust/src/**/*.rs"
         instructions: >
           Use `///` doc comments (not `//!`). Include a `# Safety` section for
           any unsafe function. Explain what the function does in terms a Rust
           beginner would understand. Mention the Dart-side caller when relevant.
-      - path: "lib/**/*.dart"
+      - path: "frigatebird/lib/**/*.dart"
         instructions: >
           Use `///` dartdoc comments. For FFI bindings, document the memory
           contract (who allocates, who frees). For public API, include a brief
           example where useful. Reference the corresponding Rust function name
           for FFI wrappers.
+      - path: "frigatedraw/lib/**/*.dart"
+        instructions: >
+          Use `///` dartdoc comments. For Flutter widgets, document the key
+          parameters and behavior. Reference frigatebird types when they appear
+          in the public API.
   unit_tests:
     path_instructions:
-      - path: "rust/src/**/*.rs"
+      - path: "frigatebird/rust/src/**/*.rs"
         instructions: >
           Place tests in a `#[cfg(test)] mod tests` block at the bottom of
           the file. Use the tiny_png() helper for test images. Test both
           success and error paths (corrupt input -> panic -> null ByteBuffer).
           Assert on JPEG SOI marker bytes [0xFF, 0xD8] for output validation.
-      - path: "lib/dart/**/*.dart"
+      - path: "frigatebird/lib/src/**/*.dart"
         instructions: >
           Use `package:test/test.dart` (not flutter_test). Tests go in
-          test/dart/ mirroring lib/dart/ structure. Use `group()` with the
-          class type as the description. Test copyWith preserves unchanged
+          frigatebird/test/ mirroring lib/src/ structure. Use `group()` with
+          the class type as the description. Test copyWith preserves unchanged
           fields. Test immutability (original unchanged after copy).
-      - path: "lib/src/**/*.dart"
+      - path: "frigatedraw/lib/src/**/*.dart"
         instructions: >
-          Use `package:flutter_test/flutter_test.dart`. Tests go in test/src/
-          mirroring lib/src/ structure. For widget tests, use testWidgets.
-          For controller/logic tests, regular test() is fine.
+          Use `package:flutter_test/flutter_test.dart`. Tests go in
+          frigatedraw/test/ mirroring lib/src/ structure. For widget tests,
+          use testWidgets. For controller/logic tests, regular test() is fine.
 
 issue_enrichment:
   auto_enrich:
