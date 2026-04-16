@@ -14,9 +14,8 @@
   },
   {
     "label": "Dart: Test",
-    "command": "fvm",
+    "command": "dart",
     "args": [
-      "dart",
       "test"
     ],
     "cwd": "$ZED_WORKTREE_ROOT/frigatebird",
@@ -77,9 +76,8 @@
   },
   {
     "label": "Dart: Analyze",
-    "command": "fvm",
+    "command": "dart",
     "args": [
-      "dart",
       "analyze"
     ],
     "cwd": "$ZED_WORKTREE_ROOT/frigatebird",
