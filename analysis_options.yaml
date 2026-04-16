@@ -116,9 +116,7 @@ dart_code_metrics:
     - avoid-similar-names:
         similarity-threshold: 0.8
     - avoid-non-ascii-symbols: true
-    - prefer-static-method:
-        ignore-public: true
-        ignore-private: false
+    - prefer-static-method: true
     # With configs:
     - avoid-collection-equality-checks: true
     - avoid-high-cyclomatic-complexity:

@@ -39,7 +39,7 @@
 - [ ] Tested on macOS
 - [ ] Tested on Web
 - [ ] Tested on Windows
-- [ ] Unit tests added / updated
+- [ ] Unit tests added/updated
 
 ## Checklist
 

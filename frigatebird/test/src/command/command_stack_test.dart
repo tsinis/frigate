@@ -4,10 +4,10 @@ import 'package:frigatebird/src/model/draw_element.dart';
 import 'package:test/test.dart';
 
 void main() => group(CommandStack, () {
-  late CommandStack stack;
-  late List<DrawElement> elements;
   const original = RectElement(height: 50, width: 100, x: 0, y: 0);
   const moved = RectElement(height: 50, width: 100, x: 10, y: 20);
+  CommandStack stack = CommandStack();
+  List<DrawElement> elements = <DrawElement>[original];
 
   // ignore: prefer-extracting-function-callbacks, it's just a test.
   setUp(() {

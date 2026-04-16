@@ -36,7 +36,7 @@ updates:
       - "github_actions"
     open-pull-requests-limit: 10
 
-  # Maintain dependencies for Dart packages
+  # Maintain dependencies for Dart
   - package-ecosystem: "pub"
     versioning-strategy: increase
     directories:
@@ -56,7 +56,7 @@ updates:
       - "dart"
     open-pull-requests-limit: 5
 
-  # Maintain dependencies for Android example
+  # Maintain dependencies for Android (example app)
   - package-ecosystem: "gradle"
     directory: "/frigatedraw/example/android"
     schedule:
