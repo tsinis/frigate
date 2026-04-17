@@ -45,7 +45,11 @@ mod tests {
         }
         let pixmap = to_pixmap(&img);
         let back = from_pixmap(&pixmap);
-        assert_eq!(img.as_raw(), back.as_raw(), "opaque pixels must round-trip exactly");
+        assert_eq!(
+            img.as_raw(),
+            back.as_raw(),
+            "opaque pixels must round-trip exactly"
+        );
     }
 
     #[test]
@@ -106,13 +110,21 @@ mod tests {
         let mut img = RgbaImage::new(4, 4);
         for (i, p) in img.pixels_mut().enumerate() {
             // Spread across the input space: high/low alphas, mixed channels.
-            p.0 = [(i * 17) as u8, (i * 31) as u8, (i * 53) as u8, ((i * 13) % 256) as u8];
+            p.0 = [
+                (i * 17) as u8,
+                (i * 31) as u8,
+                (i * 53) as u8,
+                ((i * 13) % 256) as u8,
+            ];
         }
         let pixmap = to_pixmap(&img);
         for (src, got) in img.pixels().zip(pixmap.pixels()) {
             let Rgba([r, g, b, a]) = *src;
             let want = ColorU8::from_rgba(r, g, b, a).premultiply();
-            assert_eq!(*got, want, "bulk conversion must match per-pixel typed wrapper");
+            assert_eq!(
+                *got, want,
+                "bulk conversion must match per-pixel typed wrapper"
+            );
         }
     }
 }

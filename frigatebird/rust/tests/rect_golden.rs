@@ -1,9 +1,12 @@
 //! Golden image tests for rectangle rendering.
 //!
-//! Goldens compare the *RGBA buffer* (lossless, deterministic). These baselines lock in the
-//! current hand-rolled `stroke_rect_rgba` behavior so the upcoming `tiny-skia` migration
-//! (steps 1–5 of the plan) can be validated visually with a tolerance pass before the goldens
-//! are regenerated from the new renderer.
+//! Goldens compare the *RGBA buffer* (lossless, deterministic) and run identically across
+//! macOS / ubuntu-latest / ubuntu-24.04-arm — tiny-skia is pure-CPU Rust with no arch-specific
+//! intrinsics, so byte-exact comparison holds on every platform CI exercises.
+//!
+//! `assert_golden` also enforces a no-op guard: every test's rendered output must differ from
+//! the unmodified base image. A test whose rect ends up entirely off-screen (or a renderer
+//! that silently does nothing) panics with an actionable message instead of passing trivially.
 //!
 //! First-run workflow:
 //!   1. `cargo test --test rect_golden` — panics for each missing golden with the new file path.
@@ -44,7 +47,15 @@ fn make_rect(
     outline_thickness: u32,
     outline_color_argb: u32,
 ) -> FfiElement {
-    make_rect_with_fill(x, y, width, height, outline_thickness, outline_color_argb, 0)
+    make_rect_with_fill(
+        x,
+        y,
+        width,
+        height,
+        outline_thickness,
+        outline_color_argb,
+        0,
+    )
 }
 
 fn make_rect_with_fill(
@@ -188,8 +199,8 @@ fn golden_rect_clipped_to_image_edges() {
 fn golden_rect_thickness_clamped_to_min_side() {
     let base = base_image();
     let (w, h) = (base.width() as f64, base.height() as f64);
-    // Stroke much larger than the rect's shortest side — `stroke_rect_rgba` auto-clamps to
-    // min(clipped_w, clipped_h), effectively filling the rect.
+    // Stroke much larger than the rect's shortest side — `draw_rect_on_pixmap` auto-clamps
+    // to `min(width, height)`, so the stroke spans the entire rect (centered on each edge).
     let rect = make_rect(
         0.10 * w,
         0.10 * h,

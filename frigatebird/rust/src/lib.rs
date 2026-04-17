@@ -4,7 +4,7 @@ use std::slice;
 
 use tiny_skia::{Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
 
-pub mod canvas;
+mod canvas;
 mod ffi_element;
 pub mod io;
 pub mod text;
@@ -299,6 +299,12 @@ fn element_text<'b>(element: &FfiElement, text_buffer: &'b [u8]) -> Result<&'b s
     std::str::from_utf8(&text_buffer[start..end]).map_err(|_| RenderError::BadUtf8Text)
 }
 
+/// Draws a single rectangle from an [`FfiElement`] onto an `RgbaImage` in place.
+///
+/// Convenience helper for callers (currently the integration tests) that already hold an
+/// `RgbaImage` rather than a `Pixmap`. Round-trips through `Pixmap` once per call — for hot
+/// loops use `render_image` (the FFI entry point) which hoists the conversion across all
+/// elements via a lazy `Surface` state machine.
 pub fn draw_rect_element(img: &mut image::RgbaImage, e: &FfiElement) {
     let style: RectStyle = e.into();
     // Skip the conversion round-trip when neither fill nor stroke would paint visible pixels.
@@ -414,20 +420,23 @@ fn render_jpeg_with_rects(
 
 /// Visual style for a single rectangle. Pulled out of `draw_rect_on_pixmap`'s argument list
 /// so the signature stays readable as we add more shape parameters.
-pub struct RectStyle {
-    pub outline_thickness: u32,
-    pub outline_color_argb: u32,
-    pub fill_color_argb: u32,
+///
+/// Internal — the FFI exposes per-shape fields directly via [`FfiElement`] / [`FfiRectElement`];
+/// no consumer outside this crate constructs `RectStyle` by hand.
+pub(crate) struct RectStyle {
+    pub(crate) outline_thickness: u32,
+    pub(crate) outline_color_argb: u32,
+    pub(crate) fill_color_argb: u32,
     /// Corner radius in pixels. 0 = sharp corners (axis-aligned rect). Auto-clamped to
     /// `min(width, height) / 2` at render time so the path always remains valid.
-    pub corner_radius_px: u32,
+    pub(crate) corner_radius_px: u32,
 }
 
 impl RectStyle {
     /// `true` when at least one of fill or stroke would deposit visible pixels. Used by
     /// callers to skip the to_pixmap conversion entirely for "invisible" rects (zero-alpha
     /// fill + zero thickness or zero-alpha outline) — the conversion round-trip is O(pixels).
-    pub fn paints_anything(&self) -> bool {
+    pub(crate) fn paints_anything(&self) -> bool {
         let has_outline = self.outline_thickness > 0 && argb_alpha(self.outline_color_argb) > 0;
         let has_fill = argb_alpha(self.fill_color_argb) > 0;
         has_outline || has_fill
