@@ -515,12 +515,17 @@ fn draw_rect_on_pixmap(
     }
 
     if style.outline_thickness > 0 && argb_alpha(style.outline_color_argb) > 0 {
-        // Clamp stroke width to the rect's shortest side. Two reasons:
-        //   1. Preserves the legacy "huge thickness fills the rect" semantics so callers
-        //      porting from the old renderer don't suddenly see strokes ballooning past the
-        //      rect bounds.
-        //   2. Bounds the work tiny-skia does building stroked geometry — `u32::MAX`
-        //      thickness from Dart can't trigger pathological allocations.
+        // Clamp stroke width to the rect's shortest side. tiny-skia centers strokes on the
+        // path edge, so an unclamped giant stroke would build huge geometry that mostly
+        // bleeds outside the rect (and well past the pixmap bounds for thicknesses near
+        // `u32::MAX`). The clamp keeps the stroked-path work bounded — Dart can pass any
+        // u32 here and Rust completes in constant time.
+        //
+        // Note: this differs from the legacy hand-rolled renderer, which derived four
+        // outline bars from the rect interior; that version filled the rect inward when the
+        // stroke met the side, while tiny-skia's centered stroke also bleeds outward
+        // (~half the stroke width on each side). Use `fill_color_argb` instead of an
+        // "outline thicker than the rect" trick for filled-rect intent.
         let max_stroke = rect.width().min(rect.height());
         let stroke_width = (style.outline_thickness as f32).min(max_stroke);
         if stroke_width > 0.0 {

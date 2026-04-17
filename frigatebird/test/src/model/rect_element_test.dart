@@ -57,6 +57,28 @@ void main() => group(RectElement, () {
     expect(updated.cornerRadius, 8, reason: 'omitted corner radius carries over from base');
   });
 
+  test('toString includes every visually-significant field', () {
+    const rect = RectElement(
+      blur: 3,
+      cornerRadius: 7,
+      fillColor: FfiColor(0xFF_AA_BB_CC),
+      height: 50,
+      outlineColor: FfiColor(0xFF_11_22_33),
+      outlineThickness: 4,
+      rotation: 30,
+      width: 100,
+      x: 10,
+      y: 20,
+    );
+    expect(
+      rect.toString(),
+      'RectElement(x: 10.0, y: 20.0, width: 100.0, height: 50.0, '
+      'fillColor: FfiColor(0xFFAABBCC), outlineColor: FfiColor(0xFF112233), '
+      'outlineThickness: 4, rotation: 30, blur: 3, cornerRadius: 7)',
+      reason: 'toString must round-trip every styling and geometry field for debug printing',
+    );
+  });
+
   test('negative cornerRadius is rejected at construction (debug assert)', () {
     // Without this guard, a negative cornerRadius silently wraps to a huge u32 on the FFI
     // wire (via Dart's Uint32 marshaling of a negative int) — Rust then clamps it to a pill
@@ -66,7 +88,7 @@ void main() => group(RectElement, () {
     expect(
       () => RectElement(cornerRadius: -1, height: 50, width: 100, x: 0, y: 0),
       throwsA(isA<AssertionError>()),
-      reason: 'negative cornerRadius makes no semantic sense and would silently desync UI/export',
+      reason: 'negative cornerRadius would silently cause UI vs export divergence',
     );
   });
 

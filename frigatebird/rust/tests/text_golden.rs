@@ -14,6 +14,7 @@
 //!   2. Inspect the generated PNGs in `tests/golden/`, then commit.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use ab_glyph::FontRef;
 use image::{Rgba, RgbaImage};
@@ -21,6 +22,16 @@ use image::{Rgba, RgbaImage};
 use frigate::{FfiElement, element_type};
 
 const TEST_FONT_BYTES: &[u8] = include_bytes!("../../test/assets/RobotoMono-VariableFont_wght.ttf");
+
+/// Build a temp-file path that's unique per process **and** per call within a process. Stops
+/// concurrent `cargo test` runs (CI + local dev, or two CI matrix entries on the same node)
+/// from racing on the same on-disk filename, and prevents in-binary parallel tests from
+/// stomping on each other if two ever picked the same logical name.
+fn unique_tmp(name: &str) -> PathBuf {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("frigate_{}_{n}_{name}", std::process::id()))
+}
 
 fn assets_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -139,8 +150,7 @@ fn golden_translucent_text() {
 fn render_image_end_to_end_writes_jpeg() {
     use std::ffi::CString;
 
-    let out = std::env::temp_dir().join("frigate_render_image_smoke.jpg");
-    let _ = std::fs::remove_file(&out);
+    let out = unique_tmp("smoke.jpg");
 
     let img_path = CString::new(assets_dir().join("paint.jpg").to_str().unwrap()).unwrap();
     let font_path = CString::new(
@@ -181,7 +191,7 @@ fn render_image_end_to_end_writes_jpeg() {
 fn render_image_rejects_text_without_font() {
     use std::ffi::CString;
 
-    let out = std::env::temp_dir().join("frigate_render_image_no_font.jpg");
+    let out = unique_tmp("no_font.jpg");
     let img_path = CString::new(assets_dir().join("paint.jpg").to_str().unwrap()).unwrap();
     let out_path = CString::new(out.to_str().unwrap()).unwrap();
 
@@ -226,7 +236,7 @@ fn render_image_rejects_nonexistent_source_image() {
     use std::ffi::CString;
 
     let bad_img = CString::new("/definitely/not/here.jpg").unwrap();
-    let out = std::env::temp_dir().join("frigate_render_image_bad.jpg");
+    let out = unique_tmp("bad_source.jpg");
     let out_path = CString::new(out.to_str().unwrap()).unwrap();
 
     let code = unsafe {
@@ -249,7 +259,7 @@ fn render_image_rejects_unsupported_output_extension() {
     use std::ffi::CString;
 
     let img_path = CString::new(assets_dir().join("paint.jpg").to_str().unwrap()).unwrap();
-    let out = std::env::temp_dir().join("frigate_render_image_bad.tiff");
+    let out = unique_tmp("bad_ext.tiff");
     let out_path = CString::new(out.to_str().unwrap()).unwrap();
 
     let code = unsafe {
@@ -268,14 +278,15 @@ fn render_image_rejects_unsupported_output_extension() {
 }
 
 #[test]
-fn render_image_mixed_rect_text_rect_does_not_panic_or_leak() {
+fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
     // Exercises the Surface state machine across element-type transitions
-    // (Rgba -> Pixmap -> Rgba -> Pixmap -> Rgba). If any conversion drops or duplicates a
-    // draw, this fails to encode a JPEG.
+    // (Rgba -> Pixmap -> Rgba -> Pixmap -> Rgba). One rect carries a non-zero corner radius
+    // so the rounded-path branch in `draw_rect_on_pixmap` is reached through the FFI in
+    // addition to the rect_golden suite's direct unit coverage. If any conversion drops or
+    // duplicates a draw, this fails to encode a JPEG.
     use std::ffi::CString;
 
-    let out = std::env::temp_dir().join("frigate_render_image_mixed.jpg");
-    let _ = std::fs::remove_file(&out);
+    let out = unique_tmp("mixed.jpg");
 
     let img_path = CString::new(assets_dir().join("paint.jpg").to_str().unwrap()).unwrap();
     let font_path = CString::new(
@@ -289,9 +300,10 @@ fn render_image_mixed_rect_text_rect_does_not_panic_or_leak() {
 
     let text_buffer = b"Frigate";
     let elements = [
-        make_rect_element(20.0, 20.0, 100.0, 80.0, 4, 0xFF_FF_00_00),
+        // Rounded rect — exercises the rounded-path branch through the FFI.
+        make_rect_element(20.0, 20.0, 100.0, 80.0, 4, 0xFF_FF_00_00, 12),
         make_text_element(0, text_buffer.len() as u32),
-        make_rect_element(60.0, 60.0, 120.0, 90.0, 3, 0xFF_00_00_FF),
+        make_rect_element(60.0, 60.0, 120.0, 90.0, 3, 0xFF_00_00_FF, 0),
     ];
 
     let code = unsafe {
@@ -321,6 +333,7 @@ fn make_rect_element(
     height: f64,
     outline_thickness: u32,
     outline_color_argb: u32,
+    corner_radius_px: u32,
 ) -> FfiElement {
     FfiElement {
         element_type: element_type::RECTANGLE,
@@ -335,7 +348,7 @@ fn make_rect_element(
         blur: 0,
         text_offset: 0,
         text_length: 0,
-        shape_param: 0,
+        shape_param: corner_radius_px,
     }
 }
 

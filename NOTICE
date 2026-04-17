@@ -87,7 +87,18 @@ flutter (Flutter SDK)
 LICENSE TEXTS
 ================================================================================
 
-Full license texts are available at:
+The full text of every license referenced above is checked in under `licenses/`
+at the repository root, satisfying Apache License 2.0 §4(a) (which requires
+shipping a copy of the License with any redistribution) and the matching
+preserve-this-notice clauses in MIT and BSD-3-Clause:
+
+  - licenses/APACHE-2.0.txt   (covers `ab_glyph`; selectable license for `image`)
+  - licenses/MIT.txt          (selected license for `image`; `native_toolchain_rust`)
+  - licenses/BSD-3-CLAUSE.txt (covers `tiny-skia`, `tiny-skia-path`; the project
+                               itself, `ffi`, `hooks`, and the Flutter SDK ship
+                               under variants of the same license text)
+
+Online references for cross-checking:
 
   - BSD-3-Clause:  https://opensource.org/licenses/BSD-3-Clause
   - MIT:           https://opensource.org/licenses/MIT
