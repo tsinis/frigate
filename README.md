@@ -132,3 +132,62 @@ sequenceDiagram
 
 The source image and overlay data reach Rust with **zero redundant copies**
 after the initial `loadImage()` call.
+
+---
+
+## Testing
+
+Each package is tested independently. Prerequisites: [FVM](https://fvm.app) (pins the Flutter / Dart
+SDK), the Rust toolchain from `frigatebird/rust/rust-toolchain.toml`, and optionally
+[DCM](https://dcm.dev/) for the extra lints.
+
+### `frigatebird` — pure Dart
+
+```bash
+cd frigatebird
+
+fvm dart analyze                                    # analyzer (lints)
+fvm dart test                                       # unit tests + FFI integration tests
+fvm dart format .                                   # formatter (no-op on clean code)
+```
+
+The very first `fvm dart test` invocation triggers the build hook and compiles the Rust crate for
+the host platform — later runs are cached. No extra Rust command needed to exercise the FFI path
+from Dart.
+
+### `frigatedraw` — Flutter UI layer
+
+```bash
+cd frigatedraw
+
+fvm flutter analyze                                 # analyzer (lints)
+fvm flutter test                                    # widget + controller tests
+fvm dart format .                                   # formatter (no-op on clean code)
+```
+
+Run the example app interactively:
+
+```bash
+cd frigatedraw/example
+fvm flutter run                                     # pick a device from the Flutter chooser
+```
+
+### `frigatebird/rust` — Rust crate
+
+```bash
+cd frigatebird/rust
+
+cargo test                                          # unit tests + golden image tests
+cargo clippy --all-targets --all-features -- -D warnings   # strict lints
+```
+
+Golden images live in `tests/golden/`. On the very first run (or after intentionally regenerating)
+each `golden_*` test **panics with a clear message and writes the golden to disk** — inspect the
+PNG visually, commit it, and re-run. Subsequent runs pixel-compare exactly (tolerance 0).
+
+### Workspace-wide quality gate with [DCM](https://dcm.dev/), optional but recommended
+
+```bash
+# from the repo root
+dcm analyze .                                        # dart_code_metrics across both packages
+```
