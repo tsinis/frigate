@@ -32,11 +32,20 @@ fn golden_path(name: &str) -> PathBuf {
         .join(name)
 }
 
+/// Decodes `paint.jpg` once per test binary and hands out fresh clones — JPEG decode is
+/// the slowest thing in this suite, and the no-op guard in `assert_golden` calls this
+/// helper on every test, multiplying the cost. `clone()` is O(pixels) but vastly cheaper
+/// than re-decoding.
 fn base_image() -> RgbaImage {
-    let path = assets_dir().join("paint.jpg");
-    image::open(&path)
-        .unwrap_or_else(|_| panic!("failed to decode {path:?}"))
-        .into_rgba8()
+    static CACHE: std::sync::OnceLock<RgbaImage> = std::sync::OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let path = assets_dir().join("paint.jpg");
+            image::open(&path)
+                .unwrap_or_else(|_| panic!("failed to decode {path:?}"))
+                .into_rgba8()
+        })
+        .clone()
 }
 
 fn make_rect(

@@ -306,8 +306,14 @@ fn element_text<'b>(element: &FfiElement, text_buffer: &'b [u8]) -> Result<&'b s
 /// loops use `render_image` (the FFI entry point) which hoists the conversion across all
 /// elements via a lazy `Surface` state machine.
 pub fn draw_rect_element(img: &mut image::RgbaImage, e: &FfiElement) {
+    // Skip the to_pixmap/from_pixmap round-trip when the rect can't paint anything visible:
+    // either the geometry is invalid (zero/negative/NaN dims — `Rect::from_xywh` would reject
+    // it inside `draw_rect_on_pixmap`, but only after the conversion) or the style has neither
+    // a visible fill nor a visible stroke.
+    if !is_positive_finite(e.width) || !is_positive_finite(e.height) {
+        return;
+    }
     let style: RectStyle = e.into();
-    // Skip the conversion round-trip when neither fill nor stroke would paint visible pixels.
     if !style.paints_anything() {
         return;
     }
@@ -595,6 +601,14 @@ fn argb_to_tiny_color(argb: u32) -> tiny_skia::Color {
 #[inline]
 fn argb_alpha(argb: u32) -> u8 {
     argb_unpack(argb)[3]
+}
+
+/// `true` when `v` is a finite, strictly positive `f64`. Rejects NaN, ±Inf, zero, and any
+/// negative value — the four shapes of "this geometry would silently misrender" that we
+/// short-circuit at the FFI boundary.
+#[inline]
+fn is_positive_finite(v: f64) -> bool {
+    v.is_finite() && v > 0.0
 }
 
 #[cfg(test)]
@@ -1451,6 +1465,38 @@ mod tests {
                     "pixel idx={i} channel={c} has partial value {v} — sharp-corner rect leaked AA"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn draw_rect_element_short_circuits_on_non_positive_or_nan_dims() {
+        // Geometry guard: `draw_rect_on_pixmap` itself rejects these via `Rect::from_xywh`,
+        // but only AFTER an O(pixels) Pixmap round-trip — and that round-trip is *lossy at
+        // sub-opaque alphas* (premul/demul rounding). A translucent baseline lets us detect
+        // whether the conversion ran: any drift means we paid for the conversion the guard
+        // is supposed to skip. With the guard in place, every byte stays bit-identical.
+        let original = image::RgbaImage::from_pixel(4, 4, image::Rgba([200, 100, 50, 64]));
+        for (w, h) in [
+            (0.0, 4.0),
+            (4.0, 0.0),
+            (-1.0, 4.0),
+            (4.0, -1.0),
+            (f64::NAN, 4.0),
+        ] {
+            let mut img = original.clone();
+            let mut el = make_rect_element();
+            el.width = w;
+            el.height = h;
+            // Visible style — the only thing keeping the draw path alive is the geometry.
+            el.outline_thickness = 1;
+            el.outline_color_argb = 0xFF_FF_00_00;
+            el.fill_color_argb = 0xFF_00_FF_00;
+            draw_rect_element(&mut img, &el);
+            assert_eq!(
+                img.as_raw(),
+                original.as_raw(),
+                "(w={w}, h={h}) must skip the round-trip; sub-opaque pixels would drift otherwise"
+            );
         }
     }
 

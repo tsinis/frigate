@@ -38,8 +38,12 @@ image
   Authors:    The image-rs Developers
   Homepage:   https://github.com/image-rs/image
   Used for:   PNG / JPEG decode + encode at the FFI boundary.
-  Notice:     Upstream MIT LICENSE ships without a dedicated copyright line;
-              attribution is to the project authors as listed in `Cargo.toml`.
+  Notice:     Upstream `image` ships an MIT LICENSE without the canonical
+              "Copyright (c) <year> <holder>" line; attribution is to the
+              project authors as listed in its `Cargo.toml`. The MIT text in
+              `licenses/MIT.txt` is the standard MIT template (sourced from
+              `native_toolchain_rust`'s LICENSE) — both grants are functionally
+              equivalent.
 
 ab_glyph
   License:    Apache-2.0
@@ -70,7 +74,7 @@ hooks
   Homepage:   https://github.com/dart-lang/native/tree/main/pkgs/hooks
   Used for:   Dart build-hook integration that drives the Rust toolchain.
 
-native_toolchain_rust 1.0.3
+native_toolchain_rust
   License:    MIT
   Copyright:  Copyright (c) 2025 Gregory Conrad
   Homepage:   https://github.com/GregoryConrad/native_toolchain_rust
