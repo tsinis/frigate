@@ -15,6 +15,14 @@ import 'package:ffi/ffi.dart';
 /// Lifecycle: create once at image load, dispose when done. Reading [address] or [bytes] after
 /// [dispose] throws [StateError] — a silent use-after-free footgun would be much worse than a
 /// loud crash. NEVER dispose while an export is in progress.
+///
+/// **Dangling-alias caveat:** the dispose-throws guard fires *at the getter call site only*. If
+/// a caller has already captured the [Uint8List] returned by [bytes] or the [int] returned by
+/// [address], that captured reference is *not* invalidated by [dispose] — the `Uint8List` still
+/// aliases freed heap memory, and the `int` still holds the old numeric address. Using either
+/// after [dispose] is undefined behavior and the VM cannot detect it. Rule of thumb: treat every
+/// `bytes`/`address` read as valid only for the duration of a single synchronous span; never
+/// hold one across an `await` or an isolate hop without also keeping the [NativeImage] alive.
 final class NativeImage {
   NativeImage._(this._pointer, this.height, this.length, this.width)
     : _bytes = _pointer.asTypedList(length);
@@ -45,7 +53,9 @@ final class NativeImage {
   ///
   /// WHY asTypedList and not Uint8List.fromList: asTypedList creates a VIEW backed by native
   /// memory, not a copy. The native memory is stable (malloc, not GC-managed), so the view
-  /// remains valid until [dispose]. After dispose, reading throws [StateError].
+  /// remains valid until [dispose]. Calling this getter after [dispose] throws [StateError] —
+  /// but a `Uint8List` already obtained from a prior call is *not* re-checked; it keeps
+  /// aliasing the (now freed) native buffer and must be dropped before [dispose] runs.
   Uint8List get bytes {
     _throwIfDisposed();
 
@@ -55,8 +65,11 @@ final class NativeImage {
   /// Raw pointer address as int — safe to send between isolates.
   ///
   /// WHY int and not Pointer: `Pointer` cannot cross isolate boundaries. int can. Reconstruct with
-  /// `Pointer.fromAddress(address)`. After dispose, reading throws [StateError] so a caller can
-  /// never accidentally hand a freed pointer to Rust.
+  /// `Pointer.fromAddress(address)`. Calling this getter after [dispose] throws [StateError] so
+  /// the read itself can't hand a freed pointer to Rust — but an `int` *already captured* from a
+  /// previous call is just a scalar and silently goes stale when [dispose] frees the heap. Keep
+  /// the [NativeImage] alive for the entire span you're using the address (across isolate
+  /// messages in particular).
   int get address {
     _throwIfDisposed();
 
@@ -64,7 +77,9 @@ final class NativeImage {
   }
 
   /// Free native memory. Idempotent — calling twice is safe. After this, [address] and [bytes]
-  /// throw [StateError].
+  /// throw [StateError] at the getter call site. The throw does *not* retroactively invalidate
+  /// any `Uint8List` view or `int` address the caller captured earlier; the caller must drop
+  /// those references themselves before calling [dispose].
   void dispose() {
     if (_isDisposed) return;
     _isDisposed = true;
@@ -72,8 +87,6 @@ final class NativeImage {
   }
 
   void _throwIfDisposed() {
-    if (_isDisposed) {
-      throw StateError('NativeImage used after dispose');
-    }
+    if (_isDisposed) throw StateError('NativeImage used after dispose');
   }
 }

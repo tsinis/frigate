@@ -1,7 +1,7 @@
 /// Public, centralized constants for draw/render operations.
 ///
-/// Sealed (via `sealed`) with a private constructor so it cannot be instantiated or
-/// subclassed — callers reference the static fields directly, tests import the same names.
+/// Sealed class that cannot be instantiated or subclassed — callers reference
+/// the static fields directly, tests import the same names.
 sealed class DrawConstants {
   /// Minimum output-image quality accepted by `renderImage`. Values below are clamped up.
   ///

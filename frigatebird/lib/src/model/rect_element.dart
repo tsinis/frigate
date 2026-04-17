@@ -9,7 +9,7 @@ final class RectElement extends DrawElement {
     required super.y,
     super.blur,
     // Transparent fill by default — a rectangle overlay should show the image through it. Text
-    // is the opposite: fill colour IS the text colour, so the base default of opaque-black fits.
+    // is the opposite: fill color IS the text color, so the base default of opaque-black fits.
     super.fillColor = FfiColor.transparent,
     // Black outline by default — a rectangle is useless without a visible outline.
     super.outlineColor = FfiColor.black,

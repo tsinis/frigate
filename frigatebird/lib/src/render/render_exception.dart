@@ -16,7 +16,7 @@ sealed class RenderException implements Exception {
   final int code;
 
   /// Picks the right [RenderException] subtype for a wire `code`. Unknown codes fall back to
-  /// [UnknownRenderException] so a newer Rust binary that returns an unrecognised error still
+  /// [UnknownRenderException] so a newer Rust binary that returns an unrecognized error still
   /// surfaces usefully (without requiring a matching Dart library update).
   static RenderException fromCode(int code) => switch (code) {
     1 => const ImageDecodeException(),

@@ -1,16 +1,16 @@
 # Keywords/terms specific to the Rust
+# (clippy / cargo / rustup / rustfmt / rustc etc. come from the bundled `rust` cspell dict.)
 aarrggbb
 argb
-clippy
 conv
 ffi
 freeable
 imageproc
+libms
 pixmap
 rasterizer
 rects
 roboto
-rustup
 scanline
 skia
 unrotated

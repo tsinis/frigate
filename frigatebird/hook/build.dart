@@ -27,10 +27,8 @@ bool _isMissingTargetStdlib(String message) =>
     message.contains('target may not be installed');
 
 String _rustupHint() =>
-    'Rust build hint: this hook already invokes cargo via rustup, so Homebrew cargo is not the '
-    'main issue here. If iOS or iOS simulator builds fail with "can\'t find crate for std", '
-    'the pinned rustup toolchain is usually incomplete or corrupted for that target.\n'
-    'Try: rustup toolchain install 1.94.1 &&\n'
+    'Avoid `brew` or any other non-rustup installation, use version defined in rust-toolchain.toml'
+    '\nFor example: rustup toolchain install 1.94.1 &&\n'
     'rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios '
     '--toolchain 1.94.1-aarch64-apple-darwin &&\n'
     'rm -rf frigatebird/rust/target';

@@ -34,7 +34,7 @@ dart_code_metrics:
     - prefer-static-class:
         exclude:
           - test/**
-          - lib/**/constants.dart
+          - lib/**/*constants.dart
           - "**/ffi/**"
     - avoid-collection-mutating-methods:
         exclude:

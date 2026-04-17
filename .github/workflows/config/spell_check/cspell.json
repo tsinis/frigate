@@ -15,6 +15,7 @@
   "dictionaries": [
     "en_US",
     "softwareTerms",
+    "rust",
     "dart_dictionary",
     "rust_dictionary",
     "nicknames_dictionary",
