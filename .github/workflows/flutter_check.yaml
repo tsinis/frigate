@@ -63,7 +63,7 @@ jobs:
         run: sudo chown -R runner:runner $(pwd) && sudo chmod -R 777 $(pwd)
 
       - name: 🔬 Run Flutter tests with coverage
-        run: flutter test test/ --coverage --no-pub
+        run: flutter test --coverage --no-pub
 
       - name: 💯 Upload to Codecov
         uses: codecov/codecov-action@v6.0.0

@@ -146,9 +146,9 @@ SDK), the Rust toolchain from `frigatebird/rust/rust-toolchain.toml`, and option
 ```bash
 cd frigatebird
 
-fvm dart analyze                                    # analyzer (lints)
-fvm dart test                                       # unit tests + FFI integration tests
-fvm dart format .                                   # formatter (no-op on clean code)
+fvm dart analyze                                      # analyzer (lints)
+fvm dart test                                         # unit tests + FFI integration tests
+fvm dart format --output=none --set-exit-if-changed . # formatter check (exits nonzero on drift)
 ```
 
 The very first `fvm dart test` invocation triggers the build hook and compiles the Rust crate for
@@ -160,9 +160,9 @@ from Dart.
 ```bash
 cd frigatedraw
 
-fvm flutter analyze                                 # analyzer (lints)
-fvm flutter test                                    # widget + controller tests
-fvm dart format .                                   # formatter (no-op on clean code)
+fvm flutter analyze                                   # analyzer (lints)
+fvm flutter test                                      # widget + controller tests
+fvm dart format --output=none --set-exit-if-changed . # formatter check (exits nonzero on drift)
 ```
 
 Run the example app interactively:

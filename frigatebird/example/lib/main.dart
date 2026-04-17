@@ -1,5 +1,7 @@
 // ignore_for_file: avoid_print, example code intentionally logs to stdout.
 
+import 'dart:io' show exitCode;
+
 import 'package:frigatebird/frigatebird.dart';
 
 /// Renders a single red rectangle onto `input.jpg` and writes the result to `output.jpg`.
@@ -22,5 +24,6 @@ Future<void> main() async {
     print('wrote output.jpg');
   } on RenderException catch (error) {
     print('render failed: $error');
+    exitCode = 1;
   }
 }

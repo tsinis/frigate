@@ -7,6 +7,7 @@
 //! crate that would save meaningful code here. Adding one (e.g. `fs_err` for path-attached
 //! errors) is easy later if we ever need to ship a user-visible I/O error with the failing path.
 
+use std::io::Write;
 use std::path::Path;
 
 use image::{DynamicImage, RgbaImage};
@@ -65,7 +66,11 @@ pub fn write_image(path: &Path, img: &RgbaImage, image_quality: u8) -> Result<()
             let mut writer = std::io::BufWriter::new(file);
             image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, image_quality)
                 .encode_image(&rgb)
-                .map_err(|_| IoError::Encode)
+                .map_err(|_| IoError::Encode)?;
+            // BufWriter's Drop impl silently swallows write errors. Flush explicitly so a
+            // full-disk / permission-denied at the final buffer-drain surfaces as IoError::Write
+            // instead of a zero-byte "success".
+            writer.flush().map_err(|_| IoError::Write)
         }
         _ => Err(IoError::UnsupportedFormat),
     }

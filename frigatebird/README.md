@@ -43,8 +43,7 @@ If an iOS simulator build fails with `can't find crate for 'std'` even though th
 `rustup target list --installed`, treat that as a broken or incomplete rustup toolchain install for
 the pinned version in `rust-toolchain.toml`, not as a normal Flutter cache issue.
 
-Recommended recovery:
-
+<!-- keep specific version in sync with rust/rust-toolchain.toml + hook/build.dart, for example: -->
 ```sh
 export PATH="$HOME/.cargo/bin:$PATH"
 rustup toolchain install 1.94.1

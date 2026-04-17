@@ -10,12 +10,14 @@ class TextAnnotationDialog extends StatefulWidget {
 }
 
 class _TextAnnotationDialogState extends State<TextAnnotationDialog> {
+  // `_textController` is the single source of truth for the "text" field. We subscribe to it via
+  // `ListenableBuilder` on the Render button only, so typing a character doesn't rebuild the two
+  // sliders below. Sliders still call `setState` because their label widgets live in this build.
   final _textController = TextEditingController(text: 'Frigate');
-  String _textValue = 'Frigate';
   double _fontSize = 48;
   double _rotation = 0;
 
-  String get _trimmedText => _textValue.trim();
+  String get _trimmedText => _textController.text.trim();
 
   void _handleSubmit() {
     final text = _trimmedText;
@@ -30,8 +32,6 @@ class _TextAnnotationDialogState extends State<TextAnnotationDialog> {
     Navigator.of(context).pop(params);
   }
 
-  void _handleTextChanged(String value) => setState(() => _textValue = value);
-
   void _handleTextSubmitted(String _) => _handleSubmit();
 
   @override
@@ -44,9 +44,12 @@ class _TextAnnotationDialogState extends State<TextAnnotationDialog> {
   Widget build(BuildContext context) => AlertDialog(
     actions: [
       TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-      FilledButton(
-        onPressed: _trimmedText.isEmpty ? null : _handleSubmit,
-        child: const Text('Render'),
+      ListenableBuilder(
+        builder: (_, _) => FilledButton(
+          onPressed: _trimmedText.isEmpty ? null : _handleSubmit,
+          child: const Text('Render'),
+        ),
+        listenable: _textController,
       ),
     ],
     content: Column(
@@ -56,7 +59,6 @@ class _TextAnnotationDialogState extends State<TextAnnotationDialog> {
           autofocus: true,
           controller: _textController,
           decoration: const InputDecoration(labelText: 'Text to render'),
-          onChanged: _handleTextChanged,
           onSubmitted: _handleTextSubmitted,
         ),
         const SizedBox(height: 16),

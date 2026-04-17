@@ -45,7 +45,14 @@ pub unsafe extern "C" fn export_image(
     image_quality: u8,
 ) -> ByteBuffer {
     let img_bytes = unsafe { slice::from_raw_parts(img_ptr, img_len) };
-    let rects = unsafe { slice::from_raw_parts(rects_ptr, rects_count) };
+    // `slice::from_raw_parts` requires a non-null, properly aligned pointer even when `len == 0`
+    // (Rust reference: "data must be non-null and aligned even for zero-length slices"). Handle
+    // the empty case explicitly so a null/dangling `rects_ptr` with `rects_count == 0` is UB-free.
+    let rects: &[FfiRectElement] = if rects_count == 0 {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(rects_ptr, rects_count) }
+    };
     // catch_unwind: panicking across an FFI boundary is undefined behavior.
     let result =
         std::panic::catch_unwind(|| render_jpeg_with_rects(img_bytes, rects, image_quality));
