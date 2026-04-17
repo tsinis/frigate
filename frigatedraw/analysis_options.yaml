@@ -3,14 +3,14 @@ include: ../analysis_options.yaml
 dart_code_metrics:
   extends:
     - package:dart_code_metrics_presets/flutter_all.yaml
+  pubspec-rules:
+    - prefer-publish-to-none: true # TODO!
   rules:
-    - avoid-duplicate-cascades:
-        exclude:
-          - "**/ui/painter**"
     - avoid-returning-widgets:
         allow-nullable: true
     - prefer-widget-private-members:
         ignore-static: true
+    - avoid-duplicate-cascades: true
     - always-remove-listener: true
     - avoid-border-all: true
     - avoid-disposing-late-fields: true

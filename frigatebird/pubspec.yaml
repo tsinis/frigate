@@ -6,7 +6,7 @@ repository: https://github.com/tsinis/frigate_draw/tree/main/frigatebird
 resolution: workspace
 
 environment:
-  sdk: ^3.11.4
+  sdk: ^3.11.5
 
 dependencies:
   ffi: ^2.2.0
@@ -16,6 +16,5 @@ dependencies:
 dev_dependencies:
   benchmark_harness: ^2.4.0
   dart_code_metrics_presets: any # Constrained in the workspace pubspec.yaml
-  ffigen: ^20.1.1
   lints: ^6.1.0
   test: any # Constrained in the workspace pubspec.yaml
