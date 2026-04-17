@@ -18,9 +18,10 @@ void main() => group('createExportBackend', () {
   test('export() before loadImage throws StateError', () {
     final backend = createExportBackend();
     // _NativeExportBackend.export throws BEFORE returning any Future, so this is a sync
-    // throw — expect (not expectLater) is the right matcher.
+    // throw — expect (not expectLater) is the right matcher. The closure looks like an
+    // un-awaited async call to the lints, but the throw fires before any Future exists.
     expect(
-      // ignore: avoid-ignoring-return-values, the throw is the assertion target.
+      // ignore: avoid-async-call-in-sync-function, throw fires before the Future exists.
       () => backend.export(rects: const []),
       throwsA(isA<StateError>()),
       reason: 'callers must loadImage() before export()',
