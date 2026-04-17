@@ -1,13 +1,12 @@
 //! `image::RgbaImage` <-> `tiny_skia::Pixmap` conversion at the drawing-pipeline boundary.
 //!
 //! `image::RgbaImage` stores **non-premultiplied** RGBA. `tiny_skia::Pixmap` stores
-//! **premultiplied** RGBA. We do the channel math here so callers (and tests) never have to.
-//!
-//! Premultiplication formula: `c' = round(c * a / 255)` per color channel. Reverse:
-//! `c = round(c' * 255 / a)` when `a > 0`, else 0.
+//! **premultiplied** RGBA. The channel math is delegated to tiny-skia's typed wrappers
+//! (`ColorU8::premultiply` / `PremultipliedColorU8::demultiply`) so we don't reinvent it and
+//! we automatically inherit any future tiny-skia rounding tweaks.
 
 use image::{Rgba, RgbaImage};
-use tiny_skia::Pixmap;
+use tiny_skia::{ColorU8, Pixmap};
 
 /// Build a Pixmap from an RgbaImage, premultiplying alpha as we go.
 ///
@@ -16,13 +15,9 @@ use tiny_skia::Pixmap;
 pub fn to_pixmap(img: &RgbaImage) -> Pixmap {
     let (w, h) = img.dimensions();
     let mut pixmap = Pixmap::new(w, h).expect("non-zero image dimensions");
-    let dst = pixmap.data_mut();
-    for (i, Rgba([r, g, b, a])) in img.pixels().enumerate() {
-        let off = i * 4;
-        dst[off] = premul_channel(*r, *a);
-        dst[off + 1] = premul_channel(*g, *a);
-        dst[off + 2] = premul_channel(*b, *a);
-        dst[off + 3] = *a;
+    for (src, dst) in img.pixels().zip(pixmap.pixels_mut()) {
+        let Rgba([r, g, b, a]) = *src;
+        *dst = ColorU8::from_rgba(r, g, b, a).premultiply();
     }
     pixmap
 }
@@ -30,35 +25,12 @@ pub fn to_pixmap(img: &RgbaImage) -> Pixmap {
 /// Build an RgbaImage from a Pixmap, unpremultiplying alpha.
 pub fn from_pixmap(pixmap: &Pixmap) -> RgbaImage {
     let (w, h) = (pixmap.width(), pixmap.height());
-    let src = pixmap.data();
     let mut out = RgbaImage::new(w, h);
-    for (i, px) in out.pixels_mut().enumerate() {
-        let off = i * 4;
-        let a = src[off + 3];
-        px.0 = [
-            unpremul_channel(src[off], a),
-            unpremul_channel(src[off + 1], a),
-            unpremul_channel(src[off + 2], a),
-            a,
-        ];
+    for (src, dst) in pixmap.pixels().iter().zip(out.pixels_mut()) {
+        let demul = src.demultiply();
+        dst.0 = [demul.red(), demul.green(), demul.blue(), demul.alpha()];
     }
     out
-}
-
-#[inline]
-fn premul_channel(c: u8, a: u8) -> u8 {
-    // (c * a + 127) / 255 — the +127 gives proper rounding without floats.
-    let p = u32::from(c) * u32::from(a) + 127;
-    ((p + (p >> 8)) >> 8) as u8
-}
-
-#[inline]
-fn unpremul_channel(c: u8, a: u8) -> u8 {
-    if a == 0 {
-        return 0;
-    }
-    // c * 255 / a, saturated to 255 in case of rounding overshoot.
-    ((u32::from(c) * 255 + u32::from(a) / 2) / u32::from(a)).min(255) as u8
 }
 
 #[cfg(test)]
@@ -110,5 +82,37 @@ mod tests {
         let img = RgbaImage::new(7, 5);
         let pixmap = to_pixmap(&img);
         assert_eq!((pixmap.width(), pixmap.height()), (7, 5));
+    }
+
+    /// Alpha must round-trip exactly for **every** alpha value, regardless of the source
+    /// channel. The conversion never touches the alpha byte directly — it's stored as-is and
+    /// read back as-is — so any drift here would mean a structural bug in the tiny-skia
+    /// wrapper integration, not a quantization artifact.
+    #[test]
+    fn alpha_channel_round_trips_exactly_for_all_alpha_values() {
+        for a in 0u8..=255 {
+            let img = RgbaImage::from_pixel(1, 1, Rgba([200, 100, 50, a]));
+            let back = from_pixmap(&to_pixmap(&img));
+            assert_eq!(back.get_pixel(0, 0).0[3], a, "alpha drift at a={a}");
+        }
+    }
+
+    /// `to_pixmap` must produce byte-identical output to constructing each pixel directly via
+    /// `ColorU8::from_rgba(...).premultiply()` — i.e. the bulk conversion is exactly the
+    /// per-pixel typed-wrapper conversion, with no extra rounding step in the iteration loop.
+    /// Catches accidental introduction of intermediate float math or alternate constants.
+    #[test]
+    fn to_pixmap_matches_per_pixel_tiny_skia_premultiply() {
+        let mut img = RgbaImage::new(4, 4);
+        for (i, p) in img.pixels_mut().enumerate() {
+            // Spread across the input space: high/low alphas, mixed channels.
+            p.0 = [(i * 17) as u8, (i * 31) as u8, (i * 53) as u8, ((i * 13) % 256) as u8];
+        }
+        let pixmap = to_pixmap(&img);
+        for (src, got) in img.pixels().zip(pixmap.pixels()) {
+            let Rgba([r, g, b, a]) = *src;
+            let want = ColorU8::from_rgba(r, g, b, a).premultiply();
+            assert_eq!(*got, want, "bulk conversion must match per-pixel typed wrapper");
+        }
     }
 }

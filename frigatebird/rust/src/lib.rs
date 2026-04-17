@@ -258,10 +258,8 @@ unsafe fn render_image_inner(
     for element in elements {
         match element.element_type {
             element_type::RECTANGLE => {
-                let has_outline =
-                    element.outline_thickness > 0 && argb_alpha(element.outline_color_argb) > 0;
-                let has_fill = argb_alpha(element.fill_color_argb) > 0;
-                if !has_outline && !has_fill {
+                let style: RectStyle = element.into();
+                if !style.paints_anything() {
                     continue;
                 }
                 draw_rect_on_pixmap(
@@ -270,12 +268,7 @@ unsafe fn render_image_inner(
                     element.y,
                     element.width,
                     element.height,
-                    &RectStyle {
-                        outline_thickness: element.outline_thickness,
-                        outline_color_argb: element.outline_color_argb,
-                        fill_color_argb: element.fill_color_argb,
-                        corner_radius_px: element.shape_param,
-                    },
+                    &style,
                 );
             }
             element_type::TEXT => {
@@ -307,26 +300,13 @@ fn element_text<'b>(element: &FfiElement, text_buffer: &'b [u8]) -> Result<&'b s
 }
 
 pub fn draw_rect_element(img: &mut image::RgbaImage, e: &FfiElement) {
-    // Both outline AND fill no-op? Skip the conversion round-trip entirely.
-    let has_outline = e.outline_thickness > 0 && argb_alpha(e.outline_color_argb) > 0;
-    let has_fill = argb_alpha(e.fill_color_argb) > 0;
-    if !has_outline && !has_fill {
+    let style: RectStyle = e.into();
+    // Skip the conversion round-trip when neither fill nor stroke would paint visible pixels.
+    if !style.paints_anything() {
         return;
     }
     let mut pixmap = canvas::to_pixmap(img);
-    draw_rect_on_pixmap(
-        &mut pixmap,
-        e.x,
-        e.y,
-        e.width,
-        e.height,
-        &RectStyle {
-            outline_thickness: e.outline_thickness,
-            outline_color_argb: e.outline_color_argb,
-            fill_color_argb: e.fill_color_argb,
-            corner_radius_px: e.shape_param,
-        },
-    );
+    draw_rect_on_pixmap(&mut pixmap, e.x, e.y, e.width, e.height, &style);
     *img = canvas::from_pixmap(&pixmap);
 }
 
@@ -387,13 +367,21 @@ fn draw_text_element(
     text::render_text_overlay(img, font, &params);
 }
 
-fn argb_to_rgba(argb: u32) -> image::Rgba<u8> {
-    image::Rgba([
+/// Single source of truth for `0xAARRGGBB` -> `[R, G, B, A]` byte unpacking. `argb_to_rgba`
+/// and `argb_to_tiny_color` both wrap this so a future packed-color format change touches
+/// one place.
+#[inline]
+fn argb_unpack(argb: u32) -> [u8; 4] {
+    [
         ((argb >> 16) & 0xFF) as u8,
         ((argb >> 8) & 0xFF) as u8,
         (argb & 0xFF) as u8,
         ((argb >> 24) & 0xFF) as u8,
-    ])
+    ]
+}
+
+fn argb_to_rgba(argb: u32) -> image::Rgba<u8> {
+    image::Rgba(argb_unpack(argb))
 }
 
 /// Bytes-in/bytes-out path used by `export_image`. Rect coordinates are pixel-space — no
@@ -408,24 +396,10 @@ fn render_jpeg_with_rects(
         .into_rgba8();
 
     // One conversion pair per export, regardless of rect count — much cheaper than the
-    // per-rect round-trip we use in `draw_rect_element` (step 3 hoists that one too).
+    // per-rect round-trip in `draw_rect_element`.
     let mut pixmap = canvas::to_pixmap(&img);
     for r in rects {
-        // The slim `FfiRectElement` (export path) carries no fill — it's outline-only by
-        // contract. Pass fill=0 (transparent) so the fill branch short-circuits.
-        draw_rect_on_pixmap(
-            &mut pixmap,
-            r.x,
-            r.y,
-            r.width,
-            r.height,
-            &RectStyle {
-                outline_thickness: r.outline_thickness,
-                outline_color_argb: r.outline_color_argb,
-                fill_color_argb: 0,
-                corner_radius_px: r.shape_param,
-            },
-        );
+        draw_rect_on_pixmap(&mut pixmap, r.x, r.y, r.width, r.height, &r.into());
     }
     let img = canvas::from_pixmap(&pixmap);
 
@@ -447,6 +421,40 @@ pub struct RectStyle {
     /// Corner radius in pixels. 0 = sharp corners (axis-aligned rect). Auto-clamped to
     /// `min(width, height) / 2` at render time so the path always remains valid.
     pub corner_radius_px: u32,
+}
+
+impl RectStyle {
+    /// `true` when at least one of fill or stroke would deposit visible pixels. Used by
+    /// callers to skip the to_pixmap conversion entirely for "invisible" rects (zero-alpha
+    /// fill + zero thickness or zero-alpha outline) — the conversion round-trip is O(pixels).
+    pub fn paints_anything(&self) -> bool {
+        let has_outline = self.outline_thickness > 0 && argb_alpha(self.outline_color_argb) > 0;
+        let has_fill = argb_alpha(self.fill_color_argb) > 0;
+        has_outline || has_fill
+    }
+}
+
+impl From<&FfiElement> for RectStyle {
+    fn from(e: &FfiElement) -> Self {
+        Self {
+            outline_thickness: e.outline_thickness,
+            outline_color_argb: e.outline_color_argb,
+            fill_color_argb: e.fill_color_argb,
+            corner_radius_px: e.shape_param,
+        }
+    }
+}
+
+impl From<&FfiRectElement> for RectStyle {
+    /// The slim export struct carries no fill — it's outline-only by contract.
+    fn from(r: &FfiRectElement) -> Self {
+        Self {
+            outline_thickness: r.outline_thickness,
+            outline_color_argb: r.outline_color_argb,
+            fill_color_argb: 0,
+            corner_radius_px: r.shape_param,
+        }
+    }
 }
 
 /// Fill (if `fill_color_argb` alpha > 0) and/or stroke an axis-aligned rectangle onto `pixmap`
@@ -566,17 +574,13 @@ fn build_rect_path(rect: Rect, corner_radius_px: u32) -> tiny_skia::Path {
 }
 
 fn argb_to_tiny_color(argb: u32) -> tiny_skia::Color {
-    tiny_skia::Color::from_rgba8(
-        ((argb >> 16) & 0xFF) as u8,
-        ((argb >> 8) & 0xFF) as u8,
-        (argb & 0xFF) as u8,
-        argb_alpha(argb),
-    )
+    let [r, g, b, a] = argb_unpack(argb);
+    tiny_skia::Color::from_rgba8(r, g, b, a)
 }
 
 #[inline]
 fn argb_alpha(argb: u32) -> u8 {
-    ((argb >> 24) & 0xFF) as u8
+    argb_unpack(argb)[3]
 }
 
 #[cfg(test)]
@@ -816,15 +820,10 @@ mod tests {
     }
 
     #[test]
-    fn export_image_negative_corner_radius_wraps_to_pill() {
-        // **DOCUMENTS A SILENT BUG.** Dart's `cornerRadius: -5` is marshaled as a `Uint32`
-        // wire field, becoming `0xFFFFFFFB`. Rust reads it as a positive u32, then clamps to
-        // `min(w, h) / 2` — the result is a pill, not the sharp rect the user likely wanted.
-        // The Dart-side preview, in contrast, takes the `radius > 0` branch as false and
-        // renders sharp corners. Preview-vs-export divergence.
-        //
-        // This test pins the current Rust behavior. The fix lives on the Dart side (assert
-        // non-negative in the constructor) — see the matching Dart test.
+    fn export_image_with_max_u32_corner_radius_clamps_safely() {
+        // Dart-side assertion blocks negative cornerRadius (which would marshal to u32::MAX-ish
+        // via `Uint32` 2's-complement wrapping), but a direct-FFI caller could still pass it.
+        // Rust must clamp to `min(w, h) / 2` and render a pill without panicking.
         let png = tiny_red_png();
         let rect = FfiRectElement {
             x: 0.0,
@@ -833,14 +832,8 @@ mod tests {
             height: 4.0,
             outline_thickness: 0,
             outline_color_argb: 0,
-            shape_param: u32::MAX, // simulates Dart's wrapped negative cornerRadius
+            shape_param: u32::MAX,
         };
-        // Add a fill so we can observe the rounded geometry.
-        let with_fill = FfiRectElement {
-            outline_thickness: 0,
-            ..rect
-        };
-        let _ = with_fill; // silence unused — exercising the path is what matters here
         let buf = unsafe { export_image(png.as_ptr(), png.len(), &rect, 1, 80) };
         assert!(
             !buf.data.is_null(),
@@ -927,6 +920,36 @@ mod tests {
             fill_color_argb,
             corner_radius_px: 0,
         }
+    }
+
+    // --- RectStyle::paints_anything (the visibility short-circuit) ----------------------------
+
+    #[test]
+    fn paints_anything_is_false_for_zero_alpha_fill_and_zero_thickness() {
+        // The "totally invisible rect" — every alpha channel is zero, no stroke band.
+        assert!(!style(0, 0x00_FF_FF_FF, 0x00_FF_FF_FF).paints_anything());
+    }
+
+    #[test]
+    fn paints_anything_is_false_for_zero_alpha_outline_with_no_fill() {
+        // Stroke thickness > 0 alone is not enough — outline alpha must also be > 0.
+        assert!(!style(5, 0x00_FF_00_00, 0).paints_anything());
+    }
+
+    #[test]
+    fn paints_anything_is_true_for_visible_outline_only() {
+        assert!(style(1, 0xFF_00_FF_00, 0).paints_anything());
+    }
+
+    #[test]
+    fn paints_anything_is_true_for_fill_only_with_zero_thickness() {
+        assert!(style(0, 0, 0xFF_FF_00_00).paints_anything());
+    }
+
+    #[test]
+    fn paints_anything_is_true_for_translucent_fill() {
+        // Even alpha=1 counts as "would paint something".
+        assert!(style(0, 0, 0x01_FF_00_00).paints_anything());
     }
 
     #[test]
