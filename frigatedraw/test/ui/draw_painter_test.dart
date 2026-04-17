@@ -116,6 +116,28 @@ void main() => group(DrawPainter, () {
       );
     });
 
+    test('non-positive width or height is silently skipped (mirrors Rust export)', () {
+      // Rust's `draw_rect_on_pixmap` short-circuits on `width <= 0 || height <= 0`. Without
+      // the matching guard in the painter, Flutter would happily render a flipped rect from
+      // a negative-width `Rect.fromLTWH` — a preview-vs-export divergence the user would
+      // hit mid-drag. The original CodeRabbit hypothesis (that `clamp` would throw) is
+      // false because `Rect.shortestSide` is magnitude-based, but the divergence is real.
+      final canvas = _RecordingCanvas();
+      const cases = <RectElement>[
+        RectElement(cornerRadius: 8, height: 10, width: -10, x: 0, y: 0),
+        RectElement(cornerRadius: 8, height: -10, width: 10, x: 0, y: 0),
+        RectElement(cornerRadius: 8, height: 0, width: 10, x: 0, y: 0),
+        RectElement(cornerRadius: 8, height: 10, width: 0, x: 0, y: 0),
+        RectElement(height: 0, width: 0, x: 0, y: 0),
+      ];
+      const DrawPainter(cases).paint(canvas, const Size(100, 100));
+      expect(
+        (canvas.drawRectCount, canvas.drawRRectCount),
+        (0, 0),
+        reason: 'every non-positive-dimension rect must be skipped without painting',
+      );
+    });
+
     test('drawRRect radius is clamped to half the shortest side (preview matches export)', () {
       final canvas = _RecordingCanvas();
       // Rect is 100x40, so the largest visually-meaningful radius is 20. We pass 9999 to

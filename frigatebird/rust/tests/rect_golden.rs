@@ -299,9 +299,9 @@ fn golden_rect_translucent_fill_with_opaque_outline() {
 fn golden_rect_stacked_overlapping() {
     let base = base_image();
     let (w, h) = (base.width() as f64, base.height() as f64);
-    // Three overlapping rects in different colors — verifies draw order (later writes win,
-    // since the current renderer overwrites pixels rather than alpha-blending) and that the
-    // outline-only semantics leave each rect's interior visible to subsequent overdraws.
+    // Three overlapping rects in different colors — verifies draw order (later writes win
+    // for opaque src-over compositing, which is what tiny-skia does by default) and that
+    // the outline-only semantics leave each rect's interior visible to subsequent overdraws.
     let rects = [
         make_rect(0.10 * w, 0.10 * h, 0.50 * w, 0.50 * h, 3, 0xFFFF0000),
         make_rect(0.30 * w, 0.30 * h, 0.50 * w, 0.50 * h, 3, 0xFF00FF00),
