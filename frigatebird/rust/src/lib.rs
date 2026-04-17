@@ -450,7 +450,7 @@ pub struct RectStyle {
 }
 
 /// Fill (if `fill_color_argb` alpha > 0) and/or stroke an axis-aligned rectangle onto `pixmap`
-/// using `tiny-skia`'s anti-aliased path renderer.
+/// using `tiny-skia`'s path renderer.
 ///
 /// Visual contract:
 /// - Fill is painted only when `argb_alpha(fill_color_argb) > 0` — fully transparent
@@ -461,6 +461,10 @@ pub struct RectStyle {
 ///   (up to `u32::MAX`) can never blow up tiny-skia's stroked-path geometry.
 /// - `width <= 0`, `height <= 0`, or any non-finite coordinate → no draw.
 /// - Fill is drawn before stroke, so the stroke sits on top of the fill (Flutter convention).
+/// - **Anti-aliasing is on only for rounded corners.** Sharp-corner rectangles render with
+///   pixel-aligned edges (no half-pixel bleed into neighboring pixels); rounded corners
+///   require AA to look smooth on the curves. This matches what Flutter does when its `Paint`
+///   `isAntiAlias` is left at the default for axis-aligned `drawRect` vs `drawRRect`.
 fn draw_rect_on_pixmap(
     pixmap: &mut Pixmap,
     x: f64,
@@ -477,12 +481,13 @@ fn draw_rect_on_pixmap(
         return;
     };
     let path = build_rect_path(rect, style.corner_radius_px);
+    let anti_alias = style.corner_radius_px > 0;
 
     // Fill first, stroke on top — matches Flutter's draw order so preview and export agree.
     if argb_alpha(style.fill_color_argb) > 0 {
         let mut paint = Paint::default();
         paint.set_color(argb_to_tiny_color(style.fill_color_argb));
-        paint.anti_alias = true;
+        paint.anti_alias = anti_alias;
         pixmap.fill_path(
             &path,
             &paint,
@@ -504,7 +509,7 @@ fn draw_rect_on_pixmap(
         if stroke_width > 0.0 {
             let mut paint = Paint::default();
             paint.set_color(argb_to_tiny_color(style.outline_color_argb));
-            paint.anti_alias = true;
+            paint.anti_alias = anti_alias;
             let stroke = Stroke {
                 width: stroke_width,
                 ..Stroke::default()
@@ -1034,6 +1039,135 @@ mod tests {
                 corner_radius_px: u32::MAX,
             },
         );
+    }
+
+    // --- AA on/off contract: sharp corners must be pixel-perfect, rounded corners must AA ----
+
+    /// Fill the pixmap with a sharp-corner red rectangle at INTEGER coords. Every pixel inside
+    /// must be exactly red (255,0,0,255), every pixel outside must be untouched. No fractional
+    /// alpha anywhere — that's the whole point of the AA-off branch.
+    #[test]
+    fn sharp_corner_rect_paints_pixel_aligned_fill_without_aa_bleed() {
+        let mut pixmap = opaque_black_pixmap(16, 16);
+        draw_rect_on_pixmap(&mut pixmap, 4.0, 4.0, 8.0, 8.0, &style(0, 0, 0xFF_FF_00_00));
+        // Inside the rect: every pixel exactly red.
+        for y in 4..12 {
+            for x in 4..12 {
+                let off = (y * 16 + x) * 4;
+                let px = &pixmap.data()[off..off + 4];
+                assert_eq!(
+                    px,
+                    &[255, 0, 0, 255],
+                    "inside ({x},{y}) should be solid red, got {px:?}"
+                );
+            }
+        }
+        // Just outside the rect: every pixel exactly the original black. Without disabling AA,
+        // tiny-skia would smear partial-alpha red onto the boundary pixels (e.g. (3,4), (12,4)).
+        for &(x, y) in &[(3, 4), (3, 8), (12, 4), (12, 11), (4, 3), (11, 12), (8, 3), (8, 12)] {
+            let off = (y * 16 + x) * 4;
+            let px = &pixmap.data()[off..off + 4];
+            assert_eq!(
+                px,
+                &[0, 0, 0, 255],
+                "boundary-adjacent pixel ({x},{y}) must remain background — no AA bleed"
+            );
+        }
+    }
+
+    /// 1px sharp-corner stroke at integer coords must paint exactly the perimeter pixels at
+    /// full opacity, leaving everything else unchanged.
+    #[test]
+    fn sharp_corner_rect_pixel_perfect_one_px_stroke() {
+        let mut pixmap = opaque_black_pixmap(8, 8);
+        draw_rect_on_pixmap(&mut pixmap, 1.0, 1.0, 6.0, 6.0, &style(1, 0xFF_00_FF_00, 0));
+        for y in 0..8 {
+            for x in 0..8 {
+                let off = (y * 8 + x) * 4;
+                let px = &pixmap.data()[off..off + 4];
+                // Cells along the inset rect's perimeter — tiny-skia centers a 1px stroke on
+                // the path edge, so the stroke band lands at integer pixel rows/cols 0..=1
+                // and 6..=7 along each side. Inner cells (2..=5 on both axes) stay black.
+                let inner = (2..=5).contains(&x) && (2..=5).contains(&y);
+                if inner {
+                    assert_eq!(
+                        px,
+                        &[0, 0, 0, 255],
+                        "interior ({x},{y}) of a 1px stroke must remain background"
+                    );
+                } else {
+                    // No AA: every channel is integer (no partial alpha values like 64 or 192).
+                    assert!(
+                        px[0] == 0 && (px[1] == 0 || px[1] == 255) && px[2] == 0,
+                        "perimeter pixel ({x},{y}) has fractional channels = AA bleed: {px:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Rounded-corner rect MUST have anti-aliased corner pixels — there's no way to make a
+    /// curve look smooth without partial-alpha pixels around it. Asserts at least one pixel
+    /// in the corner region falls in the partial-alpha range.
+    #[test]
+    fn rounded_corner_rect_has_aa_bleed_at_corner_pixels() {
+        let mut pixmap = opaque_black_pixmap(32, 32);
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            2.0,
+            2.0,
+            28.0,
+            28.0,
+            &RectStyle {
+                outline_thickness: 0,
+                outline_color_argb: 0,
+                fill_color_argb: 0xFF_FF_00_00,
+                corner_radius_px: 8,
+            },
+        );
+        // Sample a 6x6 region around the top-left corner of the round-rect bounding box.
+        // Without AA there would be only fully-red or fully-black pixels here. With AA, at
+        // least a few pixels in the curve must show partial red (1..=254 in the R channel).
+        let mut found_partial = false;
+        for y in 0..10 {
+            for x in 0..10 {
+                let off = (y * 32 + x) * 4;
+                let r = pixmap.data()[off];
+                if (1..=254).contains(&r) {
+                    found_partial = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            found_partial,
+            "rounded-corner fill must produce at least one partial-alpha pixel in the corner \
+             region — otherwise the curve looks jagged"
+        );
+    }
+
+    /// Sharp-corner rect must NOT produce any partial-alpha pixels. A negative counterpart to
+    /// the rounded-corner test above — proves the two paths actually behave differently.
+    #[test]
+    fn sharp_corner_rect_produces_no_partial_alpha_anywhere() {
+        let mut pixmap = opaque_black_pixmap(32, 32);
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            5.0,
+            7.0,
+            17.0,
+            13.0,
+            &style(2, 0xFF_FF_00_00, 0xFF_00_00_FF),
+        );
+        // Walk every pixel; any R/G/B channel in (0, 255) means AA was applied.
+        for (i, chunk) in pixmap.data().chunks_exact(4).enumerate() {
+            for (c, &v) in chunk[..3].iter().enumerate() {
+                assert!(
+                    v == 0 || v == 255,
+                    "pixel idx={i} channel={c} has partial value {v} — sharp-corner rect leaked AA"
+                );
+            }
+        }
     }
 
     #[test]

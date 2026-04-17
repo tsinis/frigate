@@ -5,7 +5,7 @@
 // noSuchMethod requires a dynamic return per the Object contract.
 // ignore_for_file: avoid-dynamic
 
-import 'dart:ui' show Canvas, Offset, RRect, Rect;
+import 'dart:ui' show Canvas, Offset, Paint, RRect, Rect;
 
 import 'package:flutter/rendering.dart' show Size;
 import 'package:flutter_test/flutter_test.dart';
@@ -93,6 +93,28 @@ void main() => group(DrawPainter, () {
       expect(canvas.drawRectCount, 0, reason: 'must not draw both - would over-paint the outline');
     });
 
+    test('paint.isAntiAlias is FALSE for sharp-corner rects (matches Rust contract)', () {
+      final canvas = _RecordingCanvas();
+      const sharp = RectElement(height: 50, width: 100, x: 10, y: 20);
+      const DrawPainter([sharp]).paint(canvas, const Size(200, 200));
+      expect(
+        canvas.isLastPaintAntiAlias,
+        isFalse,
+        reason: 'sharp rect must render pixel-aligned, no AA bleed at the edges',
+      );
+    });
+
+    test('paint.isAntiAlias is TRUE for rounded-corner rects (curves need AA)', () {
+      final canvas = _RecordingCanvas();
+      const rounded = RectElement(cornerRadius: 8, height: 50, width: 100, x: 10, y: 20);
+      const DrawPainter([rounded]).paint(canvas, const Size(200, 200));
+      expect(
+        canvas.isLastPaintAntiAlias,
+        isTrue,
+        reason: 'rounded corners need AA so the curve does not look jagged',
+      );
+    });
+
     test('drawRRect radius is clamped to half the shortest side (preview matches export)', () {
       final canvas = _RecordingCanvas();
       // Rect is 100x40, so the largest visually-meaningful radius is 20. We pass 9999 to
@@ -143,16 +165,21 @@ class _RecordingCanvas implements Canvas {
   int drawRectCount = 0;
   int drawRRectCount = 0;
   RRect? lastRRect;
+  bool? isLastPaintAntiAlias;
 
   @override
   // ignore: parameters-ordering, signature must match dart:ui Canvas.
-  void drawRect(Rect rect, Object paint) => drawRectCount += 1;
+  void drawRect(Rect rect, Paint paint) {
+    drawRectCount += 1;
+    isLastPaintAntiAlias = paint.isAntiAlias;
+  }
 
   @override
   // ignore: parameters-ordering, signature must match dart:ui Canvas.
-  void drawRRect(RRect rrect, Object paint) {
+  void drawRRect(RRect rrect, Paint paint) {
     drawRRectCount += 1;
     lastRRect = rrect;
+    isLastPaintAntiAlias = paint.isAntiAlias;
   }
 
   /// Catch-all: every other Canvas method the painter happens to call (drawCircle for handles,

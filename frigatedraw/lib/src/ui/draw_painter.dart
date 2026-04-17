@@ -31,11 +31,15 @@ class DrawPainter extends CustomPainter {
       switch (element) {
         case RectElement():
           // TODO(tsinis): render fill color too.
+          final radius = element.cornerRadius;
+          // AA matches the Rust contract: only on for rounded corners. Sharp axis-aligned
+          // rects render with pixel-perfect edges; rounded corners need AA so the curve
+          // doesn't look jagged.
           final strokePaint = Paint()
             ..color = element.uiOutlineColor
             ..style = .stroke
-            ..strokeWidth = element.outlineThickness.toDouble();
-          final radius = element.cornerRadius;
+            ..strokeWidth = element.outlineThickness.toDouble()
+            ..isAntiAlias = radius > 0;
           if (radius > 0) {
             // Mirror Rust's clamp: radius can never exceed half the shortest side; otherwise
             // the preview shows a different shape than the export.

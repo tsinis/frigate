@@ -1,0 +1,100 @@
+Frigate
+Copyright (c) 2026, Roman Cinis
+
+This product includes software developed by third parties under the licenses
+listed below. The Frigate Draw codebase itself is BSD-3-Clause (see LICENSE);
+the entries below cover binary and source code from upstream dependencies that
+ship in builds of this project.
+
+Per Apache License 2.0 §4(d), attribution notices for Apache-licensed
+dependencies are preserved verbatim where the upstream project ships them.
+
+================================================================================
+NATIVE (RUST) RUNTIME DEPENDENCIES
+================================================================================
+
+These crates are statically linked into the `frigate` cdylib/staticlib that the
+`frigatebird` Dart package loads via FFI. The compiled artifact is distributed
+as part of any Flutter app that depends on `frigatedraw`.
+
+--------------------------------------------------------------------------------
+tiny-skia
+  License:    BSD-3-Clause
+  Copyright:  Copyright (c) 2011 Google Inc. All rights reserved.
+              Copyright (c) 2020 Yevhenii Reizner. All rights reserved.
+  Homepage:   https://github.com/linebender/tiny-skia
+  Used for:   CPU rasterization of rectangles and rounded paths.
+
+tiny-skia-path
+  License:    BSD-3-Clause
+  Copyright:  Copyright (c) 2011 Google Inc. All rights reserved.
+              Copyright (c) 2020 Yevhenii Reizner. All rights reserved.
+  Homepage:   https://github.com/linebender/tiny-skia/tree/master/path
+  Used for:   Path geometry primitives consumed by tiny-skia.
+
+--------------------------------------------------------------------------------
+image
+  License:    MIT OR Apache-2.0  (Frigate redistributes under MIT)
+  Authors:    The image-rs Developers
+  Homepage:   https://github.com/image-rs/image
+  Used for:   PNG / JPEG decode + encode at the FFI boundary.
+  Notice:     Upstream MIT LICENSE ships without a dedicated copyright line;
+              attribution is to the project authors as listed in `Cargo.toml`.
+
+ab_glyph
+  License:    Apache-2.0
+  Authors:    Alex Butler <alexheretic@gmail.com>
+  Homepage:   https://github.com/alexheretic/ab-glyph
+  Used for:   Outline-glyph rasterization for text overlays.
+  Notice:     Upstream ships no NOTICE file as of 0.2.32; attribution is to
+              the author(s) listed in `Cargo.toml`.
+
+================================================================================
+DART / FLUTTER RUNTIME DEPENDENCIES
+================================================================================
+
+Direct runtime dependencies of the `frigatebird` and `frigatedraw` packages.
+Transitive test/analyzer-only dependencies are not listed; their licenses are
+discoverable via `dart pub deps` and `pub.dev`.
+
+--------------------------------------------------------------------------------
+ffi
+  License:    BSD-3-Clause
+  Copyright:  Copyright 2019, the Dart project authors
+  Homepage:   https://github.com/dart-lang/native/tree/main/pkgs/ffi
+  Used for:   Allocator + Pointer<Utf8> helpers around dart:ffi.
+
+hooks
+  License:    BSD-3-Clause
+  Copyright:  Copyright 2025, the Dart project authors
+  Homepage:   https://github.com/dart-lang/native/tree/main/pkgs/hooks
+  Used for:   Dart build-hook integration that drives the Rust toolchain.
+
+native_toolchain_rust 1.0.3
+  License:    MIT
+  Copyright:  Copyright (c) 2025 Gregory Conrad
+  Homepage:   https://github.com/GregoryConrad/native_toolchain_rust
+  Used for:   Cross-compilation of the Rust crate from the Dart build hook.
+
+--------------------------------------------------------------------------------
+flutter (Flutter SDK)
+  License:    BSD-3-Clause
+  Copyright:  Copyright 2014, the Flutter authors
+  Homepage:   https://github.com/flutter/flutter
+  Used for:   UI layer of the `frigatedraw` package and example app.
+
+================================================================================
+LICENSE TEXTS
+================================================================================
+
+Full license texts are available at:
+
+  - BSD-3-Clause:  https://opensource.org/licenses/BSD-3-Clause
+  - MIT:           https://opensource.org/licenses/MIT
+  - Apache-2.0:    https://www.apache.org/licenses/LICENSE-2.0
+
+To regenerate this list against the current dependency tree, run:
+  cd frigatebird/rust && cargo metadata --format-version 1 \
+    | jq '.packages[] | {name, version, license, repository}'
+  cd frigatebird && dart pub deps --json
+  cd frigatedraw && flutter pub deps --json
