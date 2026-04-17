@@ -1,23 +1,79 @@
+import '../ffi/ffi_element_type.dart';
 import 'ffi_color.dart';
 
 part 'rect_element.dart';
+part 'text_element.dart';
 
-/// Base for all drawable shapes sent across the FFI boundary.
+/// Base for all drawable elements that cross the FFI boundary.
 ///
-/// Subclass for each shape type (rect, circle, polygon, etc.).
+/// Coordinates and sizes are in **document-space pixels** — Dart and Rust agree on units
+/// end-to-end, no normalization step.
+///
+/// Every subtype has a [width] and [height] so the FFI layer can treat them uniformly. For shapes
+/// with a natural bounding rect (rectangle, future circle/triangle) both fields are exposed in the
+/// subtype constructor. For `TextElement`, `height` is the font em-box height (what callers think
+/// of as "font size"); `width` is fixed at 0 because our current text renderer has no bounded-box
+/// wrapping.
+///
+/// [blur], [outlineThickness] and [rotation] are `int` (pixels / degrees) rather than `double`:
+/// sub-pixel precision adds nothing useful for these fields, and `int` stays in Dart's SMI tag
+/// range (no boxing per instance).
+///
+/// [elementType] is a polymorphic getter — each subtype returns its own tag, so the FFI serializer
+/// never needs `is` checks to write the discriminator.
 @pragma('vm:deeply-immutable')
 sealed class DrawElement {
   const DrawElement({
+    required this.height,
+    required this.width,
     required this.x,
     required this.y,
-    this.color = const FfiColor.from(),
-    this.strokeWidth = 2.0,
+    this.blur = 0,
+    this.fillColor = FfiColor.black,
+    this.outlineColor = FfiColor.transparent,
+    this.outlineThickness = 0,
+    this.rotation = 0,
   });
 
+  /// Document-space x in pixels.
   final double x;
-  final double y;
-  final double strokeWidth;
-  final FfiColor color;
 
-  DrawElement copyWith({FfiColor? color, double? strokeWidth, double? x, double? y});
+  /// Document-space y in pixels.
+  final double y;
+
+  /// Document-space width in pixels. Zero is legal (text has no bounded width today).
+  final double width;
+
+  /// Document-space height in pixels. For `TextElement` this is the font em-box height.
+  final double height;
+
+  /// Blur radius in pixels. Zero means no blur.
+  final int blur;
+
+  /// Fill color in 0xAARRGGBB packed form. Alpha encodes opacity — there is no separate opacity
+  /// field anywhere.
+  final FfiColor fillColor;
+
+  /// Outline color in 0xAARRGGBB packed form. Ignored when [outlineThickness] is zero.
+  final FfiColor outlineColor;
+
+  /// Outline thickness in pixels. Zero means no outline.
+  final int outlineThickness;
+
+  /// Rotation in degrees, clockwise about `(x, y)`. Rust converts to radians internally.
+  final int rotation;
+
+  /// FFI discriminator for this element type. Implemented polymorphically by each subtype so the
+  /// serializer doesn't need to runtime-check the subtype just to set the tag.
+  FfiElementType get elementType;
+
+  DrawElement copyWith({
+    int? blur,
+    FfiColor? fillColor,
+    FfiColor? outlineColor,
+    int? outlineThickness,
+    int? rotation,
+    double? x,
+    double? y,
+  });
 }

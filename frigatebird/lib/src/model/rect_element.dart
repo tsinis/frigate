@@ -3,34 +3,47 @@ part of 'draw_element.dart';
 @pragma('vm:deeply-immutable')
 final class RectElement extends DrawElement {
   const RectElement({
-    required this.height,
-    required this.width,
+    required super.height,
+    required super.width,
     required super.x,
     required super.y,
-    super.color,
-    super.strokeWidth,
+    super.blur,
+    // Transparent fill by default — a rectangle overlay should show the image through it. Text
+    // is the opposite: fill colour IS the text colour, so the base default of opaque-black fits.
+    super.fillColor = FfiColor.transparent,
+    // Black outline by default — a rectangle is useless without a visible outline.
+    super.outlineColor = FfiColor.black,
+    super.outlineThickness = 2,
+    super.rotation,
   });
 
-  final double width;
-  final double height;
+  @override
+  FfiElementType get elementType => .rectangle;
 
   @override
   String toString() =>
-      'RectElement(x: $x, y: $y, width: $width, height: $height, color: $color, '
-      'strokeWidth: $strokeWidth)';
+      'RectElement(x: $x, y: $y, width: $width, height: $height, fillColor: $fillColor, '
+      'outlineColor: $outlineColor, outlineThickness: $outlineThickness, '
+      'rotation: $rotation, blur: $blur)';
 
   @override
   RectElement copyWith({
-    FfiColor? color,
+    int? blur,
+    FfiColor? fillColor,
     double? height,
-    double? strokeWidth,
+    FfiColor? outlineColor,
+    int? outlineThickness,
+    int? rotation,
     double? width,
     double? x,
     double? y,
   }) => .new(
-    color: color ?? this.color,
+    blur: blur ?? this.blur,
+    fillColor: fillColor ?? this.fillColor,
     height: height ?? this.height,
-    strokeWidth: strokeWidth ?? this.strokeWidth,
+    outlineColor: outlineColor ?? this.outlineColor,
+    outlineThickness: outlineThickness ?? this.outlineThickness,
+    rotation: rotation ?? this.rotation,
     width: width ?? this.width,
     x: x ?? this.x,
     y: y ?? this.y,

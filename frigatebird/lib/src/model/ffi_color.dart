@@ -11,6 +11,12 @@ final class FfiColor {
     // TODO(tsinis): add asserts for 0-255 range(s).
     : argb = (alpha << 24) | (red << 16) | (green << 8) | blue;
 
+  /// Fully opaque black (0xFF000000) — the conventional default fill colour.
+  static const black = FfiColor(0xFF000000);
+
+  /// Fully transparent (0x00000000) — the conventional "no visible colour" sentinel.
+  static const transparent = FfiColor(0);
+
   final int argb;
 
   @override

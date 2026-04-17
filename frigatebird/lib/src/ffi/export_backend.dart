@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../constants/draw_constants.dart';
 import '../model/draw_element.dart';
 
 /// Platform-agnostic export contract.
@@ -12,7 +13,10 @@ abstract interface class ExportBackend {
   Future<void> loadImage(Uint8List bytes, {required int height, required int width});
 
   /// Render overlays onto the loaded image and return encoded JPEG bytes.
-  Future<Uint8List> export({required List<RectElement> rects, int jpegQuality = 90});
+  Future<Uint8List> export({
+    required List<RectElement> rects,
+    int imageQuality = DrawConstants.defaultImageQuality,
+  });
 
   /// Free native resources. Do NOT call while [export] is in progress.
   void dispose();

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
+import '../constants/draw_constants.dart';
 import '../model/draw_element.dart';
 import 'bindings.dart' as ffi;
 import 'export_backend.dart';
@@ -11,10 +12,9 @@ import 'ffi_rect_element.dart';
 import 'native_image.dart';
 
 /// Factory for conditional import — selected when `dart.library.ffi` is available.
-// ignore: prefer-static-class, required top-level for conditional import pattern.
 ExportBackend createExportBackend() {
   final actualSize = sizeOf<FfiRectElement>();
-  assert(actualSize == 48, 'FfiRectElement ABI mismatch: expected 48 bytes, got $actualSize');
+  assert(actualSize == 40, 'FfiRectElement ABI mismatch: expected 40 bytes, got $actualSize');
 
   return _NativeExportBackend();
 }
@@ -27,7 +27,6 @@ ExportBackend createExportBackend() {
 ///
 /// Manual free: result bytes are copied to a Dart [Uint8List] and the Rust-allocated buffer is
 /// freed immediately. Simple, safe, no finalizer signature mismatch.
-// ignore: prefer-match-file-name, it's conditional import target.
 final class _NativeExportBackend implements ExportBackend {
   NativeImage? _image;
 
@@ -38,21 +37,17 @@ final class _NativeExportBackend implements ExportBackend {
   }
 
   @override
-  Future<Uint8List> export({required List<RectElement> rects, int jpegQuality = 90}) {
+  Future<Uint8List> export({
+    required List<RectElement> rects,
+    int imageQuality = DrawConstants.defaultImageQuality,
+  }) {
     final image = _image;
     if (image == null) throw StateError('Call loadImage() before export().');
-    final NativeImage(:address, :height, :length, :width) = image;
+    final NativeImage(:address, :length) = image;
 
     return Isolate.run(
       () => _doExport(
-        _ExportArgs(
-          imgAddress: address,
-          imgHeight: height,
-          imgLen: length,
-          imgWidth: width,
-          jpegQuality: jpegQuality,
-          rects: rects,
-        ),
+        _ExportArgs(imageQuality: imageQuality, imgAddress: address, imgLen: length, rects: rects),
       ),
     );
   }
@@ -69,10 +64,10 @@ final class _NativeExportBackend implements ExportBackend {
   /// native memory is the same — zero copy. RectElement is @pragma('vm:deeply-immutable') —
   /// zero-copy transfer.
   static Uint8List _doExport(_ExportArgs args) {
-    final _ExportArgs(:imgAddress, :imgHeight, :imgLen, :imgWidth, :jpegQuality, :rects) = args;
-    final rectsPtr = rects.toNative(malloc, imgHeight: imgHeight, imgWidth: imgWidth);
+    final _ExportArgs(:imageQuality, :imgAddress, :imgLen, :rects) = args;
+    final rectsPtr = rects.toNative(malloc);
     final imgPtr = Pointer<Uint8>.fromAddress(imgAddress);
-    final result = ffi.export_image(imgPtr, imgLen, rectsPtr, rects.length, jpegQuality);
+    final result = ffi.export_image(imgPtr, imgLen, rectsPtr, rects.length, imageQuality);
     // Always free rects (we allocated them above). Do NOT free imgPtr — NativeImage owns it.
     malloc.free(rectsPtr);
     // Null data pointer means Rust panicked (catch_unwind returned Err).
@@ -96,18 +91,14 @@ final class _NativeExportBackend implements ExportBackend {
 /// Arguments for [_NativeExportBackend._doExport], sent to a background isolate.
 final class _ExportArgs {
   const _ExportArgs({
+    required this.imageQuality,
     required this.imgAddress,
-    required this.imgHeight,
     required this.imgLen,
-    required this.imgWidth,
-    required this.jpegQuality,
     required this.rects,
   });
 
+  final int imageQuality;
   final int imgAddress;
-  final int imgHeight;
   final int imgLen;
-  final int imgWidth;
-  final int jpegQuality;
   final List<RectElement> rects;
 }

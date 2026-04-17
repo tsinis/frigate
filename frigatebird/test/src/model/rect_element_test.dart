@@ -14,7 +14,7 @@ class _RectElementTest extends AsyncBenchmarkBase {
   @override
   Future<void> setup() async => _rects = List.generate(
     count,
-    (i) => RectElement(color: FfiColor(i), height: 1, width: 2, x: 3, y: 4),
+    (i) => RectElement(fillColor: FfiColor(i), height: 1, width: 2, x: 3, y: 4),
   );
 
   @override
@@ -30,58 +30,51 @@ class _RectElementTest extends AsyncBenchmarkBase {
 void main() => group(RectElement, () {
   test('default values', () {
     const rect = RectElement(height: 50, width: 100, x: 10, y: 20);
-
-    expect(rect.strokeWidth, 2.0);
-    expect(rect.color.argb, const FfiColor.from().argb);
-  });
-
-  test('FfiColor packs ARGB correctly', () => expect(const FfiColor.from().argb, 0xFF000000));
-
-  test('FfiColor packs ARGB correctly with custom values', () {
-    const color = FfiColor.from(alpha: 128, blue: 255);
-    const raw = FfiColor(2_147_483_903);
-
-    expect(color.argb, 0x800000FF);
-    expect(color.argb, raw.argb);
+    expect(rect.outlineThickness, 2, reason: 'default outline thickness');
+    expect(rect.outlineColor.argb, FfiColor.black.argb, reason: 'black outline by default');
+    expect(rect.fillColor.argb, FfiColor.transparent.argb, reason: 'transparent fill by default');
   });
 
   test('copyWith preserves unchanged fields', () {
-    const original = RectElement(height: 50, strokeWidth: 5, width: 100, x: 10, y: 20);
-    final RectElement(:color, :height, :strokeWidth, :width, :x, :y) = original.copyWith(x: 30);
+    const original = RectElement(height: 50, outlineThickness: 5, width: 100, x: 10, y: 20);
+    final RectElement(:fillColor, :height, :outlineThickness, :width, :x, :y) = original.copyWith(
+      x: 30,
+    );
 
-    expect(x, 30);
-    expect(y, 20);
-    expect(width, 100);
-    expect(height, 50);
-    expect(strokeWidth, 5.0);
-    expect(color.argb, const FfiColor.from().argb);
+    expect(x, 30, reason: 'new x applied');
+    expect((y, width, height), (20.0, 100.0, 50.0), reason: 'other geometry untouched');
+    expect(outlineThickness, 5, reason: 'outline thickness untouched');
+    expect(fillColor.argb, FfiColor.transparent.argb, reason: 'fill color untouched');
   });
 
   test('is deeply immutable', () {
     const rect = RectElement(height: 10, width: 10, x: 0, y: 0);
     final moved = rect.copyWith(x: 5);
-
-    expect(rect.x, isZero);
-    expect(moved.x, 5);
+    expect(rect.x, isZero, reason: 'original unchanged');
+    expect(moved.x, 5, reason: 'copy has new x');
   });
 
   test('no copy in isolates outside of the list', () async {
-    const rect = RectElement(height: 50, strokeWidth: 5, width: 100, x: 10, y: 20);
+    const rect = RectElement(height: 50, outlineThickness: 5, width: 100, x: 10, y: 20);
 
     final receivePort = ReceivePort();
     final result = await Isolate.spawn(
-      // ignore: avoid-type-casts, avoid-unsafe-collection-methods, it's just a test.,
+      // ignore: avoid-type-casts, avoid-unsafe-collection-methods, it's just a test.
       (a) => (a.first as SendPort).send(identityHashCode(a.elementAtOrNull(1))),
       [receivePort.sendPort, rect],
     );
-    expect(result, isA<Isolate>());
-    expect(await receivePort.first, identityHashCode(rect));
+    expect(result, isA<Isolate>(), reason: 'spawn returned an Isolate handle');
+    expect(
+      await receivePort.first,
+      identityHashCode(rect),
+      reason: 'same identity across isolate boundary',
+    );
     receivePort.close();
   });
 
   test('no copy in isolates inside of the list', () async {
     // ignore: prefer_const_constructors, just a test.
-    final rect = RectElement(height: 50, strokeWidth: 5, width: 100, x: 10, y: 20);
+    final rect = RectElement(height: 50, outlineThickness: 5, width: 100, x: 10, y: 20);
     final list = [rect];
 
     final receivePort = ReceivePort();
@@ -93,12 +86,16 @@ void main() => group(RectElement, () {
         // ignore: avoid-type-casts, prefer-correct-json-casts, just a test.
         final receivedList = a.elementAtOrNull(1) as List<RectElement>?;
         sendPort.send(identityHashCode(receivedList?.firstOrNull));
-      }, // Dart 3.8 formatting.
+      },
       [receivePort.sendPort, list],
     );
 
-    expect(result, isA<Isolate>());
-    expect(await receivePort.first, identityHashCode(rect));
+    expect(result, isA<Isolate>(), reason: 'spawn returned an Isolate handle');
+    expect(
+      await receivePort.first,
+      identityHashCode(rect),
+      reason: 'first list element has same identity across isolate boundary',
+    );
     receivePort.close();
   });
 
@@ -113,7 +110,11 @@ void main() => group(RectElement, () {
       final thousandMeasure = await thousand.measure();
       final hundredKMeasure = await hundredThousand.measure();
 
-      expect(hundredKMeasure, lessThan(thousandMeasure * 50));
+      expect(
+        hundredKMeasure,
+        lessThan(thousandMeasure * 50),
+        reason: 'if elements were copied, 100k should take ~100x longer than 1k',
+      );
     },
     skip: Platform.isLinux,
   );
