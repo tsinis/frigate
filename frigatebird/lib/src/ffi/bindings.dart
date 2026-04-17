@@ -30,7 +30,7 @@ external ByteBuffer export_image(
   int imgLen,
   Pointer<FfiRectElement> rectsPtr,
   int rectsCount,
-  int jpegQuality,
+  int imageQuality,
 );
 
 /// Free a Rust-allocated byte buffer (returned by [export_image]). Null-safe.
@@ -79,5 +79,5 @@ external int render_image(
   int elementsCount,
   Pointer<Uint8> textBuffer,
   int textBufferLen,
-  int jpegQuality,
+  int imageQuality,
 );

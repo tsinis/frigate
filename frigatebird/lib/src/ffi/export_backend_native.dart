@@ -8,13 +8,13 @@ import '../constants/draw_constants.dart';
 import '../model/draw_element.dart';
 import 'bindings.dart' as ffi;
 import 'export_backend.dart';
+import 'ffi_abi.dart';
 import 'ffi_rect_element.dart';
 import 'native_image.dart';
 
 /// Factory for conditional import — selected when `dart.library.ffi` is available.
 ExportBackend createExportBackend() {
-  final actualSize = sizeOf<FfiRectElement>();
-  assert(actualSize == 40, 'FfiRectElement ABI mismatch: expected 40 bytes, got $actualSize');
+  assertFfiRectElementAbi();
 
   return _NativeExportBackend();
 }

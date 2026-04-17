@@ -77,5 +77,32 @@ void main() {
 
       expect(controller.selectedElement, moved);
     });
+
+    test('undo with empty stack does not notify', () {
+      controller
+        ..addListener(_handleNotification)
+        ..undo();
+      expect(_wasNotified, isFalse, reason: 'no state changed, listeners should stay quiet');
+    });
+
+    test('redo with empty stack does not notify', () {
+      controller
+        ..addListener(_handleNotification)
+        ..redo();
+      expect(_wasNotified, isFalse, reason: 'no state changed, listeners should stay quiet');
+    });
+
+    test('commitCommand skips no-op when before and after are the same instance', () {
+      controller
+        ..addElement(rect)
+        ..addListener(_handleNotification)
+        ..commitCommand(0, after: rect, before: rect);
+      expect(
+        controller.commandStack.canUndo,
+        isFalse,
+        reason: 'tap-without-drag must not pollute the undo stack',
+      );
+      expect(_wasNotified, isFalse, reason: 'no state changed, listeners should stay quiet');
+    });
   });
 }

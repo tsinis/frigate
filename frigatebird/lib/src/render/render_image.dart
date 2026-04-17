@@ -8,6 +8,7 @@ import 'package:ffi/ffi.dart';
 
 import '../constants/draw_constants.dart';
 import '../ffi/bindings.dart' as ffi;
+import '../ffi/ffi_abi.dart';
 import '../ffi/serialized_elements.dart';
 import '../helpers/extensions/ffi/draw_element_list_ffi.dart';
 import '../model/draw_element.dart';
@@ -26,6 +27,13 @@ import 'render_image_args.dart';
 /// by the extension of [outputPath]: `.png` (lossless, alpha preserved, [imageQuality] ignored) or
 /// `.jpg`/`.jpeg` (alpha flattened, [imageQuality] applies).
 ///
+/// **[imageQuality] is clamped, not validated.** Debug builds assert the value lies in
+/// `[DrawConstants.minImageQuality, DrawConstants.maxImageQuality]`; release builds silently
+/// clamp to that range. A caller who passes `-5` in release gets `0` (lowest quality); a caller
+/// who passes `150` gets `100`. Rationale: this API already raises [RenderException] for genuine
+/// failures from Rust — throwing on a stylistic parameter out-of-range would force every caller
+/// to guard a range that has only two well-known correct values (a slider min/max).
+///
 /// Runs in a background isolate via [Isolate.run] — never blocks the calling thread.
 Future<void> renderImage({
   required List<DrawElement> elements,
@@ -34,6 +42,9 @@ Future<void> renderImage({
   String? fontPath,
   int imageQuality = DrawConstants.defaultImageQuality,
 }) {
+  // Fails loudly if the Dart VM struct layout has drifted from Rust `#[repr(C)]`. Debug-only,
+  // but CI runs in debug and the mismatch would corrupt every subsequent read.
+  assertFfiElementAbi();
   assert(
     !elements.any((e) => e is TextElement) || fontPath != null,
     'fontPath must be supplied when elements contains a TextElement',

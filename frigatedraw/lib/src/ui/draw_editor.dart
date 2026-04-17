@@ -39,38 +39,41 @@ class DrawEditor extends StatefulWidget {
 }
 
 class _DrawEditorState extends State<DrawEditor> {
+  /// Floor for rect width/height while the user is resizing via a handle. Below ~10 px the rect
+  /// becomes impossible to grab again because the 8 handles start overlapping each other.
+  static const _minRectSize = 10.0;
+
   static RectElement _resizedRect({
     required Offset delta,
     required HandlePosition handle,
     required RectElement rect,
   }) {
-    const minSize = 10.0;
     final RectElement(:height, :width, :x, :y) = rect;
 
     return switch (handle) {
       .topLeft => rect.copyWith(
-        height: max(height - delta.dy, minSize),
-        width: max(width - delta.dx, minSize),
+        height: max(height - delta.dy, _minRectSize),
+        width: max(width - delta.dx, _minRectSize),
         x: x + delta.dx,
         y: y + delta.dy,
       ),
-      .topCenter => rect.copyWith(height: max(height - delta.dy, minSize), y: y + delta.dy),
+      .topCenter => rect.copyWith(height: max(height - delta.dy, _minRectSize), y: y + delta.dy),
       .topRight => rect.copyWith(
-        height: max(height - delta.dy, minSize),
-        width: max(width + delta.dx, minSize),
+        height: max(height - delta.dy, _minRectSize),
+        width: max(width + delta.dx, _minRectSize),
         y: y + delta.dy,
       ),
-      .centerLeft => rect.copyWith(width: max(width - delta.dx, minSize), x: x + delta.dx),
-      .centerRight => rect.copyWith(width: max(width + delta.dx, minSize)),
+      .centerLeft => rect.copyWith(width: max(width - delta.dx, _minRectSize), x: x + delta.dx),
+      .centerRight => rect.copyWith(width: max(width + delta.dx, _minRectSize)),
       .bottomLeft => rect.copyWith(
-        height: max(height + delta.dy, minSize),
-        width: max(width - delta.dx, minSize),
+        height: max(height + delta.dy, _minRectSize),
+        width: max(width - delta.dx, _minRectSize),
         x: x + delta.dx,
       ),
-      .bottomCenter => rect.copyWith(height: max(height + delta.dy, minSize)),
+      .bottomCenter => rect.copyWith(height: max(height + delta.dy, _minRectSize)),
       .bottomRight => rect.copyWith(
-        height: max(height + delta.dy, minSize),
-        width: max(width + delta.dx, minSize),
+        height: max(height + delta.dy, _minRectSize),
+        width: max(width + delta.dx, _minRectSize),
       ),
     };
   }
@@ -137,18 +140,29 @@ class _DrawEditorState extends State<DrawEditor> {
     if (index != null && snapshot != null && current != null) {
       _controller.commitCommand(index, after: current, before: snapshot);
     }
-    setState(() {
-      _isDragging = false;
-      _activeHandle = null;
-      _dragSnapshot = null;
-    });
+    _resetDragState();
   }
+
+  /// Pointer cancellation paths: OS-level gesture takeover (system back gesture, screenshot
+  /// invocation), app suspension mid-drag, or losing the multitouch gesture-arena. Without this,
+  /// `_isDragging` stays `true` forever, pan/zoom is permanently disabled, and `_dragSnapshot`
+  /// pins a stale element reference. Mid-drag mutations are kept (user already saw them) but no
+  /// command is committed, so the partial drag isn't pushed onto the undo stack.
+  void _handlePointerCancel(PointerCancelEvent _) => _isDragging ? _resetDragState() : null;
 
   void _startDrag({HandlePosition? handle}) {
     setState(() {
       _isDragging = true;
       _activeHandle = handle;
       _dragSnapshot = _controller.selectedElement;
+    });
+  }
+
+  void _resetDragState() {
+    setState(() {
+      _isDragging = false;
+      _activeHandle = null;
+      _dragSnapshot = null;
     });
   }
 
@@ -160,6 +174,7 @@ class _DrawEditorState extends State<DrawEditor> {
 
   @override
   Widget build(BuildContext context) => Listener(
+    onPointerCancel: _handlePointerCancel,
     onPointerDown: _handlePointerDown,
     onPointerMove: _handlePointerMove,
     onPointerUp: _handlePointerUp,

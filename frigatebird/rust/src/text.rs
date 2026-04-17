@@ -38,8 +38,16 @@ pub fn render_text_overlay(img: &mut RgbaImage, font: &FontRef<'_>, params: &Tex
     }
 
     let (iw, ih) = (img.width(), img.height());
-    // Clamp to avoid a zero-pixel scale that would produce an empty glyph bitmap for 0.0 input.
-    let scale = PxScale::from(params.font_size_px.max(1.0));
+    // Clamp the font size into a sane range:
+    //   • lower bound 1.0 — a 0.0 scale produces an empty glyph bitmap (no-op render).
+    //   • upper bound (4× the larger image side) — `ab_glyph_rasterizer` does internal `i32`
+    //     multiplications on glyph dimensions; values like `1e10` overflow inside ab_glyph and
+    //     panic. The cross-FFI `catch_unwind` would translate that into a `RustPanicException`,
+    //     but a panic for a *stylistic* parameter is poor UX. 4× the image side is more than
+    //     anyone could need — even a single glyph that fills the whole image lives in this
+    //     range — and clamping silently matches how `imageQuality` is handled.
+    let max_reasonable = (iw.max(ih) as f32) * 4.0;
+    let scale = PxScale::from(params.font_size_px.clamp(1.0, max_reasonable));
 
     // Overlay buffer matches the base size so rotation shares a single coordinate system with
     // the base image — no per-glyph bounding-box math.
@@ -128,14 +136,19 @@ fn rasterize_text(
     }
 }
 
-/// Rotate `src` counter-clockwise by `angle_rad` about `(cx, cy)` using reverse mapping with
-/// bilinear sampling. Output pixels outside the source map to fully transparent.
+/// Rotate `src` by `angle_rad` about `(cx, cy)` using reverse mapping with bilinear sampling.
+/// Output pixels outside the source map to fully transparent.
+///
+/// **Direction convention:** positive `angle_rad` is mathematical counter-clockwise (y-up).
+/// Because image coordinates are y-down, that *appears* on screen as visual **clockwise** —
+/// which is what the Dart-side `DrawElement.rotation` doc promises. If you pass 90° from Dart,
+/// the text spins the same direction a clock's second hand goes.
 fn rotate_about(src: &RgbaImage, cx: f32, cy: f32, angle_rad: f32) -> RgbaImage {
     let (w, h) = (src.width(), src.height());
     let mut dst = RgbaImage::from_pixel(w, h, Rgba([0, 0, 0, 0]));
     // For dst pixel (px, py) we want the source coord that lands on (px, py) after a CCW
-    // rotation by angle about (cx, cy). The inverse of a CCW rotation by θ is a CW rotation
-    // by θ — which is the transpose, i.e. swap sin signs.
+    // rotation by `angle_rad` about (cx, cy). The inverse of a CCW rotation by θ is a CW
+    // rotation by θ, which is the transpose — i.e. swap sin signs.
     let cos = angle_rad.cos();
     let sin = angle_rad.sin();
     let (max_x, max_y) = (w as i32 - 1, h as i32 - 1);
@@ -324,6 +337,50 @@ mod tests {
             .max()
             .unwrap_or(0);
         assert!(max_diff <= 3, "2π rotation drift > 3, got {max_diff}");
+    }
+
+    #[test]
+    fn render_text_survives_pathological_font_size() {
+        // `font_size_px` originates from a Dart-side `f64` (`TextElement.fontSize`). A caller
+        // who passes 1e10 must not crash the renderer — at worst we get a (mostly) empty
+        // image because the glyph bounds land off-screen. The point of this test is "never
+        // panic", not "renders correctly at insane sizes".
+        let font = font();
+        let mut img = black_image(64, 64);
+        render_text_overlay(
+            &mut img,
+            &font,
+            &TextParams {
+                text: "Hi",
+                x: 0.0,
+                y: 0.0,
+                font_size_px: 1e10,
+                rotation_rad: 0.0,
+                color: Rgba([255, 255, 255, 255]),
+            },
+        );
+        // Reaching this line is the assertion. (No `expect!` needed — the test framework
+        // marks the test failed if anything above panicked.)
+    }
+
+    #[test]
+    fn render_text_survives_negative_font_size() {
+        // f32 negatives also possible from a Dart caller. The clamp on line 42 caps to 1.0,
+        // so this should render normally.
+        let font = font();
+        let mut img = black_image(32, 32);
+        render_text_overlay(
+            &mut img,
+            &font,
+            &TextParams {
+                text: "Hi",
+                x: 4.0,
+                y: 4.0,
+                font_size_px: -100.0,
+                rotation_rad: 0.0,
+                color: Rgba([255, 255, 255, 255]),
+            },
+        );
     }
 
     #[test]

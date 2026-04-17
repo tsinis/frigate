@@ -13,30 +13,43 @@ import '../../../model/draw_element.dart';
 /// `serialized.free()` to release them.
 extension DrawElementListFfi on List<DrawElement> {
   SerializedElements toNative(Allocator allocator) {
+    // The elements pointer is allocated BEFORE the try-block so the `final` binding is in scope
+    // for the catch. Anything that can throw after this point (text buffer allocation, UTF-8
+    // encoding) must free this pointer — otherwise the SerializedElements wrapper is never
+    // returned and the caller can't reach it.
     final elementsPtr = allocator<FfiElement>(length);
-    final textBytes = BytesBuilder();
+    try {
+      final textBytes = BytesBuilder();
+      for (int i = 0; i < length; i += 1) {
+        final element = this[i];
+        final ref = (elementsPtr + i).ref;
+        _writeCommonFields(ref, element);
+        _writeTypeSpecificFields(ref, element, textBytes);
+      }
 
-    for (int i = 0; i < length; i += 1) {
-      final element = this[i];
-      final ref = (elementsPtr + i).ref;
-      _writeCommonFields(ref, element);
-      _writeTypeSpecificFields(ref, element, textBytes);
+      final textTotal = textBytes.length;
+      Pointer<Uint8> textBufferPtr = nullptr;
+      if (textTotal > 0) {
+        textBufferPtr = allocator<Uint8>(textTotal);
+        try {
+          textBufferPtr.asTypedList(textTotal).setAll(0, textBytes.toBytes());
+        } on Object {
+          allocator.free(textBufferPtr);
+          rethrow;
+        }
+      }
+
+      return SerializedElements(
+        allocator: allocator,
+        count: length,
+        elementsPtr: elementsPtr,
+        textBufferLen: textTotal,
+        textBufferPtr: textBufferPtr,
+      );
+    } on Object {
+      allocator.free(elementsPtr);
+      rethrow;
     }
-
-    final textTotal = textBytes.length;
-    Pointer<Uint8> textBufferPtr = nullptr;
-    if (textTotal > 0) {
-      textBufferPtr = allocator<Uint8>(textTotal);
-      textBufferPtr.asTypedList(textTotal).setAll(0, textBytes.toBytes());
-    }
-
-    return SerializedElements(
-      allocator: allocator,
-      count: length,
-      elementsPtr: elementsPtr,
-      textBufferLen: textTotal,
-      textBufferPtr: textBufferPtr,
-    );
   }
 }
 

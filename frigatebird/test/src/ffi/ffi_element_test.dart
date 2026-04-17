@@ -145,4 +145,73 @@ void main() {
       });
     });
   });
+
+  group('DrawElementListFfi.toNative failure handling', () {
+    test('frees the elements array when the text buffer allocation fails', () {
+      // 1st allocation succeeds (elements), 2nd throws (text buffer). Without the fix, the
+      // elements pointer leaks because the SerializedElements wrapper is never returned to the
+      // caller, so the caller can't call free() on it.
+      final allocator = _FailingAllocator(failAfter: 1);
+      final inputs = <DrawElement>[const TextElement(text: 'hi', x: 0, y: 0)];
+      expect(() => inputs.toNative(allocator), throwsException, reason: 'mock OOM propagates');
+      expect(
+        allocator.freedCount,
+        allocator.succeededAllocations,
+        reason: 'every successful allocation before the failure must be freed',
+      );
+    });
+
+    test('frees nothing extra on the happy path (baseline)', () {
+      final allocator = _FailingAllocator(failAfter: 10);
+      final inputs = <DrawElement>[const TextElement(text: 'hi', x: 0, y: 0)];
+      final serialized = inputs.toNative(allocator);
+      expect(allocator.freedCount, isZero, reason: 'no frees happen until caller invokes free()');
+      serialized.free();
+      expect(
+        allocator.freedCount,
+        allocator.succeededAllocations,
+        reason: 'caller free() releases every successful allocation',
+      );
+    });
+
+    test('SerializedElements.free is idempotent (second call is a no-op, not a double-free)', () {
+      final allocator = _FailingAllocator(failAfter: 10);
+      final inputs = <DrawElement>[const TextElement(text: 'hi', x: 0, y: 0)];
+      final serialized = inputs.toNative(allocator)..free();
+      // The second call must NOT re-free; the _FailingAllocator asserts that every free()
+      // call maps to a live address, so a double-free would throw here.
+      expect(serialized.free, returnsNormally, reason: 'double-free must be safe');
+    });
+  });
+}
+
+/// Allocator test double: forwards to [malloc] until the Nth allocation, then throws. Tracks
+/// every successful allocation + every free so tests can assert no pointers leaked.
+class _FailingAllocator implements Allocator {
+  _FailingAllocator({required this.failAfter});
+
+  final int failAfter;
+  int succeededAllocations = 0;
+  final _liveAddresses = <int>[];
+
+  int get freedCount => succeededAllocations - _liveAddresses.length;
+
+  @override
+  Pointer<T> allocate<T extends NativeType>(int byteCount, {int? alignment}) {
+    if (succeededAllocations >= failAfter) {
+      throw Exception('mock allocator OOM after $succeededAllocations allocations');
+    }
+    final ptr = malloc.allocate<T>(byteCount, alignment: alignment);
+    succeededAllocations += 1;
+    _liveAddresses.add(ptr.address);
+
+    return ptr;
+  }
+
+  @override
+  void free(Pointer<NativeType> pointer) {
+    final isKnown = _liveAddresses.remove(pointer.address);
+    expect(isKnown, isTrue, reason: 'free() called on an address this allocator did not hand out');
+    malloc.free(pointer);
+  }
 }

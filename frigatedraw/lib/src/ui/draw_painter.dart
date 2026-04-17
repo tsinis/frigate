@@ -12,6 +12,18 @@ class DrawPainter extends CustomPainter {
   final List<DrawElement> elements;
   final int? selectedIndex;
 
+  /// Hit-test slop around a rect outline: how far inside/outside a tap still counts as "on the
+  /// rect." Keeps finger/mouse imprecision from making selection feel flaky at thin strokes.
+  static const _hitSlop = 4.0;
+
+  // Paint instances live at class scope so we don't rebuild them per handle, per frame.
+  // Colors and stroke are constant, nothing to parameterize.
+  static final _handleFillPaint = Paint()..color = const Color(0xFF000000);
+  static final _handleBorderPaint = Paint()
+    ..color = const Color(0xFFFFFFFF)
+    ..style = .stroke
+    ..strokeWidth = 2;
+
   @override
   void paint(Canvas canvas, Size size) {
     for (final element in elements) {
@@ -43,7 +55,8 @@ class DrawPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant DrawPainter oldDelegate) => true;
+  bool shouldRepaint(covariant DrawPainter oldDelegate) =>
+      !identical(oldDelegate.elements, elements) || oldDelegate.selectedIndex != selectedIndex;
 
   static HandlePosition? hitTestHandle(Offset point, {required RectElement element}) {
     for (final handle in HandlePosition.values) {
@@ -56,7 +69,7 @@ class DrawPainter extends CustomPainter {
 
   static bool isPointOnRect(Offset point, {required RectElement element}) {
     final rect = element.rect;
-    final half = element.outlineThickness / 2 + 4;
+    final half = element.outlineThickness / 2 + _hitSlop;
     final outer = rect.inflate(half);
     final inner = rect.deflate(half);
 
@@ -64,31 +77,32 @@ class DrawPainter extends CustomPainter {
   }
 
   static Offset _handleCenter({required RectElement element, required HandlePosition handle}) {
-    final Rect(:bottom, :bottomLeft, :bottomRight, :left, :right, :top, :topLeft, :topRight) =
-        element.rect;
-    final Offset(dx: midX, dy: midY) = element.rect.center;
+    final Rect(
+      :bottomCenter,
+      :bottomLeft,
+      :bottomRight,
+      :centerLeft,
+      :centerRight,
+      :topCenter,
+      :topLeft,
+      :topRight,
+    ) = element.rect;
 
     return switch (handle) {
       .topLeft => topLeft,
-      .topCenter => Offset(midX, top),
+      .topCenter => topCenter,
       .topRight => topRight,
-      .centerLeft => Offset(left, midY),
-      .centerRight => Offset(right, midY),
+      .centerLeft => centerLeft,
+      .centerRight => centerRight,
       .bottomLeft => bottomLeft,
-      .bottomCenter => Offset(midX, bottom),
+      .bottomCenter => bottomCenter,
       .bottomRight => bottomRight,
     };
   }
 
   static void _paintHandle(Canvas canvas, Offset center) {
-    final fill = Paint()..color = const Color(0xFF000000);
-    final border = Paint()
-      ..color = const Color(0xFFFFFFFF)
-      ..style = .stroke
-      ..strokeWidth = 2;
-
     canvas
-      ..drawCircle(center, handleRadius, fill)
-      ..drawCircle(center, handleRadius, border);
+      ..drawCircle(center, handleRadius, _handleFillPaint)
+      ..drawCircle(center, handleRadius, _handleBorderPaint);
   }
 }

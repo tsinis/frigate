@@ -340,6 +340,11 @@ fn render_jpeg_with_rects(
 /// Draw a hollow axis-aligned rectangle by filling the four outline bars directly into the RGBA
 /// buffer. Pixel-aligned (no anti-aliasing) — good enough for screenshot annotations and keeps us
 /// off a dedicated drawing crate.
+///
+/// We first clip the user's rectangle against the image in `i64` space, then derive the four
+/// bars from the *clipped* rect. This handles pathological `w`/`h` (up to `u32::MAX`) correctly
+/// and naturally: "huge width" just means "clip to the image width", and the right bar lands on
+/// the rightmost column instead of wrapping off-screen.
 fn stroke_rect_rgba(
     img: &mut image::RgbaImage,
     x: i32,
@@ -349,39 +354,80 @@ fn stroke_rect_rgba(
     stroke: u32,
     color: image::Rgba<u8>,
 ) {
-    if w == 0 || h == 0 {
+    if w == 0 || h == 0 || stroke == 0 {
         return;
     }
-    let s = stroke.min(w.min(h));
+
+    let (iw, ih) = (i64::from(img.width()), i64::from(img.height()));
+    let x0 = i64::from(x).clamp(0, iw);
+    let y0 = i64::from(y).clamp(0, ih);
+    let x1 = i64::from(x).saturating_add(i64::from(w)).clamp(0, iw);
+    let y1 = i64::from(y).saturating_add(i64::from(h)).clamp(0, ih);
+    if x1 <= x0 || y1 <= y0 {
+        return;
+    }
+
+    // Post-clip width / height fit in u32 because they're both bounded by image dims (u32).
+    let clipped_w = (x1 - x0) as u32;
+    let clipped_h = (y1 - y0) as u32;
+    let s = stroke.min(clipped_w.min(clipped_h));
     if s == 0 {
         return;
     }
+
+    let left = x0 as i32;
+    let top = y0 as i32;
+    // `x1 - s` and `y1 - s` are non-negative here because we checked `s <= clipped_w/h`.
+    let right_bar_x = (x1 - i64::from(s)) as i32;
+    let bottom_bar_y = (y1 - i64::from(s)) as i32;
+
     // Top bar
-    fill_rect(img, x, y, w, s, color);
+    fill_rect(img, left, top, clipped_w, s, color);
     // Bottom bar
-    fill_rect(img, x, y + (h - s) as i32, w, s, color);
+    fill_rect(img, left, bottom_bar_y, clipped_w, s, color);
     // Left bar
-    fill_rect(img, x, y, s, h, color);
+    fill_rect(img, left, top, s, clipped_h, color);
     // Right bar
-    fill_rect(img, x + (w - s) as i32, y, s, h, color);
+    fill_rect(img, right_bar_x, top, s, clipped_h, color);
 }
 
 /// Set every pixel inside the `(x, y, w, h)` rectangle to `color`. Out-of-bounds pixels are
 /// silently clipped — matches how callers use it (decoded image dims are authoritative; callers
 /// don't need to pre-clamp their rects).
+///
+/// Arithmetic is performed in `i64` because `x + w as i32` overflows for `w > i32::MAX` (or even
+/// for modest `w` when `x` is near `i32::MAX`). Without the wider type a pathological width would
+/// silently wrap and produce a negative `x_end`, making the rect look empty instead of "as wide
+/// as the image allows".
+///
+/// Writes a prebuilt scanline into the raw buffer via `copy_from_slice` — one bounds check per
+/// row instead of one per pixel. `put_pixel` would validate `(px, py)` every iteration, which
+/// shows up on wide strokes.
 fn fill_rect(img: &mut image::RgbaImage, x: i32, y: i32, w: u32, h: u32, color: image::Rgba<u8>) {
-    let (iw, ih) = (img.width() as i32, img.height() as i32);
-    let x_start = x.max(0);
-    let y_start = y.max(0);
-    let x_end = (x + w as i32).min(iw);
-    let y_end = (y + h as i32).min(ih);
+    let iw = img.width();
+    let ih = img.height();
+    let x_start = (x as i64).clamp(0, iw as i64);
+    let y_start = (y as i64).clamp(0, ih as i64);
+    let x_end = (x as i64).saturating_add(w as i64).clamp(0, iw as i64);
+    let y_end = (y as i64).saturating_add(h as i64).clamp(0, ih as i64);
     if x_end <= x_start || y_end <= y_start {
         return;
     }
-    for py in y_start..y_end {
-        for px in x_start..x_end {
-            img.put_pixel(px as u32, py as u32, color);
-        }
+
+    let stride = iw as usize * 4;
+    let row_bytes = (x_end - x_start) as usize * 4;
+    let x_byte_offset = x_start as usize * 4;
+    let y0 = y_start as usize;
+    let y1 = y_end as usize;
+
+    // One scanline's worth of the fill color — reused for every row so each row is a single
+    // `copy_from_slice` (bounds-checked once) instead of `row_px` individual `put_pixel` calls.
+    let scanline: Vec<u8> = color.0.iter().copied().cycle().take(row_bytes).collect();
+
+    let buf = img.as_flat_samples_mut().samples;
+    for py in y0..y1 {
+        let row_start = py * stride + x_byte_offset;
+        buf[row_start..row_start + row_bytes].copy_from_slice(&scanline);
     }
 }
 
@@ -536,6 +582,38 @@ mod tests {
     }
 
     #[test]
+    fn fill_rect_saturates_on_pathological_width() {
+        // u32::MAX exceeds i32 — a naive `(x + w as i32)` wraps to a negative value and the
+        // loop silently no-ops. Saturating arithmetic should instead treat "huge width" as
+        // "cover the whole image past x".
+        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
+        fill_rect(&mut img, 0, 0, u32::MAX, 4, image::Rgba([255, 0, 0, 255]));
+        assert!(
+            img.pixels().all(|p| p.0 == [255, 0, 0, 255]),
+            "saturating width should fill the entire image, not silently skip"
+        );
+    }
+
+    #[test]
+    fn fill_rect_saturates_on_pathological_height() {
+        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
+        fill_rect(&mut img, 0, 0, 4, u32::MAX, image::Rgba([255, 0, 0, 255]));
+        assert!(
+            img.pixels().all(|p| p.0 == [255, 0, 0, 255]),
+            "saturating height should fill the entire image, not silently skip"
+        );
+    }
+
+    #[test]
+    fn fill_rect_saturates_on_i32_max_offset_plus_width() {
+        // x near i32::MAX + a modest width would wrap the naive addition.
+        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
+        fill_rect(&mut img, i32::MAX - 10, 0, 100, 4, image::Rgba([255, 0, 0, 255]));
+        // The rect starts way past the right edge — clips to empty, nothing painted.
+        assert!(img.pixels().all(|p| p.0 == [0, 0, 0, 255]));
+    }
+
+    #[test]
     fn fill_rect_is_noop_for_zero_size() {
         let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
         fill_rect(&mut img, 0, 0, 0, 0, image::Rgba([255, 0, 0, 255]));
@@ -562,6 +640,30 @@ mod tests {
         let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
         stroke_rect_rgba(&mut img, 0, 0, 0, 0, 1, image::Rgba([255, 0, 0, 255]));
         assert!(img.pixels().all(|p| p.0 == [0, 0, 0, 255]));
+    }
+
+    #[test]
+    fn stroke_rect_rgba_right_bar_survives_pathological_width() {
+        // `stroke_rect_rgba` computes `x + (w - s) as i32` to place the right bar. With a u32
+        // width that exceeds i32, the naive conversion silently wraps to a negative offset and
+        // the right bar misses the image entirely — the top/bottom bars still cover the row,
+        // but the rightmost column only gets painted by top/bottom overlap, not by the right
+        // bar. Saturating math keeps the right bar at `iw - s`.
+        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
+        stroke_rect_rgba(&mut img, 0, 0, u32::MAX, 4, 1, image::Rgba([255, 0, 0, 255]));
+        // The rightmost column (including interior rows 1 and 2, which only the right bar can
+        // paint) must be red.
+        let right_col_is_red = (0..4).all(|y| img.get_pixel(3, y).0 == [255, 0, 0, 255]);
+        assert!(right_col_is_red, "right bar must saturate to iw - s, not wrap to negative");
+    }
+
+    #[test]
+    fn stroke_rect_rgba_bottom_bar_survives_pathological_height() {
+        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
+        stroke_rect_rgba(&mut img, 0, 0, 4, u32::MAX, 1, image::Rgba([255, 0, 0, 255]));
+        // Bottom row — only the bottom bar can paint all 4 pixels; left + right only hit corners.
+        let bottom_row_is_red = (0..4).all(|x| img.get_pixel(x, 3).0 == [255, 0, 0, 255]);
+        assert!(bottom_row_is_red, "bottom bar must saturate to ih - s, not wrap to negative");
     }
 
     #[test]
@@ -611,6 +713,65 @@ mod tests {
         let mut el = make_rect_element();
         el.text_offset = 0;
         el.text_length = 1;
+        assert!(matches!(element_text(&el, buf), Err(RenderError::BadUtf8Text)));
+    }
+
+    // --- u32-field audit: prove every wire field that's `u32` survives the worst legal value
+    // --- without panicking inside Rust. Runs through draw_rect_element / draw_text_element so
+    // --- it covers the exact code paths the FFI uses.
+
+    #[test]
+    fn draw_rect_element_survives_u32_max_outline_thickness() {
+        let mut img = image::RgbaImage::from_pixel(8, 8, image::Rgba([0, 0, 0, 255]));
+        let mut el = make_rect_element();
+        el.width = 8.0;
+        el.height = 8.0;
+        el.outline_thickness = u32::MAX;
+        el.outline_color_argb = 0xFF00FF00;
+        // Must not panic. With thickness clamped to image side (8), the entire rect fills.
+        draw_rect_element(&mut img, &el);
+        assert!(img.pixels().all(|p| p.0 == [0, 255, 0, 255]));
+    }
+
+    #[test]
+    fn draw_rect_element_survives_huge_floating_dimensions() {
+        // width/height arrive as f64 from Dart. A user passing 1e15 (way outside any image)
+        // must not crash — saturating-cast to u32::MAX, then stroke_rect_rgba clips.
+        let mut img = image::RgbaImage::from_pixel(8, 8, image::Rgba([0, 0, 0, 255]));
+        let mut el = make_rect_element();
+        el.width = 1e15;
+        el.height = 1e15;
+        el.outline_thickness = 1;
+        el.outline_color_argb = 0xFF_FF_00_00;
+        draw_rect_element(&mut img, &el);
+        // Outline-only at thickness 1: top + bottom rows + left + right cols are red.
+        assert_eq!(img.get_pixel(0, 0).0, [255, 0, 0, 255], "top-left corner painted");
+        assert_eq!(img.get_pixel(7, 7).0, [255, 0, 0, 255], "bottom-right corner painted");
+    }
+
+    #[test]
+    fn argb_to_rgba_handles_u32_max() {
+        // The packed-color fields are pure bit shifts — u32::MAX must produce all-FF channels.
+        assert_eq!(argb_to_rgba(u32::MAX).0, [0xFF, 0xFF, 0xFF, 0xFF]);
+    }
+
+    #[test]
+    fn element_text_handles_u32_max_offset_safely() {
+        // text_offset/text_length are `u32` on the wire. A pathological offset that overflows
+        // when added to length must surface BadUtf8Text, never panic.
+        let buf: &[u8] = b"hello";
+        let mut el = make_rect_element();
+        el.text_offset = u32::MAX;
+        el.text_length = 5;
+        assert!(matches!(element_text(&el, buf), Err(RenderError::BadUtf8Text)));
+    }
+
+    #[test]
+    fn element_text_handles_u32_max_length_safely() {
+        let buf: &[u8] = b"hello";
+        let mut el = make_rect_element();
+        el.text_offset = 0;
+        el.text_length = u32::MAX;
         assert!(matches!(element_text(&el, buf), Err(RenderError::BadUtf8Text)));
     }
 

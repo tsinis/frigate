@@ -2,7 +2,7 @@ name: 🎯 Dart Check
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
       - ".github/workflows/dart_check.yaml"
       - "frigatebird/**/*.dart"
@@ -66,7 +66,7 @@ jobs:
           dart pub global run pana . --no-warning --exit-code-threshold 0
 
       - name: 🧪 Run tests with coverage # TODO(tsinis) - adjust --fail-under value.
-        run: dart run coverage:test_with_coverage --fail-under=1
+        run: dart run coverage:test_with_coverage --fail-under=10
 
       - name: 💯 Upload to Codecov
         uses: codecov/codecov-action@v6.0.0

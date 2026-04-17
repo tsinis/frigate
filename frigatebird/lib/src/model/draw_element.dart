@@ -60,7 +60,10 @@ sealed class DrawElement {
   /// Outline thickness in pixels. Zero means no outline.
   final int outlineThickness;
 
-  /// Rotation in degrees, clockwise about `(x, y)`. Rust converts to radians internally.
+  /// Rotation in degrees — **visual clockwise on screen** (a positive value spins the element
+  /// the way a clock's second hand moves). Rust converts to radians and applies the rotation
+  /// in y-down screen coords, which is mathematically counter-clockwise; the result looks
+  /// clockwise to the user. Callers reason about the visual direction, not the math.
   final int rotation;
 
   /// FFI discriminator for this element type. Implemented polymorphically by each subtype so the

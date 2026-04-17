@@ -37,16 +37,21 @@ class DrawController extends ChangeNotifier {
   }
 
   void commitCommand(int index, {required DrawElement after, required DrawElement before}) {
+    // Tap-without-drag produces `after === before` because `_handlePointerMove` never fired a
+    // `copyWith` to swap the list slot. Pushing a no-op command would silently eat a Ctrl-Z.
+    if (identical(before, after)) return;
     commandStack.execute(ElementCommand(_elements, after: after, before: before, index: index));
     notifyListeners();
   }
 
   void undo() {
+    if (!commandStack.canUndo) return;
     commandStack.undo();
     notifyListeners();
   }
 
   void redo() {
+    if (!commandStack.canRedo) return;
     commandStack.redo();
     notifyListeners();
   }
