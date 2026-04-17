@@ -1,3 +1,5 @@
+// ChangeNotifier-backed controller: the whole class is built around mutating an internal
+// `_elements` list and notifying listeners. External reads return an unmodifiable view.
 // ignore_for_file: avoid-collection-mutating-methods
 
 import 'package:flutter/foundation.dart' show ChangeNotifier;

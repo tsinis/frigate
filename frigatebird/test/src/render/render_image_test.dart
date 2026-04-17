@@ -1,3 +1,7 @@
+// `expectLater` returns Future<void> which we always `await`; the lint can't tell that
+// awaiting a void Future counts as "using" the return value.
+// ignore_for_file: avoid-ignoring-return-values
+
 import 'dart:io';
 
 import 'package:frigatebird/frigatebird.dart';
@@ -117,7 +121,6 @@ void main() {
         imagePath: '/does/not/exist.jpg',
         outputPath: '${Directory.systemTemp.path}/nope.jpg',
       );
-      // ignore: avoid-ignoring-return-values, expectLater returns Future<void> and is awaited.
       await expectLater(future, throwsA(isA<ImageDecodeException>()));
     });
 
@@ -128,7 +131,6 @@ void main() {
         imagePath: imagePath,
         outputPath: '${Directory.systemTemp.path}/nope.tiff',
       );
-      // ignore: avoid-ignoring-return-values, expectLater returns Future<void> and is awaited.
       await expectLater(future, throwsA(isA<ImageWriteException>()));
     });
 
@@ -140,7 +142,6 @@ void main() {
         imagePath: imagePath,
         outputPath: '${Directory.systemTemp.path}/nope.jpg',
       );
-      // ignore: avoid-ignoring-return-values, expectLater returns Future<void> and is awaited.
       await expectLater(future, throwsA(isA<FontReadException>()));
     });
 
@@ -154,7 +155,6 @@ void main() {
         imagePath: imagePath,
         outputPath: '${Directory.systemTemp.path}/nope.jpg',
       );
-      // ignore: avoid-ignoring-return-values, expectLater returns Future<void> and is awaited.
       await expectLater(future, throwsA(isA<FontParseException>()));
     });
 

@@ -1,5 +1,6 @@
-// ignore_for_file: prefer-extracting-callbacks
-// ignore_for_file: prefer-extracting-function-callbacks
+// Test inlines short closures inside `expect` / iteration helpers — extracting them named
+// would make the cases harder to read at a glance.
+// ignore_for_file: prefer-extracting-callbacks, prefer-extracting-function-callbacks
 // _RecordingCanvas is a test-only stub that lives at file bottom; main() is the entry point.
 // ignore_for_file: prefer-match-file-name
 // noSuchMethod requires a dynamic return per the Object contract.

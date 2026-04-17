@@ -17,11 +17,11 @@ void main() => group('createExportBackend', () {
 
   test('export() before loadImage throws StateError', () {
     final backend = createExportBackend();
-    // _NativeExportBackend.export throws BEFORE returning any Future, so this is a sync
-    // throw — expect (not expectLater) is the right matcher. The closure looks like an
-    // un-awaited async call to the lints, but the throw fires before any Future exists.
+    // The native impl validates `loadImage()` was called BEFORE returning the Isolate.run
+    // future, so the throw is synchronous — `expect`/`throwsA` is the right matcher.
+    // The closure looks like a fire-and-forget async call to the lints, hence the ignore.
     expect(
-      // ignore: avoid-async-call-in-sync-function, throw fires before the Future exists.
+      // ignore: avoid-async-call-in-sync-function, the throw is sync; no Future is created.
       () => backend.export(rects: const []),
       throwsA(isA<StateError>()),
       reason: 'callers must loadImage() before export()',

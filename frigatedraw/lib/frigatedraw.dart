@@ -1,3 +1,4 @@
+// Package public entry point — being a barrel is its job.
 // ignore_for_file: avoid-barrel-files
 export 'package:frigatebird/frigatebird.dart';
 export 'src/helpers/draw_element_extension.dart';

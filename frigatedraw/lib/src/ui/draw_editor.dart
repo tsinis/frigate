@@ -1,5 +1,6 @@
-// ignore_for_file: prefer-extracting-callbacks
-// ignore_for_file: prefer-extracting-function-callbacks
+// Widget tree composes inline gesture / pointer / build callbacks where extraction would
+// add named methods that don't get reused — the inline form keeps the hierarchy readable.
+// ignore_for_file: prefer-extracting-callbacks, prefer-extracting-function-callbacks
 
 import 'dart:math';
 

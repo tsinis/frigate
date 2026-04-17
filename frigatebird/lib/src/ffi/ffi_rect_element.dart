@@ -1,3 +1,5 @@
+// Colocates the Struct, its writer extension, and the list-writer extension — they're a
+// single FFI surface and split across files would be artificial separation.
 // ignore_for_file: prefer-single-declaration-per-file
 import 'dart:ffi';
 

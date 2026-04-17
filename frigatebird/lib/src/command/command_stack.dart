@@ -1,3 +1,4 @@
+// Undo/redo stack — push/pop on internal lists is the entire job of this class.
 // ignore_for_file: avoid-collection-mutating-methods
 
 import 'command.dart';

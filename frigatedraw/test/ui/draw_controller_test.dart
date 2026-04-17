@@ -1,7 +1,7 @@
-// ignore_for_file: prefer-extracting-callbacks
-// ignore_for_file: prefer-extracting-function-callbacks
-// ignore_for_file: prefer-class-destructuring
-// ignore_for_file: unnecessary-trailing-comma
+// Test reads better with inline lambdas + dotted property access; trailing-comma decisions
+// are case-by-case for readability inside `expect` blocks.
+// ignore_for_file: prefer-extracting-callbacks, prefer-extracting-function-callbacks
+// ignore_for_file: prefer-class-destructuring, unnecessary-trailing-comma
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frigatedraw/frigatedraw.dart';
