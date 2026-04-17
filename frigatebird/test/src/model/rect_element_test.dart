@@ -57,6 +57,28 @@ void main() => group(RectElement, () {
     expect(updated.cornerRadius, 8, reason: 'omitted corner radius carries over from base');
   });
 
+  test('negative cornerRadius is rejected at construction (debug assert)', () {
+    // Without this guard, a negative cornerRadius silently wraps to a huge u32 on the FFI
+    // wire (via Dart's Uint32 marshaling of a negative int) — Rust then clamps it to a pill
+    // shape, while the Flutter preview takes the `radius > 0` branch as false and renders
+    // sharp corners. That preview-vs-export divergence is invisible until export, so we fail
+    // loudly at construction time instead.
+    expect(
+      () => RectElement(cornerRadius: -1, height: 50, width: 100, x: 0, y: 0),
+      throwsA(isA<AssertionError>()),
+      reason: 'negative cornerRadius makes no semantic sense and would silently desync UI/export',
+    );
+  });
+
+  test('negative cornerRadius via copyWith is also rejected', () {
+    const original = RectElement(height: 50, width: 100, x: 0, y: 0);
+    expect(
+      () => original.copyWith(cornerRadius: -5),
+      throwsA(isA<AssertionError>()),
+      reason: 'copyWith routes through the same constructor; the assert must fire there too',
+    );
+  });
+
   test('copyWith preserves unchanged fields', () {
     const original = RectElement(height: 50, outlineThickness: 5, width: 100, x: 10, y: 20);
     final RectElement(:fillColor, :height, :outlineThickness, :width, :x, :y) = original.copyWith(

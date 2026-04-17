@@ -60,6 +60,31 @@ void main() => group(FfiRectElement, () {
     }
   });
 
+  test('toNative on an empty list produces a pointer that is safe to free', () {
+    // Edge case: empty input. Dart's malloc.allocate(0) is implementation-defined; we need
+    // to confirm our wrapper doesn't deref a possibly-invalid pointer and that callers can
+    // still free it via the same allocator. Without this guarantee, the export pipeline
+    // would have a leak/UAF when called with no rects.
+    final empty = <RectElement>[];
+    final ptr = empty.toNative(malloc);
+    // Must be safely freeable — calling malloc.free on whatever toNative returned, even if
+    // the underlying allocation was a 0-byte sentinel, must not crash.
+    expect(() => malloc.free(ptr), returnsNormally, reason: 'empty-list pointer must be freeable');
+  });
+
+  test('writeTo never produces a negative-wrapped shapeParam (constructor-side guard)', () {
+    // Belt-and-braces against the wraparound bug: if anyone removes the cornerRadius assert
+    // in RectElement, this test still fails because the constructor itself would refuse
+    // negative values via the base-class shapeParam guard. We can't construct a negative-
+    // shapeParam RectElement directly, so the only way to verify is to assert that any
+    // construction attempt with a negative typed value throws.
+    expect(
+      () => RectElement(cornerRadius: -1, height: 10, width: 10, x: 0, y: 0),
+      throwsA(isA<AssertionError>()),
+      reason: 'no path from a negative cornerRadius can reach the FFI Uint32 slot',
+    );
+  });
+
   test('shapeParam respects the u32 wire range when written', () {
     // The Dart-side cornerRadius is `int`; the FFI field is u32. Writing a value within u32
     // range must round-trip exactly - anything past u32 would silently truncate, which is a

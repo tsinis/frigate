@@ -16,7 +16,13 @@ final class RectElement extends DrawElement {
     super.outlineThickness = 2,
     super.rotation,
     int cornerRadius = 0,
-  }) : super(shapeParam: cornerRadius);
+  }) : assert(
+         cornerRadius >= 0,
+         'cornerRadius must be non-negative; negative values silently wrap to a huge u32 on '
+         'the FFI wire (Dart Uint32 marshaling) and Rust would render them as a pill while '
+         'the Flutter preview would draw sharp corners — preview-vs-export divergence.',
+       ),
+       super(shapeParam: cornerRadius);
 
   /// Corner radius in pixels. Sharp corners when 0; clamped to `min(width, height) / 2` at
   /// render time on both the preview and the Rust export.

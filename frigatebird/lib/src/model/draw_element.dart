@@ -34,7 +34,13 @@ sealed class DrawElement {
     this.outlineThickness = 0,
     this.rotation = 0,
     this.shapeParam = 0,
-  });
+  }) : assert(
+         shapeParam >= 0,
+         'shapeParam must be non-negative; the FFI wire slot is u32 and a negative int '
+         'would silently wrap to a huge positive value (Dart Uint32 marshaling), causing '
+         'preview-vs-export divergence. Subtypes should validate their typed alias '
+         '(e.g. RectElement.cornerRadius) before forwarding to super.',
+       );
 
   /// Document-space x in pixels.
   final double x;
