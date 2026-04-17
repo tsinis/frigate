@@ -10,10 +10,17 @@
 /// `RenderError` discriminants in the Rust crate; callers that don't care about the specific kind
 /// can still inspect it.
 sealed class RenderException implements Exception {
-  const RenderException(this.code);
+  const RenderException(this.code, {required this.message, required this.name});
 
   /// Wire-level error code returned by the Rust FFI call.
   final int code;
+
+  /// Stable subclass name. Stored explicitly (not via `runtimeType`) so [toString] stays
+  /// readable in release/obfuscated builds where `runtimeType.toString()` may be minified.
+  final String name;
+
+  /// Short human-readable description used by [toString].
+  final String message;
 
   /// Picks the right [RenderException] subtype for a wire `code`. Unknown codes fall back to
   /// [UnknownRenderException] so a newer Rust binary that returns an unrecognized error still
@@ -30,85 +37,65 @@ sealed class RenderException implements Exception {
     99 => const RustPanicException(),
     _ => UnknownRenderException(code),
   };
+
+  @override
+  String toString() => '$name(code: $code, $message)';
 }
 
 /// The source image couldn't be read or decoded.
 final class ImageDecodeException extends RenderException {
-  const ImageDecodeException() : super(1);
-
-  @override
-  String toString() => 'ImageDecodeException(code: 1, image decode failed)';
+  const ImageDecodeException()
+    : super(1, message: 'image decode failed', name: 'ImageDecodeException');
 }
 
 /// The font file couldn't be read from disk.
 final class FontReadException extends RenderException {
-  const FontReadException() : super(2);
-
-  @override
-  String toString() => 'FontReadException(code: 2, font read failed)';
+  const FontReadException() : super(2, message: 'font read failed', name: 'FontReadException');
 }
 
 /// Font bytes read from disk but couldn't be parsed as a usable font.
 final class FontParseException extends RenderException {
-  const FontParseException() : super(3);
-
-  @override
-  String toString() => 'FontParseException(code: 3, font parse failed)';
+  const FontParseException() : super(3, message: 'font parse failed', name: 'FontParseException');
 }
 
 /// The annotation text was not valid UTF-8 when Rust interpreted it.
 final class TextNotUtf8Exception extends RenderException {
-  const TextNotUtf8Exception() : super(4);
-
-  @override
-  String toString() => 'TextNotUtf8Exception(code: 4, text not valid UTF-8)';
+  const TextNotUtf8Exception()
+    : super(4, message: 'text not valid UTF-8', name: 'TextNotUtf8Exception');
 }
 
 /// One of the file paths was not valid UTF-8.
 final class PathNotUtf8Exception extends RenderException {
-  const PathNotUtf8Exception() : super(5);
-
-  @override
-  String toString() => 'PathNotUtf8Exception(code: 5, path not valid UTF-8)';
+  const PathNotUtf8Exception()
+    : super(5, message: 'path not valid UTF-8', name: 'PathNotUtf8Exception');
 }
 
 /// Encoding / writing the output image to disk failed (includes unsupported extensions).
 final class ImageWriteException extends RenderException {
-  const ImageWriteException() : super(6);
-
-  @override
-  String toString() => 'ImageWriteException(code: 6, image write failed)';
+  const ImageWriteException()
+    : super(6, message: 'image write failed', name: 'ImageWriteException');
 }
 
 /// A required pointer (path, text, or params) was null when Rust dereferenced it.
 final class NullPointerException extends RenderException {
-  const NullPointerException() : super(7);
-
-  @override
-  String toString() => 'NullPointerException(code: 7, null pointer argument)';
+  const NullPointerException()
+    : super(7, message: 'null pointer argument', name: 'NullPointerException');
 }
 
 /// A `TextElement` was included in the list but no `fontPath` was supplied.
 final class MissingFontException extends RenderException {
-  const MissingFontException() : super(8);
-
-  @override
-  String toString() => 'MissingFontException(code: 8, text element present without font)';
+  const MissingFontException()
+    : super(8, message: 'text element present without font', name: 'MissingFontException');
 }
 
 /// Rust panicked inside `catch_unwind`. Indicates a bug in native code.
 final class RustPanicException extends RenderException {
-  const RustPanicException() : super(99);
-
-  @override
-  String toString() => 'RustPanicException(code: 99, Rust panic)';
+  const RustPanicException() : super(99, message: 'Rust panic', name: 'RustPanicException');
 }
 
 /// Fallback for codes this Dart build doesn't recognize (e.g. a newer Rust binary added a new
 /// discriminant).
 final class UnknownRenderException extends RenderException {
-  const UnknownRenderException(super.code);
-
-  @override
-  String toString() => 'UnknownRenderException(code: $code, unknown error)';
+  const UnknownRenderException(super.code)
+    : super(message: 'unknown error', name: 'UnknownRenderException');
 }
