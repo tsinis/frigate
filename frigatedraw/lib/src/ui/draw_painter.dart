@@ -18,11 +18,16 @@ class DrawPainter extends CustomPainter {
       // ignore: prefer-correct-switch-length, it's TODO!
       switch (element) {
         case RectElement():
+          // TODO(tsinis): render fill color too.
           final strokePaint = Paint()
-            ..color = element.uiColor
+            ..color = element.uiOutlineColor
             ..style = .stroke
-            ..strokeWidth = element.strokeWidth;
+            ..strokeWidth = element.outlineThickness.toDouble();
           canvas.drawRect(element.rect, strokePaint);
+
+        case TextElement():
+          // TODO(tsinis): render TextElement in the preview painter.
+          break;
       }
     }
 
@@ -51,7 +56,7 @@ class DrawPainter extends CustomPainter {
 
   static bool isPointOnRect(Offset point, {required RectElement element}) {
     final rect = element.rect;
-    final half = element.strokeWidth / 2 + 4;
+    final half = element.outlineThickness / 2 + 4;
     final outer = rect.inflate(half);
     final inner = rect.deflate(half);
 

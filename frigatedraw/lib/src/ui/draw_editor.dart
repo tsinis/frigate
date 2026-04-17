@@ -3,6 +3,7 @@
 
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'package:frigatebird/frigatebird.dart';
@@ -25,6 +26,16 @@ class DrawEditor extends StatefulWidget {
 
   @override
   State<DrawEditor> createState() => _DrawEditorState();
+
+  @override
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
+    super.debugFillProperties(properties);
+    properties
+      ..add(DiagnosticsProperty<DrawController>('controller', controller))
+      ..add(DiagnosticsProperty<ImageProvider>('image', image))
+      ..add(DoubleProperty('imageHeight', imageHeight))
+      ..add(DoubleProperty('imageWidth', imageWidth));
+  }
 }
 
 class _DrawEditorState extends State<DrawEditor> {
