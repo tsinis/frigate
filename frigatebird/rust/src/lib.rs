@@ -47,7 +47,8 @@ pub unsafe extern "C" fn export_image(
     let img_bytes = unsafe { slice::from_raw_parts(img_ptr, img_len) };
     let rects = unsafe { slice::from_raw_parts(rects_ptr, rects_count) };
     // catch_unwind: panicking across an FFI boundary is undefined behavior.
-    let result = std::panic::catch_unwind(|| render_jpeg_with_rects(img_bytes, rects, image_quality));
+    let result =
+        std::panic::catch_unwind(|| render_jpeg_with_rects(img_bytes, rects, image_quality));
     match result {
         Ok(bytes) => {
             // into_boxed_slice shrinks capacity to == len, so free_bytes can reconstruct the Vec
@@ -55,9 +56,15 @@ pub unsafe extern "C" fn export_image(
             let boxed = bytes.into_boxed_slice();
             let len = boxed.len();
             let ptr = Box::into_raw(boxed) as *mut u8;
-            ByteBuffer { data: ptr, length: len }
+            ByteBuffer {
+                data: ptr,
+                length: len,
+            }
         }
-        Err(_) => ByteBuffer { data: std::ptr::null_mut(), length: 0 },
+        Err(_) => ByteBuffer {
+            data: std::ptr::null_mut(),
+            length: 0,
+        },
     }
 }
 
@@ -107,7 +114,9 @@ impl From<io::IoError> for RenderError {
     fn from(e: io::IoError) -> Self {
         match e {
             io::IoError::Read | io::IoError::Decode => Self::ImageDecode,
-            io::IoError::Write | io::IoError::Encode | io::IoError::UnsupportedFormat => Self::ImageWrite,
+            io::IoError::Write | io::IoError::Encode | io::IoError::UnsupportedFormat => {
+                Self::ImageWrite
+            }
         }
     }
 }
@@ -173,7 +182,9 @@ unsafe fn c_str_to_str<'a>(ptr: *const c_char) -> Result<&'a str, RenderError> {
     if ptr.is_null() {
         return Err(RenderError::NullPtr);
     }
-    unsafe { CStr::from_ptr(ptr) }.to_str().map_err(|_| RenderError::BadUtf8Path)
+    unsafe { CStr::from_ptr(ptr) }
+        .to_str()
+        .map_err(|_| RenderError::BadUtf8Path)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -209,7 +220,9 @@ unsafe fn render_image_inner(
     };
 
     // Lazy-load the font: only required when the element list actually contains text.
-    let needs_font = elements.iter().any(|e| e.element_type == element_type::TEXT);
+    let needs_font = elements
+        .iter()
+        .any(|e| e.element_type == element_type::TEXT);
     let font_bytes_holder;
     let font: Option<ab_glyph::FontRef<'_>> = if needs_font {
         if font_path_ptr.is_null() {
@@ -248,10 +261,7 @@ unsafe fn render_image_inner(
     Ok(())
 }
 
-fn element_text<'b>(
-    element: &FfiElement,
-    text_buffer: &'b [u8],
-) -> Result<&'b str, RenderError> {
+fn element_text<'b>(element: &FfiElement, text_buffer: &'b [u8]) -> Result<&'b str, RenderError> {
     let start = element.text_offset as usize;
     let len = element.text_length as usize;
     let end = start.checked_add(len).ok_or(RenderError::BadUtf8Text)?;
@@ -608,7 +618,14 @@ mod tests {
     fn fill_rect_saturates_on_i32_max_offset_plus_width() {
         // x near i32::MAX + a modest width would wrap the naive addition.
         let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
-        fill_rect(&mut img, i32::MAX - 10, 0, 100, 4, image::Rgba([255, 0, 0, 255]));
+        fill_rect(
+            &mut img,
+            i32::MAX - 10,
+            0,
+            100,
+            4,
+            image::Rgba([255, 0, 0, 255]),
+        );
         // The rect starts way past the right edge — clips to empty, nothing painted.
         assert!(img.pixels().all(|p| p.0 == [0, 0, 0, 255]));
     }
@@ -650,20 +667,42 @@ mod tests {
         // but the rightmost column only gets painted by top/bottom overlap, not by the right
         // bar. Saturating math keeps the right bar at `iw - s`.
         let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
-        stroke_rect_rgba(&mut img, 0, 0, u32::MAX, 4, 1, image::Rgba([255, 0, 0, 255]));
+        stroke_rect_rgba(
+            &mut img,
+            0,
+            0,
+            u32::MAX,
+            4,
+            1,
+            image::Rgba([255, 0, 0, 255]),
+        );
         // The rightmost column (including interior rows 1 and 2, which only the right bar can
         // paint) must be red.
         let right_col_is_red = (0..4).all(|y| img.get_pixel(3, y).0 == [255, 0, 0, 255]);
-        assert!(right_col_is_red, "right bar must saturate to iw - s, not wrap to negative");
+        assert!(
+            right_col_is_red,
+            "right bar must saturate to iw - s, not wrap to negative"
+        );
     }
 
     #[test]
     fn stroke_rect_rgba_bottom_bar_survives_pathological_height() {
         let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
-        stroke_rect_rgba(&mut img, 0, 0, 4, u32::MAX, 1, image::Rgba([255, 0, 0, 255]));
+        stroke_rect_rgba(
+            &mut img,
+            0,
+            0,
+            4,
+            u32::MAX,
+            1,
+            image::Rgba([255, 0, 0, 255]),
+        );
         // Bottom row — only the bottom bar can paint all 4 pixels; left + right only hit corners.
         let bottom_row_is_red = (0..4).all(|x| img.get_pixel(x, 3).0 == [255, 0, 0, 255]);
-        assert!(bottom_row_is_red, "bottom bar must saturate to ih - s, not wrap to negative");
+        assert!(
+            bottom_row_is_red,
+            "bottom bar must saturate to ih - s, not wrap to negative"
+        );
     }
 
     #[test]
@@ -673,7 +712,11 @@ mod tests {
         // Corners + edges should be red, centre (2, 2) untouched.
         assert_eq!(img.get_pixel(0, 0).0, [255, 0, 0, 255]);
         assert_eq!(img.get_pixel(4, 4).0, [255, 0, 0, 255]);
-        assert_eq!(img.get_pixel(2, 2).0, [0, 0, 0, 255], "interior of a 1px stroke is untouched");
+        assert_eq!(
+            img.get_pixel(2, 2).0,
+            [0, 0, 0, 255],
+            "interior of a 1px stroke is untouched"
+        );
     }
 
     // --- element_text helper (bounds + UTF-8) --------------------------------------------------
@@ -694,7 +737,10 @@ mod tests {
         let mut el = make_rect_element();
         el.text_offset = 0;
         el.text_length = 99;
-        assert!(matches!(element_text(&el, buf), Err(RenderError::BadUtf8Text)));
+        assert!(matches!(
+            element_text(&el, buf),
+            Err(RenderError::BadUtf8Text)
+        ));
     }
 
     #[test]
@@ -703,7 +749,10 @@ mod tests {
         let mut el = make_rect_element();
         el.text_offset = u32::MAX;
         el.text_length = 1;
-        assert!(matches!(element_text(&el, buf), Err(RenderError::BadUtf8Text)));
+        assert!(matches!(
+            element_text(&el, buf),
+            Err(RenderError::BadUtf8Text)
+        ));
     }
 
     #[test]
@@ -713,7 +762,10 @@ mod tests {
         let mut el = make_rect_element();
         el.text_offset = 0;
         el.text_length = 1;
-        assert!(matches!(element_text(&el, buf), Err(RenderError::BadUtf8Text)));
+        assert!(matches!(
+            element_text(&el, buf),
+            Err(RenderError::BadUtf8Text)
+        ));
     }
 
     // --- u32-field audit: prove every wire field that's `u32` survives the worst legal value
@@ -745,8 +797,16 @@ mod tests {
         el.outline_color_argb = 0xFF_FF_00_00;
         draw_rect_element(&mut img, &el);
         // Outline-only at thickness 1: top + bottom rows + left + right cols are red.
-        assert_eq!(img.get_pixel(0, 0).0, [255, 0, 0, 255], "top-left corner painted");
-        assert_eq!(img.get_pixel(7, 7).0, [255, 0, 0, 255], "bottom-right corner painted");
+        assert_eq!(
+            img.get_pixel(0, 0).0,
+            [255, 0, 0, 255],
+            "top-left corner painted"
+        );
+        assert_eq!(
+            img.get_pixel(7, 7).0,
+            [255, 0, 0, 255],
+            "bottom-right corner painted"
+        );
     }
 
     #[test]
@@ -763,7 +823,10 @@ mod tests {
         let mut el = make_rect_element();
         el.text_offset = u32::MAX;
         el.text_length = 5;
-        assert!(matches!(element_text(&el, buf), Err(RenderError::BadUtf8Text)));
+        assert!(matches!(
+            element_text(&el, buf),
+            Err(RenderError::BadUtf8Text)
+        ));
     }
 
     #[test]
@@ -772,7 +835,10 @@ mod tests {
         let mut el = make_rect_element();
         el.text_offset = 0;
         el.text_length = u32::MAX;
-        assert!(matches!(element_text(&el, buf), Err(RenderError::BadUtf8Text)));
+        assert!(matches!(
+            element_text(&el, buf),
+            Err(RenderError::BadUtf8Text)
+        ));
     }
 
     fn make_rect_element() -> FfiElement {

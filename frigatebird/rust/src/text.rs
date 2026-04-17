@@ -52,7 +52,15 @@ pub fn render_text_overlay(img: &mut RgbaImage, font: &FontRef<'_>, params: &Tex
     // Overlay buffer matches the base size so rotation shares a single coordinate system with
     // the base image — no per-glyph bounding-box math.
     let mut overlay: RgbaImage = RgbaImage::from_pixel(iw, ih, Rgba([0, 0, 0, 0]));
-    rasterize_text(&mut overlay, font, scale, params.x, params.y, params.color, params.text);
+    rasterize_text(
+        &mut overlay,
+        font,
+        scale,
+        params.x,
+        params.y,
+        params.color,
+        params.text,
+    );
 
     // Rotation about (x, y). We rotate the overlay in place with bilinear reverse-mapping
     // (for each dst pixel, compute where it came from in the source and sample).
@@ -143,43 +151,51 @@ fn rasterize_text(
 /// Because image coordinates are y-down, that *appears* on screen as visual **clockwise** —
 /// which is what the Dart-side `DrawElement.rotation` doc promises. If you pass 90° from Dart,
 /// the text spins the same direction a clock's second hand goes.
+///
+/// **f64 internals:** the public contract accepts `f32` (matches `TextParams`), but trig and
+/// bilinear math run in `f64`. Reason: Rust's `f32::cos`/`f32::sin` delegate to the system libm,
+/// which is not bit-identical across glibc-x86_64 / glibc-arm64 / Apple libm. `f64` versions of
+/// the same functions are much more tightly specified across those libms, so cross-platform
+/// golden tests don't drift by one ULP and flake in CI.
 fn rotate_about(src: &RgbaImage, cx: f32, cy: f32, angle_rad: f32) -> RgbaImage {
     let (w, h) = (src.width(), src.height());
     let mut dst = RgbaImage::from_pixel(w, h, Rgba([0, 0, 0, 0]));
     // For dst pixel (px, py) we want the source coord that lands on (px, py) after a CCW
     // rotation by `angle_rad` about (cx, cy). The inverse of a CCW rotation by θ is a CW
     // rotation by θ, which is the transpose — i.e. swap sin signs.
-    let cos = angle_rad.cos();
-    let sin = angle_rad.sin();
+    let cx = f64::from(cx);
+    let cy = f64::from(cy);
+    let cos = f64::from(angle_rad).cos();
+    let sin = f64::from(angle_rad).sin();
     let (max_x, max_y) = (w as i32 - 1, h as i32 - 1);
 
     for py in 0..h {
         for px in 0..w {
-            let dx = px as f32 - cx;
-            let dy = py as f32 - cy;
+            let dx = f64::from(px) - cx;
+            let dy = f64::from(py) - cy;
             let sx = cx + dx * cos + dy * sin;
             let sy = cy - dx * sin + dy * cos;
             // Bilinear sample. Skip if the source coord falls outside by more than one pixel
             // so we don't accidentally blend with the (invalid) edge.
-            if sx < 0.0 || sy < 0.0 || sx > max_x as f32 || sy > max_y as f32 {
+            if sx < 0.0 || sy < 0.0 || sx > f64::from(max_x) || sy > f64::from(max_y) {
                 continue;
             }
             let x0 = sx.floor() as i32;
             let y0 = sy.floor() as i32;
             let x1 = (x0 + 1).min(max_x);
             let y1 = (y0 + 1).min(max_y);
-            let fx = sx - x0 as f32;
-            let fy = sy - y0 as f32;
+            let fx = sx - f64::from(x0);
+            let fy = sy - f64::from(y0);
             let p00 = src.get_pixel(x0 as u32, y0 as u32).0;
             let p10 = src.get_pixel(x1 as u32, y0 as u32).0;
             let p01 = src.get_pixel(x0 as u32, y1 as u32).0;
             let p11 = src.get_pixel(x1 as u32, y1 as u32).0;
             let mut out = [0u8; 4];
             for c in 0..4 {
-                let v = (1.0 - fx) * (1.0 - fy) * p00[c] as f32
-                    + fx * (1.0 - fy) * p10[c] as f32
-                    + (1.0 - fx) * fy * p01[c] as f32
-                    + fx * fy * p11[c] as f32;
+                let v = (1.0 - fx) * (1.0 - fy) * f64::from(p00[c])
+                    + fx * (1.0 - fy) * f64::from(p10[c])
+                    + (1.0 - fx) * fy * f64::from(p01[c])
+                    + fx * fy * f64::from(p11[c]);
                 out[c] = v as u8;
             }
             dst.put_pixel(px, py, Rgba(out));
@@ -216,8 +232,7 @@ mod tests {
     // Bundled test font. `ab_glyph` picks the default axis instance (wght=400) for variable
     // fonts — if a future ab_glyph update shifts rasterization the goldens will fail loudly and
     // we regenerate intentionally.
-    const FONT_BYTES: &[u8] =
-        include_bytes!("../../test/assets/RobotoMono-VariableFont_wght.ttf");
+    const FONT_BYTES: &[u8] = include_bytes!("../../test/assets/RobotoMono-VariableFont_wght.ttf");
 
     fn black_image(w: u32, h: u32) -> RgbaImage {
         RgbaImage::from_pixel(w, h, Rgba([0, 0, 0, 255]))
@@ -310,7 +325,11 @@ mod tests {
                 ..base_params("Hi")
             },
         );
-        assert_ne!(a.as_raw(), b.as_raw(), "rotation should produce different pixels");
+        assert_ne!(
+            a.as_raw(),
+            b.as_raw(),
+            "rotation should produce different pixels"
+        );
     }
 
     #[test]
@@ -445,6 +464,9 @@ mod tests {
         src.put_pixel(2, 1, Rgba([255, 0, 0, 255]));
         let rotated = rotate_about(&src, 1.0, 1.0, std::f32::consts::FRAC_PI_2);
         let moved = rotated.get_pixel(1, 2).0;
-        assert!(moved[0] > 200, "expected red pixel at (1, 2), got {moved:?}");
+        assert!(
+            moved[0] > 200,
+            "expected red pixel at (1, 2), got {moved:?}"
+        );
     }
 }

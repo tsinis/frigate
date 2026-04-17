@@ -20,8 +20,7 @@ use image::{Rgba, RgbaImage};
 
 use frigate::{FfiElement, element_type};
 
-const TEST_FONT_BYTES: &[u8] =
-    include_bytes!("../../test/assets/RobotoMono-VariableFont_wght.ttf");
+const TEST_FONT_BYTES: &[u8] = include_bytes!("../../test/assets/RobotoMono-VariableFont_wght.ttf");
 
 fn assets_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -145,7 +144,10 @@ fn render_image_end_to_end_writes_jpeg() {
 
     let img_path = CString::new(assets_dir().join("paint.jpg").to_str().unwrap()).unwrap();
     let font_path = CString::new(
-        assets_dir().join("RobotoMono-VariableFont_wght.ttf").to_str().unwrap(),
+        assets_dir()
+            .join("RobotoMono-VariableFont_wght.ttf")
+            .to_str()
+            .unwrap(),
     )
     .unwrap();
     let out_path = CString::new(out.to_str().unwrap()).unwrap();
