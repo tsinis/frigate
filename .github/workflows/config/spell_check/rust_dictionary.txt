@@ -12,6 +12,7 @@ freeable
 imageproc
 libms
 lossily
+misrender
 nonfinite
 pixmap
 pixmaps
