@@ -1,3 +1,7 @@
+// `expectLater` returns Future<void> which we always `await`; the lint can't tell that
+// awaiting a void Future counts as "using" the return value.
+// ignore_for_file: avoid-ignoring-return-values
+
 import 'dart:io';
 
 import 'package:frigatebird/frigatebird.dart';
@@ -24,7 +28,7 @@ void main() {
   final imagePath = '$assetsDir/paint.jpg';
   final fontPath = '$assetsDir/RobotoMono-VariableFont_wght.ttf';
 
-  group(renderImage, () {
+  group(RenderImage, () {
     test('writes a JPEG with a single text overlay', () async {
       final outPath = _ensureTempFileAbsent('frigate_render_text.jpg');
 
@@ -35,7 +39,7 @@ void main() {
         x: 50,
         y: 250,
       );
-      await renderImage(
+      await RenderImage.run(
         elements: [text],
         fontPath: fontPath,
         imagePath: imagePath,
@@ -67,7 +71,7 @@ void main() {
         x: 150,
         y: 250,
       );
-      await renderImage(
+      await RenderImage.run(
         elements: [rect, text],
         fontPath: fontPath,
         imagePath: imagePath,
@@ -92,7 +96,7 @@ void main() {
         x: 10,
         y: 10,
       );
-      await renderImage(elements: [rect], imagePath: imagePath, outputPath: outPath);
+      await RenderImage.run(elements: [rect], imagePath: imagePath, outputPath: outPath);
 
       final outFile = File(outPath);
       expect(outFile.existsSync(), isTrue, reason: 'rect-only output file created');
@@ -102,7 +106,7 @@ void main() {
     test('empty element list still produces a valid file', () async {
       final outPath = _ensureTempFileAbsent('frigate_render_empty.jpg');
 
-      await renderImage(elements: const [], imagePath: imagePath, outputPath: outPath);
+      await RenderImage.run(elements: const [], imagePath: imagePath, outputPath: outPath);
 
       final outFile = File(outPath);
       expect(outFile.existsSync(), isTrue, reason: 'empty-overlay output file created');
@@ -111,36 +115,33 @@ void main() {
 
     test('throws ImageDecodeException for a missing source image', () async {
       const text = TextElement(text: 'x', x: 0, y: 0);
-      final future = renderImage(
+      final future = RenderImage.run(
         elements: [text],
         fontPath: fontPath,
         imagePath: '/does/not/exist.jpg',
         outputPath: '${Directory.systemTemp.path}/nope.jpg',
       );
-      // ignore: avoid-ignoring-return-values, expectLater returns Future<void> and is awaited.
       await expectLater(future, throwsA(isA<ImageDecodeException>()));
     });
 
     test('throws ImageWriteException for an unsupported output extension', () async {
       const rect = RectElement(height: 1, width: 1, x: 0, y: 0);
-      final future = renderImage(
+      final future = RenderImage.run(
         elements: [rect],
         imagePath: imagePath,
         outputPath: '${Directory.systemTemp.path}/nope.tiff',
       );
-      // ignore: avoid-ignoring-return-values, expectLater returns Future<void> and is awaited.
       await expectLater(future, throwsA(isA<ImageWriteException>()));
     });
 
     test('throws FontReadException when fontPath does not exist', () async {
       const text = TextElement(text: 'x', x: 0, y: 0);
-      final future = renderImage(
+      final future = RenderImage.run(
         elements: [text],
         fontPath: '/definitely/not/a/font.ttf',
         imagePath: imagePath,
         outputPath: '${Directory.systemTemp.path}/nope.jpg',
       );
-      // ignore: avoid-ignoring-return-values, expectLater returns Future<void> and is awaited.
       await expectLater(future, throwsA(isA<FontReadException>()));
     });
 
@@ -148,13 +149,12 @@ void main() {
       // Re-use the JPEG as a "font file" so the read succeeds but parsing fails — cheaper than
       // shipping a dedicated malformed-font fixture, and exercises the exact Rust branch.
       const text = TextElement(text: 'x', x: 0, y: 0);
-      final future = renderImage(
+      final future = RenderImage.run(
         elements: [text],
         fontPath: imagePath,
         imagePath: imagePath,
         outputPath: '${Directory.systemTemp.path}/nope.jpg',
       );
-      // ignore: avoid-ignoring-return-values, expectLater returns Future<void> and is awaited.
       await expectLater(future, throwsA(isA<FontParseException>()));
     });
 
@@ -168,7 +168,7 @@ void main() {
         x: 5,
         y: 5,
       );
-      await renderImage(
+      await RenderImage.run(
         elements: [rect],
         imagePath: imagePath,
         imageQuality: DrawConstants.maxImageQuality,
@@ -179,7 +179,7 @@ void main() {
       expect(
         outFile.existsSync(),
         isTrue,
-        reason: 'renderImage returns normally when quality is at the legal upper bound',
+        reason: 'RenderImage.run returns normally when quality is at the legal upper bound',
       );
       outFile.deleteSync();
     });

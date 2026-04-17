@@ -1,3 +1,6 @@
+// ColorScheme exposes paired on*/non-on* fields by design; destructuring them all is fine.
+// ignore_for_file: avoid-similar-names
+
 import 'dart:io' show Directory, File, Platform;
 
 import 'package:flutter/material.dart';
@@ -85,6 +88,20 @@ class _DrawingScreenState extends State<DrawingScreen> {
     );
   }
 
+  void _handleAddRoundedRect() {
+    // Slightly offset so the rounded one doesn't sit exactly on top of the sharp one when
+    // both are added for comparison.
+    _controller.addElement(
+      const RectElement(
+        cornerRadius: 16,
+        height: 100,
+        width: 100,
+        x: _imageWidth / 2 - 30,
+        y: _imageHeight / 2 - 30,
+      ),
+    );
+  }
+
   void _handleSavePressed() {
     _handleSave();
   }
@@ -155,7 +172,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
 
       // Always start from the pristine asset — without this step, a second render would stack
       // text on top of the previous one (since output path == input path).
-      await renderImage(
+      await RenderImage.run(
         elements: [
           TextElement(
             fontSize: params.fontSize,
@@ -195,7 +212,14 @@ class _DrawingScreenState extends State<DrawingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final ColorScheme(
+      :onPrimaryContainer,
+      :onSecondaryContainer,
+      :primaryContainer,
+      :secondaryContainer,
+    ) = Theme.of(
+      context, // Dart 3.8 formatting.
+    ).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -224,17 +248,33 @@ class _DrawingScreenState extends State<DrawingScreen> {
         imageHeight: _imageHeight.toDouble(),
         imageWidth: _imageWidth.toDouble(),
       ),
-      floatingActionButton: Tooltip(
-        message: 'Tap to add rectangle; long-press to render text',
-        child: RawMaterialButton(
-          constraints: const BoxConstraints.tightFor(height: 56, width: 56),
-          elevation: 6,
-          fillColor: colorScheme.primaryContainer,
-          onLongPress: _handleFabLongPress,
-          onPressed: _handleAddRect,
-          shape: const CircleBorder(),
-          child: Icon(Icons.add, color: colorScheme.onPrimaryContainer),
-        ),
+      floatingActionButton: Column(
+        mainAxisSize: .min,
+        spacing: 12,
+        children: [
+          // Small FAB: adds a rounded-corner rectangle. Sits above the main FAB so the
+          // primary tap still adds a sharp rect.
+          FloatingActionButton.small(
+            backgroundColor: secondaryContainer,
+            foregroundColor: onSecondaryContainer,
+            heroTag: 'add-rounded-rect',
+            onPressed: _isImageLoaded ? _handleAddRoundedRect : null,
+            tooltip: 'Add rounded rectangle',
+            child: const Icon(Icons.rounded_corner),
+          ),
+          Tooltip(
+            message: 'Tap to add rectangle; long-press to render text',
+            child: RawMaterialButton(
+              constraints: const BoxConstraints.tightFor(height: 56, width: 56),
+              elevation: 6,
+              fillColor: primaryContainer,
+              onLongPress: _handleFabLongPress,
+              onPressed: _handleAddRect,
+              shape: const CircleBorder(),
+              child: Icon(Icons.add, color: onPrimaryContainer),
+            ),
+          ),
+        ],
       ),
     );
   }

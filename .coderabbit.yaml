@@ -29,11 +29,11 @@ reviews:
 
   labeling_instructions:
     # Conventional commit types.
-    - label: "feat"
+    - label: "enhancement"
       instructions: "New user-facing functionality or capability added."
     - label: "fix"
       instructions: "Bug fix — corrects incorrect behavior or a regression."
-    - label: "docs"
+    - label: "documentation"
       instructions: "Documentation-only changes (README, CLAUDE.md, doc comments, etc.)."
     - label: "refactor"
       instructions: "Code restructuring with no change in external behavior."
@@ -45,7 +45,7 @@ reviews:
       instructions: "Routine maintenance — dependency bumps, tooling config, formatting."
     - label: "perf"
       instructions: "Performance improvement with no functional change."
-    - label: "deps"
+    - label: "dependencies"
       instructions: "Changes to build system, Cargo.toml, pubspec.yaml, or build hooks."
 
     # Language / scope tags.

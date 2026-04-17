@@ -1,3 +1,5 @@
+// Command-pattern execute/undo intentionally mutate the controller's `_elements` list in
+// place — that's the contract this class implements.
 // ignore_for_file: avoid-collection-mutating-methods
 
 import '../model/draw_element.dart';

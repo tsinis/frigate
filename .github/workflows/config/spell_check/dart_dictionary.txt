@@ -120,6 +120,7 @@ cmake
 codecov
 codefactor
 codelab
+colocates
 constexpr
 cpanel
 cyclomatic
@@ -200,6 +201,7 @@ imageset
 immutables
 indo
 inlined
+inlines
 interps
 ints
 iostream

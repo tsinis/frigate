@@ -31,11 +31,34 @@ class DrawPainter extends CustomPainter {
       switch (element) {
         case RectElement():
           // TODO(tsinis): render fill color too.
+          final RectElement(
+            :cornerRadius,
+            :height,
+            :outlineThickness,
+            :rect,
+            :uiOutlineColor,
+            :width,
+          ) = element;
+          // Mirror Rust's short-circuit on non-positive dims; otherwise Flutter would render
+          // a flipped rect from a negative-width Rect — a real preview-vs-export divergence.
+          if (width <= 0 || height <= 0) break;
+          final isRounded = cornerRadius > 0;
+          // AA matches the Rust contract: only on for rounded corners. Sharp axis-aligned
+          // rects render with pixel-perfect edges; rounded corners need AA so the curve
+          // doesn't look jagged.
           final strokePaint = Paint()
-            ..color = element.uiOutlineColor
+            ..color = uiOutlineColor
             ..style = .stroke
-            ..strokeWidth = element.outlineThickness.toDouble();
-          canvas.drawRect(element.rect, strokePaint);
+            ..strokeWidth = outlineThickness.toDouble()
+            ..isAntiAlias = isRounded;
+          if (isRounded) {
+            // Mirror Rust's clamp on the radius (capped at half the shortest side); width
+            // and height are positive here (guarded above) so `shortestSide` is non-negative.
+            final clamped = cornerRadius.toDouble().clamp(0.0, rect.shortestSide / 2);
+            canvas.drawRRect(RRect.fromRectAndRadius(rect, .circular(clamped)), strokePaint);
+          } else {
+            canvas.drawRect(rect, strokePaint);
+          }
 
         case TextElement():
           // TODO(tsinis): render TextElement in the preview painter.

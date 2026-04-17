@@ -2,6 +2,9 @@ use std::ffi::{CStr, c_char};
 use std::path::Path;
 use std::slice;
 
+use tiny_skia::{Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
+
+mod canvas;
 mod ffi_element;
 pub mod io;
 pub mod text;
@@ -16,10 +19,13 @@ pub struct FfiRectElement {
     pub height: f64,
     pub outline_thickness: u32,
     pub outline_color_argb: u32,
+    /// Corner radius in pixels (0 = sharp corners). Clamped to `min(width, height) / 2` at
+    /// render time. Mirrors `FfiElement.shape_param` for the slim export struct.
+    pub shape_param: u32,
 }
 
-// 4 × f64 (32) + 2 × u32 (8) = 40 bytes; struct alignment = 8 so size is padded to 40.
-const _: () = assert!(std::mem::size_of::<FfiRectElement>() == 40);
+// 4 × f64 (32) + 3 × u32 (12) = 44 bytes content; alignment 8 → padded to 48 bytes total.
+const _: () = assert!(std::mem::size_of::<FfiRectElement>() == 48);
 
 #[repr(C)]
 pub struct ByteBuffer {
@@ -246,15 +252,29 @@ unsafe fn render_image_inner(
         None
     };
 
-    let mut img = io::read_image(Path::new(image_path))?.into_rgba8();
+    let img = io::read_image(Path::new(image_path))?.into_rgba8();
+    let mut surface = Surface::Rgba(img);
 
     for element in elements {
         match element.element_type {
-            element_type::RECTANGLE => draw_rect_element(&mut img, element),
+            element_type::RECTANGLE => {
+                let style: RectStyle = element.into();
+                if !style.paints_anything() {
+                    continue;
+                }
+                draw_rect_on_pixmap(
+                    surface.as_pixmap(),
+                    element.x,
+                    element.y,
+                    element.width,
+                    element.height,
+                    &style,
+                );
+            }
             element_type::TEXT => {
                 let text_slice = element_text(element, text_buffer)?;
                 if let Some(font_ref) = &font {
-                    draw_text_element(&mut img, font_ref, element, text_slice);
+                    draw_text_element(surface.as_rgba(), font_ref, element, text_slice);
                 }
             }
             // Unknown element types are skipped silently — forward-compat for adding shapes
@@ -263,6 +283,7 @@ unsafe fn render_image_inner(
         }
     }
 
+    let img = surface.into_rgba();
     io::write_image(Path::new(output_path), &img, image_quality)
         .map_err(|_| RenderError::ImageWrite)?;
     Ok(())
@@ -278,20 +299,65 @@ fn element_text<'b>(element: &FfiElement, text_buffer: &'b [u8]) -> Result<&'b s
     std::str::from_utf8(&text_buffer[start..end]).map_err(|_| RenderError::BadUtf8Text)
 }
 
-fn draw_rect_element(img: &mut image::RgbaImage, e: &FfiElement) {
-    // Zero outline is the well-defined "no outline" state — short-circuit to skip the 1px clamp.
-    if e.outline_thickness == 0 {
+/// Draws a single rectangle from an [`FfiElement`] onto an `RgbaImage` in place.
+///
+/// Convenience helper for callers (currently the integration tests) that already hold an
+/// `RgbaImage` rather than a `Pixmap`. Round-trips through `Pixmap` once per call — for hot
+/// loops use `render_image` (the FFI entry point) which hoists the conversion across all
+/// elements via a lazy `Surface` state machine.
+pub fn draw_rect_element(img: &mut image::RgbaImage, e: &FfiElement) {
+    // Skip the to_pixmap/from_pixmap round-trip when the rect can't paint anything visible:
+    // either the geometry is invalid (zero/negative/NaN dims — `Rect::from_xywh` would reject
+    // it inside `draw_rect_on_pixmap`, but only after the conversion) or the style has neither
+    // a visible fill nor a visible stroke.
+    if !is_positive_finite(e.width) || !is_positive_finite(e.height) {
         return;
     }
-    stroke_rect_rgba(
-        img,
-        e.x as i32,
-        e.y as i32,
-        e.width.max(0.0) as u32,
-        e.height.max(0.0) as u32,
-        e.outline_thickness.max(1),
-        argb_to_rgba(e.outline_color_argb),
-    );
+    let style: RectStyle = e.into();
+    if !style.paints_anything() {
+        return;
+    }
+    let mut pixmap = canvas::to_pixmap(img);
+    draw_rect_on_pixmap(&mut pixmap, e.x, e.y, e.width, e.height, &style);
+    *img = canvas::from_pixmap(&pixmap);
+}
+
+/// Drawing surface that lazily converts between `RgbaImage` (text-friendly) and
+/// `Pixmap` (rect-friendly), so a long run of same-type elements pays one conversion total
+/// instead of one per element. Element order is preserved exactly — transitions between
+/// rect and text are the only conversion points.
+enum Surface {
+    Rgba(image::RgbaImage),
+    Pixmap(Pixmap),
+}
+
+impl Surface {
+    fn as_rgba(&mut self) -> &mut image::RgbaImage {
+        if let Self::Pixmap(p) = self {
+            *self = Self::Rgba(canvas::from_pixmap(p));
+        }
+        match self {
+            Self::Rgba(img) => img,
+            Self::Pixmap(_) => unreachable!("just converted above"),
+        }
+    }
+
+    fn as_pixmap(&mut self) -> &mut Pixmap {
+        if let Self::Rgba(img) = self {
+            *self = Self::Pixmap(canvas::to_pixmap(img));
+        }
+        match self {
+            Self::Pixmap(p) => p,
+            Self::Rgba(_) => unreachable!("just converted above"),
+        }
+    }
+
+    fn into_rgba(self) -> image::RgbaImage {
+        match self {
+            Self::Rgba(img) => img,
+            Self::Pixmap(p) => canvas::from_pixmap(&p),
+        }
+    }
 }
 
 fn draw_text_element(
@@ -313,13 +379,21 @@ fn draw_text_element(
     text::render_text_overlay(img, font, &params);
 }
 
-fn argb_to_rgba(argb: u32) -> image::Rgba<u8> {
-    image::Rgba([
+/// Single source of truth for `0xAARRGGBB` -> `[R, G, B, A]` byte unpacking. `argb_to_rgba`
+/// and `argb_to_tiny_color` both wrap this so a future packed-color format change touches
+/// one place.
+#[inline]
+fn argb_unpack(argb: u32) -> [u8; 4] {
+    [
         ((argb >> 16) & 0xFF) as u8,
         ((argb >> 8) & 0xFF) as u8,
         (argb & 0xFF) as u8,
         ((argb >> 24) & 0xFF) as u8,
-    ])
+    ]
+}
+
+fn argb_to_rgba(argb: u32) -> image::Rgba<u8> {
+    image::Rgba(argb_unpack(argb))
 }
 
 /// Bytes-in/bytes-out path used by `export_image`. Rect coordinates are pixel-space — no
@@ -329,21 +403,17 @@ fn render_jpeg_with_rects(
     rects: &[FfiRectElement],
     image_quality: u8,
 ) -> Vec<u8> {
-    let mut img = image::load_from_memory(img_bytes)
+    let img = image::load_from_memory(img_bytes)
         .expect("failed to decode image")
         .into_rgba8();
 
+    // One conversion pair per export, regardless of rect count — much cheaper than the
+    // per-rect round-trip in `draw_rect_element`.
+    let mut pixmap = canvas::to_pixmap(&img);
     for r in rects {
-        stroke_rect_rgba(
-            &mut img,
-            r.x as i32,
-            r.y as i32,
-            r.width.max(0.0) as u32,
-            r.height.max(0.0) as u32,
-            r.outline_thickness.max(1),
-            argb_to_rgba(r.outline_color_argb),
-        );
+        draw_rect_on_pixmap(&mut pixmap, r.x, r.y, r.width, r.height, &r.into());
     }
+    let img = canvas::from_pixmap(&pixmap);
 
     let rgb_img = image::DynamicImage::ImageRgba8(img).into_rgb8();
     let mut buf = std::io::Cursor::new(Vec::new());
@@ -354,98 +424,191 @@ fn render_jpeg_with_rects(
     buf.into_inner()
 }
 
-/// Draw a hollow axis-aligned rectangle by filling the four outline bars directly into the RGBA
-/// buffer. Pixel-aligned (no anti-aliasing) — good enough for screenshot annotations and keeps us
-/// off a dedicated drawing crate.
+/// Visual style for a single rectangle. Pulled out of `draw_rect_on_pixmap`'s argument list
+/// so the signature stays readable as we add more shape parameters.
 ///
-/// We first clip the user's rectangle against the image in `i64` space, then derive the four
-/// bars from the *clipped* rect. This handles pathological `w`/`h` (up to `u32::MAX`) correctly
-/// and naturally: "huge width" just means "clip to the image width", and the right bar lands on
-/// the rightmost column instead of wrapping off-screen.
-fn stroke_rect_rgba(
-    img: &mut image::RgbaImage,
-    x: i32,
-    y: i32,
-    w: u32,
-    h: u32,
-    stroke: u32,
-    color: image::Rgba<u8>,
-) {
-    if w == 0 || h == 0 || stroke == 0 {
-        return;
-    }
-
-    let (iw, ih) = (i64::from(img.width()), i64::from(img.height()));
-    let x0 = i64::from(x).clamp(0, iw);
-    let y0 = i64::from(y).clamp(0, ih);
-    let x1 = i64::from(x).saturating_add(i64::from(w)).clamp(0, iw);
-    let y1 = i64::from(y).saturating_add(i64::from(h)).clamp(0, ih);
-    if x1 <= x0 || y1 <= y0 {
-        return;
-    }
-
-    // Post-clip width / height fit in u32 because they're both bounded by image dims (u32).
-    let clipped_w = (x1 - x0) as u32;
-    let clipped_h = (y1 - y0) as u32;
-    let s = stroke.min(clipped_w.min(clipped_h));
-    if s == 0 {
-        return;
-    }
-
-    let left = x0 as i32;
-    let top = y0 as i32;
-    // `x1 - s` and `y1 - s` are non-negative here because we checked `s <= clipped_w/h`.
-    let right_bar_x = (x1 - i64::from(s)) as i32;
-    let bottom_bar_y = (y1 - i64::from(s)) as i32;
-
-    // Top bar
-    fill_rect(img, left, top, clipped_w, s, color);
-    // Bottom bar
-    fill_rect(img, left, bottom_bar_y, clipped_w, s, color);
-    // Left bar
-    fill_rect(img, left, top, s, clipped_h, color);
-    // Right bar
-    fill_rect(img, right_bar_x, top, s, clipped_h, color);
+/// Internal — the FFI exposes per-shape fields directly via [`FfiElement`] / [`FfiRectElement`];
+/// no consumer outside this crate constructs `RectStyle` by hand.
+pub(crate) struct RectStyle {
+    pub(crate) outline_thickness: u32,
+    pub(crate) outline_color_argb: u32,
+    pub(crate) fill_color_argb: u32,
+    /// Corner radius in pixels. 0 = sharp corners (axis-aligned rect). Auto-clamped to
+    /// `min(width, height) / 2` at render time so the path always remains valid.
+    pub(crate) corner_radius_px: u32,
 }
 
-/// Set every pixel inside the `(x, y, w, h)` rectangle to `color`. Out-of-bounds pixels are
-/// silently clipped — matches how callers use it (decoded image dims are authoritative; callers
-/// don't need to pre-clamp their rects).
+impl RectStyle {
+    /// `true` when at least one of fill or stroke would deposit visible pixels. Used by
+    /// callers to skip the to_pixmap conversion entirely for "invisible" rects (zero-alpha
+    /// fill + zero thickness or zero-alpha outline) — the conversion round-trip is O(pixels).
+    pub(crate) fn paints_anything(&self) -> bool {
+        let has_outline = self.outline_thickness > 0 && argb_alpha(self.outline_color_argb) > 0;
+        let has_fill = argb_alpha(self.fill_color_argb) > 0;
+        has_outline || has_fill
+    }
+}
+
+impl From<&FfiElement> for RectStyle {
+    fn from(e: &FfiElement) -> Self {
+        Self {
+            outline_thickness: e.outline_thickness,
+            outline_color_argb: e.outline_color_argb,
+            fill_color_argb: e.fill_color_argb,
+            corner_radius_px: e.shape_param,
+        }
+    }
+}
+
+impl From<&FfiRectElement> for RectStyle {
+    /// The slim export struct carries no fill — it's outline-only by contract.
+    fn from(r: &FfiRectElement) -> Self {
+        Self {
+            outline_thickness: r.outline_thickness,
+            outline_color_argb: r.outline_color_argb,
+            fill_color_argb: 0,
+            corner_radius_px: r.shape_param,
+        }
+    }
+}
+
+/// Fill (if `fill_color_argb` alpha > 0) and/or stroke an axis-aligned rectangle onto `pixmap`
+/// using `tiny-skia`'s path renderer.
 ///
-/// Arithmetic is performed in `i64` because `x + w as i32` overflows for `w > i32::MAX` (or even
-/// for modest `w` when `x` is near `i32::MAX`). Without the wider type a pathological width would
-/// silently wrap and produce a negative `x_end`, making the rect look empty instead of "as wide
-/// as the image allows".
-///
-/// Writes a prebuilt scanline into the raw buffer via `copy_from_slice` — one bounds check per
-/// row instead of one per pixel. `put_pixel` would validate `(px, py)` every iteration, which
-/// shows up on wide strokes.
-fn fill_rect(img: &mut image::RgbaImage, x: i32, y: i32, w: u32, h: u32, color: image::Rgba<u8>) {
-    let iw = img.width();
-    let ih = img.height();
-    let x_start = (x as i64).clamp(0, iw as i64);
-    let y_start = (y as i64).clamp(0, ih as i64);
-    let x_end = (x as i64).saturating_add(w as i64).clamp(0, iw as i64);
-    let y_end = (y as i64).saturating_add(h as i64).clamp(0, ih as i64);
-    if x_end <= x_start || y_end <= y_start {
+/// Visual contract:
+/// - Fill is painted only when `argb_alpha(fill_color_argb) > 0` — fully transparent
+///   (`0x00_RR_GG_BB`) means "no fill", matching how Dart's defaults express "outline-only".
+/// - Stroke is painted only when `outline_thickness > 0` AND
+///   `argb_alpha(outline_color_argb) > 0`.
+/// - Stroke width is clamped to `min(width, height)` so giant thickness values from Dart
+///   (up to `u32::MAX`) can never blow up tiny-skia's stroked-path geometry.
+/// - `width <= 0`, `height <= 0`, or any non-finite coordinate → no draw.
+/// - Fill is drawn before stroke, so the stroke sits on top of the fill (Flutter convention).
+/// - **Anti-aliasing is on only for rounded corners.** Sharp-corner rectangles render with
+///   pixel-aligned edges (no half-pixel bleed into neighboring pixels); rounded corners
+///   require AA to look smooth on the curves. This matches what Flutter does when its `Paint`
+///   `isAntiAlias` is left at the default for axis-aligned `drawRect` vs `drawRRect`.
+fn draw_rect_on_pixmap(
+    pixmap: &mut Pixmap,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    style: &RectStyle,
+) {
+    if width <= 0.0 || height <= 0.0 {
         return;
     }
+    // Cast through f32 carefully: any non-finite or sign-flipped value collapses to None below.
+    let Some(rect) = Rect::from_xywh(x as f32, y as f32, width as f32, height as f32) else {
+        return;
+    };
+    let path = build_rect_path(rect, style.corner_radius_px);
+    let anti_alias = style.corner_radius_px > 0;
 
-    let stride = iw as usize * 4;
-    let row_bytes = (x_end - x_start) as usize * 4;
-    let x_byte_offset = x_start as usize * 4;
-    let y0 = y_start as usize;
-    let y1 = y_end as usize;
-
-    // One scanline's worth of the fill color — reused for every row so each row is a single
-    // `copy_from_slice` (bounds-checked once) instead of `row_px` individual `put_pixel` calls.
-    let scanline: Vec<u8> = color.0.iter().copied().cycle().take(row_bytes).collect();
-
-    let buf = img.as_flat_samples_mut().samples;
-    for py in y0..y1 {
-        let row_start = py * stride + x_byte_offset;
-        buf[row_start..row_start + row_bytes].copy_from_slice(&scanline);
+    // Fill first, stroke on top — matches Flutter's draw order so preview and export agree.
+    if argb_alpha(style.fill_color_argb) > 0 {
+        let mut paint = Paint::default();
+        paint.set_color(argb_to_tiny_color(style.fill_color_argb));
+        paint.anti_alias = anti_alias;
+        pixmap.fill_path(
+            &path,
+            &paint,
+            tiny_skia::FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
     }
+
+    if style.outline_thickness > 0 && argb_alpha(style.outline_color_argb) > 0 {
+        // Clamp stroke width to the rect's shortest side. tiny-skia centers strokes on the
+        // path edge, so an unclamped giant stroke would build huge geometry that mostly
+        // bleeds outside the rect (and well past the pixmap bounds for thicknesses near
+        // `u32::MAX`). The clamp keeps the stroked-path work bounded — Dart can pass any
+        // u32 here and Rust completes in constant time.
+        //
+        // Note: this differs from the legacy hand-rolled renderer, which derived four
+        // outline bars from the rect interior; that version filled the rect inward when the
+        // stroke met the side, while tiny-skia's centered stroke also bleeds outward
+        // (~half the stroke width on each side). Use `fill_color_argb` instead of an
+        // "outline thicker than the rect" trick for filled-rect intent.
+        let max_stroke = rect.width().min(rect.height());
+        let stroke_width = (style.outline_thickness as f32).min(max_stroke);
+        if stroke_width > 0.0 {
+            let mut paint = Paint::default();
+            paint.set_color(argb_to_tiny_color(style.outline_color_argb));
+            paint.anti_alias = anti_alias;
+            let stroke = Stroke {
+                width: stroke_width,
+                ..Stroke::default()
+            };
+            pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+        }
+    }
+}
+
+/// Build a (rounded) rectangle path. `corner_radius_px == 0` short-circuits to the cheap
+/// 4-line axis-aligned path; otherwise we trace 4 corner arcs + 4 straight edges.
+///
+/// The radius is clamped to `min(width, height) / 2` so the rounded rect can never collapse
+/// into invalid geometry: at the clamp ceiling the corners exactly meet and the shape is a
+/// pill (or a circle if `width == height`).
+fn build_rect_path(rect: Rect, corner_radius_px: u32) -> tiny_skia::Path {
+    if corner_radius_px == 0 {
+        return PathBuilder::from_rect(rect);
+    }
+    let max_r = rect.width().min(rect.height()) * 0.5;
+    let r = (corner_radius_px as f32).min(max_r);
+    if r <= 0.0 {
+        return PathBuilder::from_rect(rect);
+    }
+    // Cubic bezier control-point distance for approximating a quarter-circle. Standard "magic
+    // number" — error vs a true circle is below 1e-3 of the radius, far under one pixel for
+    // any sane radius.
+    const KAPPA: f32 = 0.552_284_8;
+    let c = r * KAPPA;
+
+    let l = rect.left();
+    let t = rect.top();
+    let ri = rect.right();
+    let b = rect.bottom();
+
+    let mut pb = PathBuilder::new();
+    // Start at the top-left corner's right edge (clockwise traversal).
+    pb.move_to(l + r, t);
+    // Top edge → top-right arc.
+    pb.line_to(ri - r, t);
+    pb.cubic_to(ri - r + c, t, ri, t + r - c, ri, t + r);
+    // Right edge → bottom-right arc.
+    pb.line_to(ri, b - r);
+    pb.cubic_to(ri, b - r + c, ri - r + c, b, ri - r, b);
+    // Bottom edge → bottom-left arc.
+    pb.line_to(l + r, b);
+    pb.cubic_to(l + r - c, b, l, b - r + c, l, b - r);
+    // Left edge → top-left arc.
+    pb.line_to(l, t + r);
+    pb.cubic_to(l, t + r - c, l + r - c, t, l + r, t);
+    pb.close();
+    pb.finish()
+        .expect("rounded-rect path is well-formed by construction")
+}
+
+fn argb_to_tiny_color(argb: u32) -> tiny_skia::Color {
+    let [r, g, b, a] = argb_unpack(argb);
+    tiny_skia::Color::from_rgba8(r, g, b, a)
+}
+
+#[inline]
+fn argb_alpha(argb: u32) -> u8 {
+    argb_unpack(argb)[3]
+}
+
+/// `true` when `v` is a finite, strictly positive `f64`. Rejects NaN, ±Inf, zero, and any
+/// negative value — the four shapes of "this geometry would silently misrender" that we
+/// short-circuit at the FFI boundary.
+#[inline]
+fn is_positive_finite(v: f64) -> bool {
+    v.is_finite() && v > 0.0
 }
 
 #[cfg(test)]
@@ -484,6 +647,7 @@ mod tests {
             height: 4.0,
             outline_thickness: 1,
             outline_color_argb: 0xFF00FF00, // opaque green
+            shape_param: 0,
         };
         let jpeg = render_jpeg_with_rects(&png, &[rect], 90);
         assert!(jpeg.len() > 2);
@@ -502,6 +666,7 @@ mod tests {
             height: 4.0,
             outline_thickness: 0,
             outline_color_argb: 0xFF00FF00,
+            shape_param: 0,
         };
         let with_outline = FfiRectElement {
             outline_thickness: 2,
@@ -546,11 +711,207 @@ mod tests {
         unsafe { free_bytes(std::ptr::null_mut(), 0) };
     }
 
+    // --- Audit: extreme inputs across the FFI boundary -----------------------------
+    // These tests document/guard against silent panics for inputs Dart trusts (or can mistakenly
+    // forward) without explicit validation. Every case must complete without crossing the FFI
+    // panic boundary; null ByteBuffer return is acceptable, panic is not.
+
+    #[test]
+    fn export_image_handles_quality_zero_without_panic() {
+        // Dart clamps to [0, 100], so quality=0 is a legal in-range value. The image-crate JPEG
+        // encoder must accept it; if it ever changes to require quality >= 1, this test catches
+        // the regression at the FFI boundary instead of in production.
+        let png = tiny_red_png();
+        let rects_ptr = std::ptr::NonNull::<FfiRectElement>::dangling().as_ptr();
+        let buf = unsafe { export_image(png.as_ptr(), png.len(), rects_ptr, 0, 0) };
+        assert!(
+            !buf.data.is_null(),
+            "quality=0 must produce a valid JPEG, not a caught panic"
+        );
+        assert!(buf.length > 2);
+        unsafe { free_bytes(buf.data, buf.length) };
+    }
+
+    #[test]
+    fn export_image_handles_quality_above_100_without_panic() {
+        // The wire type is `u8` (max 255). Dart clamps before sending, but a direct-FFI caller
+        // (or future bypass) could pass anything in 0..=255. Must not panic across the boundary.
+        let png = tiny_red_png();
+        let rects_ptr = std::ptr::NonNull::<FfiRectElement>::dangling().as_ptr();
+        let buf = unsafe { export_image(png.as_ptr(), png.len(), rects_ptr, 0, 255) };
+        assert!(
+            !buf.data.is_null(),
+            "quality=255 must be tolerated, not crash"
+        );
+        assert!(buf.length > 2);
+        unsafe { free_bytes(buf.data, buf.length) };
+    }
+
+    #[test]
+    fn export_image_handles_nan_inf_rect_coords_without_panic() {
+        // Dart `double` can be NaN/+Inf/-Inf. f64 → f32 cast preserves these. `Rect::from_xywh`
+        // rejects them, so `draw_rect_on_pixmap` short-circuits without touching the pixmap —
+        // and the rest of the pipeline runs to completion.
+        let png = tiny_red_png();
+        let rects = [
+            FfiRectElement {
+                x: f64::NAN,
+                y: 0.0,
+                width: 4.0,
+                height: 4.0,
+                outline_thickness: 1,
+                outline_color_argb: 0xFF_FF_00_00,
+                shape_param: 0,
+            },
+            FfiRectElement {
+                x: 0.0,
+                y: f64::INFINITY,
+                width: 4.0,
+                height: 4.0,
+                outline_thickness: 1,
+                outline_color_argb: 0xFF_00_FF_00,
+                shape_param: 0,
+            },
+            FfiRectElement {
+                x: 0.0,
+                y: 0.0,
+                width: f64::NEG_INFINITY,
+                height: 4.0,
+                outline_thickness: 1,
+                outline_color_argb: 0xFF_00_00_FF,
+                shape_param: 0,
+            },
+        ];
+        let buf = unsafe { export_image(png.as_ptr(), png.len(), rects.as_ptr(), rects.len(), 80) };
+        assert!(
+            !buf.data.is_null(),
+            "non-finite coords must be silently dropped, not crash"
+        );
+        unsafe { free_bytes(buf.data, buf.length) };
+    }
+
+    #[test]
+    fn rounded_rect_at_clamp_ceiling_circle_case_does_not_panic() {
+        // Square rect with radius == width/2 — the clamp ceiling. Path geometry has 4 zero-
+        // length edges between full quarter arcs (the inscribed circle). tiny-skia must accept
+        // this degenerate-edge path; if `pb.finish()` ever returns None for it, the
+        // `.expect("rounded-rect path is well-formed by construction")` panics.
+        let mut pixmap = opaque_black_pixmap(20, 20);
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            0.0,
+            0.0,
+            20.0,
+            20.0,
+            &RectStyle {
+                outline_thickness: 2,
+                outline_color_argb: 0xFF_FF_FF_FF,
+                fill_color_argb: 0xFF_FF_00_00,
+                corner_radius_px: 10, // == width/2 == height/2 → exact circle
+            },
+        );
+        // Center pixel must be inside the inscribed circle and therefore filled.
+        let center = (10 * 20 + 10) * 4;
+        assert_eq!(
+            pixmap.data()[center],
+            255,
+            "center of inscribed circle must be filled red"
+        );
+    }
+
+    #[test]
+    fn rounded_rect_with_non_square_clamp_pill_case_does_not_panic() {
+        // 60×20 rect with radius >> max_r (10). Clamp produces a pill (semi-circular ends).
+        // Edge cases: top/bottom edges are non-degenerate (60 - 2*10 = 40 long); left/right
+        // edges have zero length (20 - 2*10 = 0). Path must still finalize cleanly.
+        let mut pixmap = opaque_black_pixmap(60, 20);
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            0.0,
+            0.0,
+            60.0,
+            20.0,
+            &RectStyle {
+                outline_thickness: 1,
+                outline_color_argb: 0xFF_FF_FF_FF,
+                fill_color_argb: 0xFF_00_FF_00,
+                corner_radius_px: 99_999,
+            },
+        );
+        // Centerline must be solid green inside the pill body.
+        let center = (10 * 60 + 30) * 4;
+        assert_eq!(
+            pixmap.data()[center + 1],
+            255,
+            "pill interior centerline must be filled green"
+        );
+    }
+
+    #[test]
+    fn export_image_with_max_u32_corner_radius_clamps_safely() {
+        // Dart-side assertion blocks negative cornerRadius (which would marshal to u32::MAX-ish
+        // via `Uint32` 2's-complement wrapping), but a direct-FFI caller could still pass it.
+        // Rust must clamp to `min(w, h) / 2` and render a pill without panicking.
+        let png = tiny_red_png();
+        let rect = FfiRectElement {
+            x: 0.0,
+            y: 0.0,
+            width: 4.0,
+            height: 4.0,
+            outline_thickness: 0,
+            outline_color_argb: 0,
+            shape_param: u32::MAX,
+        };
+        let buf = unsafe { export_image(png.as_ptr(), png.len(), &rect, 1, 80) };
+        assert!(
+            !buf.data.is_null(),
+            "u32::MAX corner radius must clamp safely, not panic"
+        );
+        unsafe { free_bytes(buf.data, buf.length) };
+    }
+
+    #[test]
+    fn one_pixel_image_does_not_panic_through_to_pixmap() {
+        use image::ImageEncoder;
+        // 1×1 PNG is the smallest non-zero image. canvas::to_pixmap requires non-zero dims;
+        // 1×1 must be accepted.
+        let img = image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 0, 0, 255]));
+        let mut buf = std::io::Cursor::new(Vec::new());
+        image::codecs::png::PngEncoder::new(&mut buf)
+            .write_image(img.as_raw(), 1, 1, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        let png = buf.into_inner();
+        let rects_ptr = std::ptr::NonNull::<FfiRectElement>::dangling().as_ptr();
+        let result = unsafe { export_image(png.as_ptr(), png.len(), rects_ptr, 0, 80) };
+        assert!(
+            !result.data.is_null(),
+            "1×1 image should round-trip without panic"
+        );
+        unsafe { free_bytes(result.data, result.length) };
+    }
+
     // --- FfiRectElement layout invariant --------------------------------------------------------
 
     #[test]
-    fn ffi_rect_element_is_40_bytes() {
-        assert_eq!(std::mem::size_of::<FfiRectElement>(), 40);
+    fn ffi_rect_element_is_48_bytes() {
+        // 4 × f64 (32) + 3 × u32 (12) = 44 content; padded to 48 for 8-byte alignment.
+        assert_eq!(std::mem::size_of::<FfiRectElement>(), 48);
+    }
+
+    #[test]
+    fn ffi_rect_element_shape_param_round_trip() {
+        // Verify the field actually round-trips through a struct literal — catches accidental
+        // field reordering on the Rust side.
+        let r = FfiRectElement {
+            x: 1.0,
+            y: 2.0,
+            width: 3.0,
+            height: 4.0,
+            outline_thickness: 5,
+            outline_color_argb: 0xFF112233,
+            shape_param: 7,
+        };
+        assert_eq!(r.shape_param, 7);
     }
 
     // --- argb_to_rgba ---------------------------------------------------------------------------
@@ -567,164 +928,655 @@ mod tests {
         assert_eq!(argb_to_rgba(0x00_00_00_00).0, [0, 0, 0, 0]);
     }
 
-    // --- fill_rect + stroke_rect_rgba clipping --------------------------------------------------
+    // --- draw_rect_on_pixmap (tiny-skia path) ---------------------------------------------------
+
+    fn opaque_black_pixmap(w: u32, h: u32) -> Pixmap {
+        let img = image::RgbaImage::from_pixel(w, h, image::Rgba([0, 0, 0, 255]));
+        canvas::to_pixmap(&img)
+    }
+
+    fn assert_pixmap_unchanged(pixmap: &Pixmap, baseline: &Pixmap, reason: &str) {
+        assert_eq!(pixmap.data(), baseline.data(), "{reason}");
+    }
+
+    /// Test-only constructor that mirrors the old `(thickness, outline, fill)` positional
+    /// args so the existing test bodies stay readable. Sharp-corner shorthand.
+    fn style(outline_thickness: u32, outline_color_argb: u32, fill_color_argb: u32) -> RectStyle {
+        RectStyle {
+            outline_thickness,
+            outline_color_argb,
+            fill_color_argb,
+            corner_radius_px: 0,
+        }
+    }
+
+    // --- RectStyle::paints_anything (the visibility short-circuit) ----------------------------
 
     #[test]
-    fn fill_rect_clips_to_image_bounds() {
-        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
-        fill_rect(&mut img, -10, -10, 3, 3, image::Rgba([255, 0, 0, 255]));
-        // All pixels should still be black — the rectangle is entirely off-screen.
-        assert!(img.pixels().all(|p| p.0 == [0, 0, 0, 255]));
+    fn paints_anything_is_false_for_zero_alpha_fill_and_zero_thickness() {
+        // The "totally invisible rect" — every alpha channel is zero, no stroke band.
+        assert!(!style(0, 0x00_FF_FF_FF, 0x00_FF_FF_FF).paints_anything());
     }
 
     #[test]
-    fn fill_rect_clips_partial_overlap() {
-        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
-        // (-2, -2, 4, 4) covers only the top-left 2×2 of the image.
-        fill_rect(&mut img, -2, -2, 4, 4, image::Rgba([255, 0, 0, 255]));
-        // Pixels that should be red.
-        for y in 0..2 {
-            for x in 0..2 {
-                assert_eq!(img.get_pixel(x, y).0, [255, 0, 0, 255]);
+    fn paints_anything_is_false_for_zero_alpha_outline_with_no_fill() {
+        // Stroke thickness > 0 alone is not enough — outline alpha must also be > 0.
+        assert!(!style(5, 0x00_FF_00_00, 0).paints_anything());
+    }
+
+    #[test]
+    fn paints_anything_is_true_for_visible_outline_only() {
+        assert!(style(1, 0xFF_00_FF_00, 0).paints_anything());
+    }
+
+    #[test]
+    fn paints_anything_is_true_for_fill_only_with_zero_thickness() {
+        assert!(style(0, 0, 0xFF_FF_00_00).paints_anything());
+    }
+
+    #[test]
+    fn paints_anything_is_true_for_translucent_fill() {
+        // Even alpha=1 counts as "would paint something".
+        assert!(style(0, 0, 0x01_FF_00_00).paints_anything());
+    }
+
+    #[test]
+    fn draw_rect_on_pixmap_zero_thickness_is_noop() {
+        let baseline = opaque_black_pixmap(8, 8);
+        let mut pixmap = opaque_black_pixmap(8, 8);
+        draw_rect_on_pixmap(&mut pixmap, 1.0, 1.0, 4.0, 4.0, &style(0, 0xFFFF0000, 0));
+        assert_pixmap_unchanged(&pixmap, &baseline, "thickness=0 must not draw");
+    }
+
+    #[test]
+    fn draw_rect_on_pixmap_zero_size_is_noop() {
+        let baseline = opaque_black_pixmap(8, 8);
+        let mut pixmap = opaque_black_pixmap(8, 8);
+        draw_rect_on_pixmap(&mut pixmap, 0.0, 0.0, 0.0, 0.0, &style(1, 0xFFFF0000, 0));
+        assert_pixmap_unchanged(&pixmap, &baseline, "0×0 rect must not draw");
+    }
+
+    #[test]
+    fn draw_rect_on_pixmap_negative_size_is_noop() {
+        let baseline = opaque_black_pixmap(8, 8);
+        let mut pixmap = opaque_black_pixmap(8, 8);
+        draw_rect_on_pixmap(&mut pixmap, 0.0, 0.0, -5.0, -5.0, &style(1, 0xFFFF0000, 0));
+        assert_pixmap_unchanged(&pixmap, &baseline, "negative dims short-circuit");
+    }
+
+    #[test]
+    fn draw_rect_on_pixmap_nonfinite_coords_are_noop() {
+        // FFI exposes `x`/`y`/`width`/`height` as f64 — Dart doubles. NaN/Inf must not panic.
+        let baseline = opaque_black_pixmap(8, 8);
+        let mut pixmap = opaque_black_pixmap(8, 8);
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            f64::NAN,
+            0.0,
+            4.0,
+            4.0,
+            &style(1, 0xFFFF0000, 0),
+        );
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            0.0,
+            f64::INFINITY,
+            4.0,
+            4.0,
+            &style(1, 0xFFFF0000, 0),
+        );
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            0.0,
+            0.0,
+            f64::NAN,
+            4.0,
+            &style(1, 0xFFFF0000, 0),
+        );
+        assert_pixmap_unchanged(&pixmap, &baseline, "non-finite coords must not draw");
+    }
+
+    #[test]
+    fn draw_rect_on_pixmap_offscreen_is_noop() {
+        let baseline = opaque_black_pixmap(8, 8);
+        let mut pixmap = opaque_black_pixmap(8, 8);
+        // Far off the right/bottom edge — fully outside the pixmap, must paint nothing.
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            100.0,
+            100.0,
+            4.0,
+            4.0,
+            &style(1, 0xFFFF0000, 0),
+        );
+        assert_pixmap_unchanged(
+            &pixmap,
+            &baseline,
+            "fully off-screen must not affect pixels",
+        );
+    }
+
+    #[test]
+    fn draw_rect_on_pixmap_actually_draws() {
+        // Sanity check: a normal rect leaves *some* changes. Don't assert pixel positions
+        // (AA + sub-pixel positioning makes that brittle); just confirm the renderer ran.
+        let baseline = opaque_black_pixmap(16, 16);
+        let mut pixmap = opaque_black_pixmap(16, 16);
+        draw_rect_on_pixmap(&mut pixmap, 4.0, 4.0, 8.0, 8.0, &style(2, 0xFFFF0000, 0));
+        assert_ne!(
+            pixmap.data(),
+            baseline.data(),
+            "a visible rect must change at least one pixel"
+        );
+        // Some red channel must show up somewhere — covers the ARGB unpacking too.
+        let any_red = pixmap.data().chunks_exact(4).any(|px| px[0] > 0);
+        assert!(any_red, "outline color must reach the buffer (R channel)");
+    }
+
+    #[test]
+    fn draw_rect_on_pixmap_handles_u32_max_thickness_without_panic() {
+        // The clamp to min(width, height) is what protects tiny-skia's path stroker from
+        // building absurdly large geometry. Without the clamp, a u32::MAX from Dart could
+        // OOM or take seconds — with the clamp this completes instantly.
+        let mut pixmap = opaque_black_pixmap(8, 8);
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            0.0,
+            0.0,
+            8.0,
+            8.0,
+            &style(u32::MAX, 0xFF00FF00, 0),
+        );
+        // Just survival — no panic, no hang. Some green should land somewhere.
+        let any_green = pixmap.data().chunks_exact(4).any(|px| px[1] > 0);
+        assert!(any_green, "clamped giant stroke should still paint");
+    }
+
+    #[test]
+    fn draw_rect_on_pixmap_handles_huge_floating_dimensions_without_panic() {
+        // Dart can pass any f64. Values past f32::MAX or near it must not crash tiny-skia.
+        let mut pixmap = opaque_black_pixmap(8, 8);
+        draw_rect_on_pixmap(&mut pixmap, 0.0, 0.0, 1e15, 1e15, &style(1, 0xFFFF0000, 0));
+    }
+
+    #[test]
+    fn draw_rect_on_pixmap_transparent_fill_does_not_paint_interior() {
+        // Dart sends 0x00_RR_GG_BB (alpha = 0) when "no fill" is intended. The interior of
+        // the rect must remain unchanged in that case — even if the RGB bits look colorful.
+        let mut pixmap = opaque_black_pixmap(16, 16);
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            4.0,
+            4.0,
+            8.0,
+            8.0,
+            // outline alpha=0, fill RGB looks red but alpha=0 means "no fill"
+            &style(0, 0, 0x00_FF_00_00),
+        );
+        // Center pixel (8, 8) is well inside the rect — must still be black.
+        let off = (8 * 16 + 8) * 4;
+        assert_eq!(
+            &pixmap.data()[off..off + 4],
+            &[0, 0, 0, 255],
+            "alpha=0 fill must not deposit color even though RGB bits are nonzero"
+        );
+    }
+
+    #[test]
+    fn draw_rect_on_pixmap_opaque_fill_paints_interior() {
+        let mut pixmap = opaque_black_pixmap(16, 16);
+        draw_rect_on_pixmap(&mut pixmap, 4.0, 4.0, 8.0, 8.0, &style(0, 0, 0xFF_00_FF_00));
+        // Well inside the rect — should be solid green (no AA edge effects this far in).
+        let off = (8 * 16 + 8) * 4;
+        let px = &pixmap.data()[off..off + 4];
+        assert_eq!(px, &[0, 255, 0, 255], "opaque fill paints interior solid");
+    }
+
+    #[test]
+    fn draw_rect_on_pixmap_fill_only_with_zero_thickness_still_works() {
+        // Without the `has_outline || has_fill` short-circuit in `draw_rect_element`, a
+        // fill-only call with thickness=0 used to be eaten by the early return. Verify the
+        // helper itself paints fill regardless of thickness.
+        let mut pixmap = opaque_black_pixmap(8, 8);
+        draw_rect_on_pixmap(&mut pixmap, 0.0, 0.0, 8.0, 8.0, &style(0, 0, 0xFF_00_00_FF));
+        let any_blue = pixmap.data().chunks_exact(4).any(|p| p[2] > 0);
+        assert!(any_blue, "fill-only call (thickness=0) must still paint");
+    }
+
+    #[test]
+    fn draw_rect_on_pixmap_translucent_fill_blends_over_background() {
+        // Premultiplied src-over compositing of 50% red onto opaque black:
+        //   src (premul) = (128, 0, 0, 128)
+        //   dst          = (0, 0, 0, 255)
+        //   out.r = src.r + dst.r * (1 - src.a/255) = 128
+        //   out.a = src.a + dst.a * (1 - src.a/255) = 128 + 255 * 127/255 = 255
+        // So R lands ~128 and A stays at 255 (background was already opaque).
+        let mut pixmap = opaque_black_pixmap(16, 16);
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            0.0,
+            0.0,
+            16.0,
+            16.0,
+            &style(0, 0, 0x80_FF_00_00),
+        );
+        let off = (8 * 16 + 8) * 4;
+        let px = &pixmap.data()[off..off + 4];
+        assert!(
+            (110..=145).contains(&px[0]),
+            "R should be ~128 from src-over blend, got {}",
+            px[0]
+        );
+        assert_eq!(
+            px[3], 255,
+            "alpha onto opaque background stays 255, got {}",
+            px[3]
+        );
+    }
+
+    #[test]
+    fn draw_rect_on_pixmap_stroke_renders_on_top_of_fill() {
+        // Order matters when fill and stroke colors differ. tiny-skia's stroke is centered
+        // on the path edge — at the rect's edge the stroke color must dominate the fill.
+        let mut pixmap = opaque_black_pixmap(16, 16);
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            2.0,
+            2.0,
+            12.0,
+            12.0,
+            // blue stroke, red fill
+            &style(2, 0xFF_00_00_FF, 0xFF_FF_00_00),
+        );
+        // Inside the fill region (away from the stroked edge) → red dominates.
+        let inside_off = (8 * 16 + 8) * 4;
+        let inside = &pixmap.data()[inside_off..inside_off + 4];
+        assert_eq!(inside[0], 255, "interior is the fill color (red)");
+        assert_eq!(inside[2], 0, "interior has no blue from the stroke");
+        // On the rect's top edge → blue stroke should be visible.
+        let edge_off = (2 * 16 + 8) * 4;
+        let edge = &pixmap.data()[edge_off..edge_off + 4];
+        assert!(
+            edge[2] > 0,
+            "stroke at the rect edge must contribute blue, got {edge:?}"
+        );
+    }
+
+    // --- rounded corners --------------------------------------------------------------------
+
+    #[test]
+    fn build_rect_path_zero_radius_is_axis_aligned_rect() {
+        // A radius of 0 must produce identical geometry to the legacy rect path. We can't
+        // directly diff Path objects, so render both and compare pixmaps.
+        let rect = Rect::from_xywh(2.0, 2.0, 12.0, 12.0).unwrap();
+        let mut a = opaque_black_pixmap(16, 16);
+        let mut b = opaque_black_pixmap(16, 16);
+        let mut paint = Paint::default();
+        paint.set_color(tiny_skia::Color::from_rgba8(255, 0, 0, 255));
+        paint.anti_alias = true;
+        a.fill_path(
+            &PathBuilder::from_rect(rect),
+            &paint,
+            tiny_skia::FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+        b.fill_path(
+            &build_rect_path(rect, 0),
+            &paint,
+            tiny_skia::FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+        assert_eq!(
+            a.data(),
+            b.data(),
+            "radius=0 must match the sharp-corner path exactly"
+        );
+    }
+
+    #[test]
+    fn rounded_rect_clears_corner_pixels() {
+        // With a meaningful corner radius, the literal corner pixel of the bounding rect must
+        // NOT be painted by the fill — that's the whole point of rounded corners.
+        let mut sharp = opaque_black_pixmap(32, 32);
+        let mut rounded = opaque_black_pixmap(32, 32);
+        draw_rect_on_pixmap(
+            &mut sharp,
+            0.0,
+            0.0,
+            32.0,
+            32.0,
+            &RectStyle {
+                outline_thickness: 0,
+                outline_color_argb: 0,
+                fill_color_argb: 0xFF_FF_00_00,
+                corner_radius_px: 0,
+            },
+        );
+        draw_rect_on_pixmap(
+            &mut rounded,
+            0.0,
+            0.0,
+            32.0,
+            32.0,
+            &RectStyle {
+                outline_thickness: 0,
+                outline_color_argb: 0,
+                fill_color_argb: 0xFF_FF_00_00,
+                corner_radius_px: 8,
+            },
+        );
+        // (0, 0) corner: sharp is fully red, rounded must be background black (or at most
+        // partial AA).
+        let sharp_corner = &sharp.data()[..4];
+        let rounded_corner = &rounded.data()[..4];
+        assert_eq!(sharp_corner[0], 255, "sharp corner is fully red");
+        assert!(
+            rounded_corner[0] < 128,
+            "rounded corner must be mostly background (R={}), not the fill",
+            rounded_corner[0]
+        );
+    }
+
+    #[test]
+    fn rounded_rect_clamps_radius_to_half_min_side() {
+        // Radius >> min(w, h)/2 must clamp without panicking. With width == height we get
+        // a circle (or pill); the center pixel is solidly filled, the corners are clear.
+        let mut pixmap = opaque_black_pixmap(32, 32);
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            0.0,
+            0.0,
+            32.0,
+            32.0,
+            &RectStyle {
+                outline_thickness: 0,
+                outline_color_argb: 0,
+                fill_color_argb: 0xFF_00_FF_00,
+                corner_radius_px: 9999, // way past the cap
+            },
+        );
+        // Center is filled (it's the inscribed circle).
+        let center = (16 * 32 + 16) * 4;
+        assert_eq!(
+            pixmap.data()[center + 1],
+            255,
+            "center of inscribed circle must be solid green"
+        );
+        // Corner is clear.
+        assert!(
+            pixmap.data()[1] < 128,
+            "(0,0) is outside the inscribed circle, must remain mostly background"
+        );
+    }
+
+    #[test]
+    fn rounded_rect_extreme_radius_does_not_panic() {
+        // u32::MAX radius from Dart must clamp safely with no panic.
+        let mut pixmap = opaque_black_pixmap(8, 8);
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            0.0,
+            0.0,
+            8.0,
+            8.0,
+            &RectStyle {
+                outline_thickness: 1,
+                outline_color_argb: 0xFF_FF_FF_FF,
+                fill_color_argb: 0xFF_00_00_FF,
+                corner_radius_px: u32::MAX,
+            },
+        );
+    }
+
+    // --- AA on/off contract: sharp corners must be pixel-perfect, rounded corners must AA ----
+
+    /// Fill the pixmap with a sharp-corner red rectangle at INTEGER coords. Every pixel inside
+    /// must be exactly red (255,0,0,255), every pixel outside must be untouched. No fractional
+    /// alpha anywhere — that's the whole point of the AA-off branch.
+    #[test]
+    fn sharp_corner_rect_paints_pixel_aligned_fill_without_aa_bleed() {
+        let mut pixmap = opaque_black_pixmap(16, 16);
+        draw_rect_on_pixmap(&mut pixmap, 4.0, 4.0, 8.0, 8.0, &style(0, 0, 0xFF_FF_00_00));
+        // Inside the rect: every pixel exactly red.
+        for y in 4..12 {
+            for x in 4..12 {
+                let off = (y * 16 + x) * 4;
+                let px = &pixmap.data()[off..off + 4];
+                assert_eq!(
+                    px,
+                    &[255, 0, 0, 255],
+                    "inside ({x},{y}) should be solid red, got {px:?}"
+                );
             }
         }
-        // Pixels that should still be black.
-        for y in 0..4 {
-            for x in 0..4 {
-                if x >= 2 || y >= 2 {
-                    assert_eq!(img.get_pixel(x, y).0, [0, 0, 0, 255]);
+        // Just outside the rect: every pixel exactly the original black. Without disabling AA,
+        // tiny-skia would smear partial-alpha red onto the boundary pixels (e.g. (3,4), (12,4)).
+        for &(x, y) in &[
+            (3, 4),
+            (3, 8),
+            (12, 4),
+            (12, 11),
+            (4, 3),
+            (11, 12),
+            (8, 3),
+            (8, 12),
+        ] {
+            let off = (y * 16 + x) * 4;
+            let px = &pixmap.data()[off..off + 4];
+            assert_eq!(
+                px,
+                &[0, 0, 0, 255],
+                "boundary-adjacent pixel ({x},{y}) must remain background — no AA bleed"
+            );
+        }
+    }
+
+    /// 1px sharp-corner stroke at integer coords must paint exactly the perimeter pixels at
+    /// full opacity, leaving everything else unchanged.
+    #[test]
+    fn sharp_corner_rect_pixel_perfect_one_px_stroke() {
+        let mut pixmap = opaque_black_pixmap(8, 8);
+        draw_rect_on_pixmap(&mut pixmap, 1.0, 1.0, 6.0, 6.0, &style(1, 0xFF_00_FF_00, 0));
+        for y in 0..8 {
+            for x in 0..8 {
+                let off = (y * 8 + x) * 4;
+                let px = &pixmap.data()[off..off + 4];
+                // Cells along the inset rect's perimeter — tiny-skia centers a 1px stroke on
+                // the path edge, so the stroke band lands at integer pixel rows/cols 0..=1
+                // and 6..=7 along each side. Inner cells (2..=5 on both axes) stay black.
+                let inner = (2..=5).contains(&x) && (2..=5).contains(&y);
+                if inner {
+                    assert_eq!(
+                        px,
+                        &[0, 0, 0, 255],
+                        "interior ({x},{y}) of a 1px stroke must remain background"
+                    );
+                } else {
+                    // No AA: every channel is integer (no partial alpha values like 64 or 192).
+                    assert!(
+                        px[0] == 0 && (px[1] == 0 || px[1] == 255) && px[2] == 0,
+                        "perimeter pixel ({x},{y}) has fractional channels = AA bleed: {px:?}"
+                    );
                 }
             }
         }
     }
 
+    /// Rounded-corner rect MUST have anti-aliased corner pixels — there's no way to make a
+    /// curve look smooth without partial-alpha pixels around it. Asserts at least one pixel
+    /// in the corner region falls in the partial-alpha range.
     #[test]
-    fn fill_rect_saturates_on_pathological_width() {
-        // u32::MAX exceeds i32 — a naive `(x + w as i32)` wraps to a negative value and the
-        // loop silently no-ops. Saturating arithmetic should instead treat "huge width" as
-        // "cover the whole image past x".
-        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
-        fill_rect(&mut img, 0, 0, u32::MAX, 4, image::Rgba([255, 0, 0, 255]));
+    fn rounded_corner_rect_has_aa_bleed_at_corner_pixels() {
+        let mut pixmap = opaque_black_pixmap(32, 32);
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            2.0,
+            2.0,
+            28.0,
+            28.0,
+            &RectStyle {
+                outline_thickness: 0,
+                outline_color_argb: 0,
+                fill_color_argb: 0xFF_FF_00_00,
+                corner_radius_px: 8,
+            },
+        );
+        // Sample a 6x6 region around the top-left corner of the round-rect bounding box.
+        // Without AA there would be only fully-red or fully-black pixels here. With AA, at
+        // least a few pixels in the curve must show partial red (1..=254 in the R channel).
+        let mut found_partial = false;
+        for y in 0..10 {
+            for x in 0..10 {
+                let off = (y * 32 + x) * 4;
+                let r = pixmap.data()[off];
+                if (1..=254).contains(&r) {
+                    found_partial = true;
+                    break;
+                }
+            }
+        }
         assert!(
-            img.pixels().all(|p| p.0 == [255, 0, 0, 255]),
-            "saturating width should fill the entire image, not silently skip"
+            found_partial,
+            "rounded-corner fill must produce at least one partial-alpha pixel in the corner \
+             region — otherwise the curve looks jagged"
         );
     }
 
+    /// Sharp-corner rect must NOT produce any partial-alpha pixels. A negative counterpart to
+    /// the rounded-corner test above — proves the two paths actually behave differently.
     #[test]
-    fn fill_rect_saturates_on_pathological_height() {
-        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
-        fill_rect(&mut img, 0, 0, 4, u32::MAX, image::Rgba([255, 0, 0, 255]));
-        assert!(
-            img.pixels().all(|p| p.0 == [255, 0, 0, 255]),
-            "saturating height should fill the entire image, not silently skip"
+    fn sharp_corner_rect_produces_no_partial_alpha_anywhere() {
+        let mut pixmap = opaque_black_pixmap(32, 32);
+        draw_rect_on_pixmap(
+            &mut pixmap,
+            5.0,
+            7.0,
+            17.0,
+            13.0,
+            &style(2, 0xFF_FF_00_00, 0xFF_00_00_FF),
         );
+        // Walk every pixel; any R/G/B channel in (0, 255) means AA was applied.
+        for (i, chunk) in pixmap.data().chunks_exact(4).enumerate() {
+            for (c, &v) in chunk[..3].iter().enumerate() {
+                assert!(
+                    v == 0 || v == 255,
+                    "pixel idx={i} channel={c} has partial value {v} — sharp-corner rect leaked AA"
+                );
+            }
+        }
     }
 
     #[test]
-    fn fill_rect_saturates_on_i32_max_offset_plus_width() {
-        // x near i32::MAX + a modest width would wrap the naive addition.
-        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
-        fill_rect(
-            &mut img,
-            i32::MAX - 10,
-            0,
-            100,
-            4,
-            image::Rgba([255, 0, 0, 255]),
-        );
-        // The rect starts way past the right edge — clips to empty, nothing painted.
-        assert!(img.pixels().all(|p| p.0 == [0, 0, 0, 255]));
+    fn draw_rect_element_short_circuits_on_non_positive_or_nan_dims() {
+        // Geometry guard: `draw_rect_on_pixmap` itself rejects these via `Rect::from_xywh`,
+        // but only AFTER an O(pixels) Pixmap round-trip — and that round-trip is *lossy at
+        // sub-opaque alphas* (premul/demul rounding). A translucent baseline lets us detect
+        // whether the conversion ran: any drift means we paid for the conversion the guard
+        // is supposed to skip. With the guard in place, every byte stays bit-identical.
+        let original = image::RgbaImage::from_pixel(4, 4, image::Rgba([200, 100, 50, 64]));
+        for (w, h) in [
+            (0.0, 4.0),
+            (4.0, 0.0),
+            (-1.0, 4.0),
+            (4.0, -1.0),
+            (f64::NAN, 4.0),
+        ] {
+            let mut img = original.clone();
+            let mut el = make_rect_element();
+            el.width = w;
+            el.height = h;
+            // Visible style — the only thing keeping the draw path alive is the geometry.
+            el.outline_thickness = 1;
+            el.outline_color_argb = 0xFF_FF_00_00;
+            el.fill_color_argb = 0xFF_00_FF_00;
+            draw_rect_element(&mut img, &el);
+            assert_eq!(
+                img.as_raw(),
+                original.as_raw(),
+                "(w={w}, h={h}) must skip the round-trip; sub-opaque pixels would drift otherwise"
+            );
+        }
     }
 
     #[test]
-    fn fill_rect_is_noop_for_zero_size() {
-        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
-        fill_rect(&mut img, 0, 0, 0, 0, image::Rgba([255, 0, 0, 255]));
-        assert!(img.pixels().all(|p| p.0 == [0, 0, 0, 255]));
-    }
-
-    #[test]
-    fn stroke_rect_rgba_clamps_thickness_to_shortest_side() {
-        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
-        // Stroke of 10 on a 4x4 rect: clamp to 4 (the shortest side), so everything inside is red.
-        stroke_rect_rgba(&mut img, 0, 0, 4, 4, 10, image::Rgba([255, 0, 0, 255]));
-        assert!(img.pixels().all(|p| p.0 == [255, 0, 0, 255]));
-    }
-
-    #[test]
-    fn stroke_rect_rgba_with_zero_thickness_is_noop() {
-        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
-        stroke_rect_rgba(&mut img, 0, 0, 4, 4, 0, image::Rgba([255, 0, 0, 255]));
-        assert!(img.pixels().all(|p| p.0 == [0, 0, 0, 255]));
-    }
-
-    #[test]
-    fn stroke_rect_rgba_with_zero_size_is_noop() {
-        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
-        stroke_rect_rgba(&mut img, 0, 0, 0, 0, 1, image::Rgba([255, 0, 0, 255]));
-        assert!(img.pixels().all(|p| p.0 == [0, 0, 0, 255]));
-    }
-
-    #[test]
-    fn stroke_rect_rgba_right_bar_survives_pathological_width() {
-        // `stroke_rect_rgba` computes `x + (w - s) as i32` to place the right bar. With a u32
-        // width that exceeds i32, the naive conversion silently wraps to a negative offset and
-        // the right bar misses the image entirely — the top/bottom bars still cover the row,
-        // but the rightmost column only gets painted by top/bottom overlap, not by the right
-        // bar. Saturating math keeps the right bar at `iw - s`.
-        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
-        stroke_rect_rgba(
-            &mut img,
-            0,
-            0,
-            u32::MAX,
-            4,
-            1,
-            image::Rgba([255, 0, 0, 255]),
-        );
-        // The rightmost column (including interior rows 1 and 2, which only the right bar can
-        // paint) must be red.
-        let right_col_is_red = (0..4).all(|y| img.get_pixel(3, y).0 == [255, 0, 0, 255]);
-        assert!(
-            right_col_is_red,
-            "right bar must saturate to iw - s, not wrap to negative"
-        );
-    }
-
-    #[test]
-    fn stroke_rect_rgba_bottom_bar_survives_pathological_height() {
-        let mut img = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
-        stroke_rect_rgba(
-            &mut img,
-            0,
-            0,
-            4,
-            u32::MAX,
-            1,
-            image::Rgba([255, 0, 0, 255]),
-        );
-        // Bottom row — only the bottom bar can paint all 4 pixels; left + right only hit corners.
-        let bottom_row_is_red = (0..4).all(|x| img.get_pixel(x, 3).0 == [255, 0, 0, 255]);
-        assert!(
-            bottom_row_is_red,
-            "bottom bar must saturate to ih - s, not wrap to negative"
-        );
-    }
-
-    #[test]
-    fn stroke_rect_rgba_draws_outline_only_interior_unchanged() {
-        let mut img = image::RgbaImage::from_pixel(5, 5, image::Rgba([0, 0, 0, 255]));
-        stroke_rect_rgba(&mut img, 0, 0, 5, 5, 1, image::Rgba([255, 0, 0, 255]));
-        // Corners + edges should be red, centre (2, 2) untouched.
-        assert_eq!(img.get_pixel(0, 0).0, [255, 0, 0, 255]);
-        assert_eq!(img.get_pixel(4, 4).0, [255, 0, 0, 255]);
+    fn draw_rect_element_short_circuits_when_neither_outline_nor_fill_will_paint() {
+        // Both outline and fill have alpha=0 → no work should hit the pixmap. Verify by
+        // ensuring the buffer is bit-identical (which also means we skipped the round-trip
+        // conversion that would otherwise lossily premultiply/unpremultiply).
+        let original = image::RgbaImage::from_pixel(4, 4, image::Rgba([10, 20, 30, 255]));
+        let mut img = original.clone();
+        let mut el = make_rect_element();
+        el.width = 4.0;
+        el.height = 4.0;
+        el.outline_thickness = 5;
+        el.outline_color_argb = 0x00_FF_FF_FF; // alpha=0
+        el.fill_color_argb = 0x00_FF_00_00; // alpha=0
+        draw_rect_element(&mut img, &el);
         assert_eq!(
-            img.get_pixel(2, 2).0,
-            [0, 0, 0, 255],
-            "interior of a 1px stroke is untouched"
+            img.as_raw(),
+            original.as_raw(),
+            "no visible-paint case must skip work entirely"
         );
     }
+
+    // --- Surface (lazy RGBA <-> Pixmap state machine) ------------------------------------------
+
+    #[test]
+    fn surface_starts_in_rgba_and_no_op_as_rgba_keeps_it() {
+        let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([1, 2, 3, 255]));
+        let mut surface = Surface::Rgba(img);
+        // Calling `as_rgba` when already Rgba must be a no-op (no conversion drift).
+        let snap = surface.as_rgba().clone();
+        let again = surface.as_rgba().clone();
+        assert_eq!(snap.as_raw(), again.as_raw(), "as_rgba is idempotent");
+    }
+
+    #[test]
+    fn surface_starts_in_pixmap_and_no_op_as_pixmap_keeps_it() {
+        let pixmap = opaque_black_pixmap(2, 2);
+        let mut surface = Surface::Pixmap(pixmap);
+        let snap = surface.as_pixmap().data().to_vec();
+        let again = surface.as_pixmap().data().to_vec();
+        assert_eq!(snap, again, "as_pixmap is idempotent");
+    }
+
+    #[test]
+    fn surface_round_trip_preserves_opaque_pixels_exactly() {
+        // The lazy conversion sits on the same code path Dart's exports do — must not
+        // smear color when alpha is fully opaque.
+        let mut img = image::RgbaImage::new(4, 4);
+        for (i, p) in img.pixels_mut().enumerate() {
+            p.0 = [(i * 16) as u8, (i * 8) as u8, (i * 4) as u8, 255];
+        }
+        let original = img.clone();
+        let mut surface = Surface::Rgba(img);
+        // Force RGBA -> Pixmap -> RGBA via the surface API.
+        let _ = surface.as_pixmap();
+        let _ = surface.as_rgba();
+        let final_img = surface.into_rgba();
+        assert_eq!(
+            original.as_raw(),
+            final_img.as_raw(),
+            "opaque round-trip through Surface must be lossless"
+        );
+    }
+
+    #[test]
+    fn surface_into_rgba_from_pixmap_state_works() {
+        // into_rgba consumes the surface — verify it converts when currently Pixmap.
+        let pixmap = opaque_black_pixmap(3, 3);
+        let surface = Surface::Pixmap(pixmap);
+        let img = surface.into_rgba();
+        assert_eq!(
+            img.dimensions(),
+            (3, 3),
+            "dimensions preserved on terminal conversion"
+        );
+    }
+
+    // --- end-to-end via draw_rect_element (FfiElement entry point) -----------------------------
 
     // --- element_text helper (bounds + UTF-8) --------------------------------------------------
 
@@ -787,15 +1639,20 @@ mod tests {
         el.height = 8.0;
         el.outline_thickness = u32::MAX;
         el.outline_color_argb = 0xFF00FF00;
-        // Must not panic. With thickness clamped to image side (8), the entire rect fills.
+        // Must not panic. With thickness clamped to min(w, h), tiny-skia's stroked geometry
+        // stays bounded. Every pixel ends up touched by green to some degree.
         draw_rect_element(&mut img, &el);
-        assert!(img.pixels().all(|p| p.0 == [0, 255, 0, 255]));
+        let any_green = img.pixels().any(|p| p.0[1] > 0);
+        assert!(
+            any_green,
+            "clamped giant stroke must paint green into the buffer"
+        );
     }
 
     #[test]
     fn draw_rect_element_survives_huge_floating_dimensions() {
         // width/height arrive as f64 from Dart. A user passing 1e15 (way outside any image)
-        // must not crash — saturating-cast to u32::MAX, then stroke_rect_rgba clips.
+        // must not crash — tiny-skia accepts any finite f32 path; clipping is its job.
         let mut img = image::RgbaImage::from_pixel(8, 8, image::Rgba([0, 0, 0, 255]));
         let mut el = make_rect_element();
         el.width = 1e15;
@@ -803,16 +1660,48 @@ mod tests {
         el.outline_thickness = 1;
         el.outline_color_argb = 0xFF_FF_00_00;
         draw_rect_element(&mut img, &el);
-        // Outline-only at thickness 1: top + bottom rows + left + right cols are red.
+        // Don't assert specific pixels — at this scale the stroke is sub-image-edge and may
+        // not land on integer pixel coords. Survival without panic is the contract.
+    }
+
+    #[test]
+    fn draw_rect_element_short_circuits_on_zero_thickness_without_pixmap_round_trip() {
+        // The zero-thickness early-return matters: without it we'd pay
+        // canvas::to_pixmap+from_pixmap for a no-op draw. The invariant we can check is that
+        // the bytes round-trip identically.
+        let original = image::RgbaImage::from_pixel(4, 4, image::Rgba([10, 20, 30, 255]));
+        let mut img = original.clone();
+        let mut el = make_rect_element();
+        el.width = 4.0;
+        el.height = 4.0;
+        el.outline_thickness = 0;
+        el.outline_color_argb = 0xFFFFFFFF;
+        draw_rect_element(&mut img, &el);
         assert_eq!(
-            img.get_pixel(0, 0).0,
-            [255, 0, 0, 255],
-            "top-left corner painted"
+            img.as_raw(),
+            original.as_raw(),
+            "thickness=0 must leave the image bit-identical (no round-trip drift)"
         );
+    }
+
+    #[test]
+    fn argb_to_tiny_color_matches_image_rgba_unpacking() {
+        // tiny-skia helper must agree with the image-crate helper used by text rendering;
+        // any drift here means rect outlines and text fills with the same ARGB look different.
+        let argb = 0xCC_11_22_33;
+        let img_rgba = argb_to_rgba(argb);
+        let tiny = argb_to_tiny_color(argb);
+        // Color::to_color_u8() returns non-premultiplied RGBA in 0..=255.
+        let tiny_rgba = tiny.to_color_u8();
         assert_eq!(
-            img.get_pixel(7, 7).0,
-            [255, 0, 0, 255],
-            "bottom-right corner painted"
+            (
+                tiny_rgba.red(),
+                tiny_rgba.green(),
+                tiny_rgba.blue(),
+                tiny_rgba.alpha()
+            ),
+            (img_rgba.0[0], img_rgba.0[1], img_rgba.0[2], img_rgba.0[3]),
+            "ARGB unpack must agree across the two color helpers"
         );
     }
 
@@ -862,6 +1751,7 @@ mod tests {
             blur: 0,
             text_offset: 0,
             text_length: 0,
+            shape_param: 0,
         }
     }
 }

@@ -28,4 +28,51 @@ void main() => group(FfiColor, () {
     const color = FfiColor.from(alpha: 128, blue: 255);
     expect(color.argb, 0x800000FF, reason: 'alpha=80h, blue=FFh, other channels=0');
   });
+
+  group('range guards', () {
+    test('rejects argb < 0 (would wrap to a huge u32 on the FFI wire)', () {
+      expect(
+        () => FfiColor(-1),
+        throwsA(isA<AssertionError>()),
+        reason: 'negative argb silently wraps via Dart Uint32 marshaling',
+      );
+    });
+
+    test('rejects argb > 0xFFFFFFFF (would lose high bits)', () {
+      expect(
+        () => FfiColor(0x1_0000_0000),
+        throwsA(isA<AssertionError>()),
+        reason: 'values past u32::MAX truncate silently when written to the FFI slot',
+      );
+    });
+
+    test('accepts the full legal u32 range at both ends', () {
+      // ignore: use_named_constants, exercising the raw constructor at the boundary.
+      expect(const FfiColor(0).argb, 0, reason: 'lower bound');
+      expect(const FfiColor(0xFFFFFFFF).argb, 0xFFFFFFFF, reason: 'upper bound');
+    });
+
+    test('from() rejects channel values outside [0, 255]', () {
+      expect(() => FfiColor.from(alpha: -1), throwsA(isA<AssertionError>()));
+      expect(() => FfiColor.from(red: 256), throwsA(isA<AssertionError>()));
+      expect(() => FfiColor.from(green: -10), throwsA(isA<AssertionError>()));
+      expect(() => FfiColor.from(blue: 999), throwsA(isA<AssertionError>()));
+    });
+
+    test('from() accepts channel boundary values', () {
+      // ignore: arguments-ordering, ARGB order is more natural than alphabetical here.
+      const allMax = FfiColor.from(red: 255, green: 255, blue: 255);
+      expect(
+        allMax.argb,
+        0xFFFFFFFF,
+        reason: 'rgb at max with default alpha=255 produces opaque white',
+      );
+      expect(
+        // ignore: use_named_constants, exercising the constructor's default-args path.
+        const FfiColor.from().argb,
+        0xFF000000,
+        reason: 'defaults: opaque black (alpha=255 default, others 0)',
+      );
+    });
+  });
 });

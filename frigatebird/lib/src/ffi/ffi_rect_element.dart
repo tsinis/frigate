@@ -1,9 +1,12 @@
+// Colocates the Struct, its writer extension, and the list-writer extension — they're a
+// single FFI surface and split across files would be artificial separation.
 // ignore_for_file: prefer-single-declaration-per-file
 import 'dart:ffi';
 
 import '../model/draw_element.dart';
 
-/// Matches Rust `#[repr(C)] FfiRectElement` exactly: 4 × f64 (32) + 2 × u32 (8) = **40 bytes**.
+/// Matches Rust `#[repr(C)] FfiRectElement` exactly: 4 × f64 (32) + 3 × u32 (12) = 44 content,
+/// padded to **48 bytes** for 8-byte struct alignment.
 ///
 /// Coordinates are **document-space pixels** (no normalization). Rust uses them as-is.
 /// [outlineThickness] is `u32` on the wire to stay in Dart's SMI range without boxing.
@@ -25,6 +28,11 @@ final class FfiRectElement extends Struct {
 
   @Uint32()
   external int outlineColorArgb;
+
+  /// Corner radius in pixels (0 = sharp corners). Clamped to `min(width, height) / 2` at
+  /// render time on the Rust side.
+  @Uint32()
+  external int shapeParam;
 }
 
 extension RectElementFfi on RectElement {
@@ -35,7 +43,8 @@ extension RectElementFfi on RectElement {
       ..width = width
       ..height = height
       ..outlineThickness = outlineThickness
-      ..outlineColorArgb = outlineColor.argb;
+      ..outlineColorArgb = outlineColor.argb
+      ..shapeParam = shapeParam;
   }
 }
 

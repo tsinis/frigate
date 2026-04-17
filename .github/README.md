@@ -1,13 +1,14 @@
-# frigatedraw
+# frigate
 
 Dart workspace for geometric image annotation with Rust-powered export.
 
 ## Packages
 
-| Package                       | Description                                                            |
-| ----------------------------- | ---------------------------------------------------------------------- |
-| [`frigatebird`](frigatebird/) | Pure Dart FFI core — models, commands, Rust build hook, export backend |
-| [`frigatedraw`](frigatedraw/) | Flutter UI layer — `DrawEditor`, `DrawPainter`, `DrawController`       |
+| Package                             | Description                                          |
+| ----------------------------------- | ---------------------------------------------------- |
+| [**frigate**](../frigatebird/rust/) | Pure Rust backend — image processing and export      |
+| [**frigate**bird](../frigatebird/)  | Pure Dart FFI core — models, commands, build hook    |
+| [**frigate**draw](../frigatedraw/)  | Flutter UI — editor, controller, high-level wrappers |
 
 User provides an image, draws geometric overlays (move, resize via 8 handles), and exports the final
 bitmap with overlays baked in. Preview is Flutter Canvas, export via Rust.

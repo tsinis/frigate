@@ -2,29 +2,29 @@ import 'package:frigatebird/src/ffi/ffi_abi.dart';
 import 'package:test/test.dart';
 
 void main() {
-  group('assertFfiElementAbi', () {
+  group('FfiAbi.assertElement', () {
     test(
       'succeeds on the host platform (72 bytes)',
-      () => expect(assertFfiElementAbi, returnsNormally),
+      () => expect(FfiAbi.assertElement, returnsNormally),
     );
 
     test('throws AssertionError when the expected size is wrong', () {
       expect(
-        () => assertFfiElementAbi(expectedSize: 999),
+        () => FfiAbi.assertElement(expectedSize: 999),
         throwsA(isA<AssertionError>()),
         reason: 'mismatched expected size must fail loudly, this is the whole point',
       );
     });
   });
 
-  group('assertFfiRectElementAbi', () {
+  group('FfiAbi.assertRectElement', () {
     test(
-      'succeeds on the host platform (40 bytes)',
-      () => expect(assertFfiRectElementAbi, returnsNormally),
+      'succeeds on the host platform (48 bytes after adding shapeParam)',
+      () => expect(FfiAbi.assertRectElement, returnsNormally),
     );
 
     test('throws AssertionError when the expected size is wrong', () {
-      expect(() => assertFfiRectElementAbi(expectedSize: 999), throwsA(isA<AssertionError>()));
+      expect(() => FfiAbi.assertRectElement(expectedSize: 999), throwsA(isA<AssertionError>()));
     });
   });
 }

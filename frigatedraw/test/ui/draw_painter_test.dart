@@ -1,6 +1,14 @@
-// ignore_for_file: prefer-extracting-callbacks
-// ignore_for_file: prefer-extracting-function-callbacks
+// Test inlines short closures inside `expect` / iteration helpers — extracting them named
+// would make the cases harder to read at a glance.
+// ignore_for_file: prefer-extracting-callbacks, prefer-extracting-function-callbacks
+// _RecordingCanvas is a test-only stub that lives at file bottom; main() is the entry point.
+// ignore_for_file: prefer-match-file-name
+// noSuchMethod requires a dynamic return per the Object contract.
+// ignore_for_file: avoid-dynamic
 
+import 'dart:ui' show Canvas, Offset, Paint, RRect, Rect;
+
+import 'package:flutter/rendering.dart' show Size;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frigatedraw/frigatedraw.dart';
 
@@ -69,6 +77,83 @@ void main() => group(DrawPainter, () {
     });
   });
 
+  group('paint', () {
+    test('uses drawRect for rectangles with cornerRadius=0', () {
+      final canvas = _RecordingCanvas();
+      const sharp = RectElement(height: 50, width: 100, x: 10, y: 20);
+      const DrawPainter([sharp]).paint(canvas, const Size(200, 200));
+      expect(canvas.drawRectCount, 1, reason: 'sharp rect should hit drawRect once');
+      expect(canvas.drawRRectCount, 0, reason: 'no rounded path for cornerRadius=0');
+    });
+
+    test('uses drawRRect for rectangles with cornerRadius>0', () {
+      final canvas = _RecordingCanvas();
+      const rounded = RectElement(cornerRadius: 8, height: 50, width: 100, x: 10, y: 20);
+      const DrawPainter([rounded]).paint(canvas, const Size(200, 200));
+      expect(canvas.drawRRectCount, 1, reason: 'rounded rect must take the drawRRect path');
+      expect(canvas.drawRectCount, 0, reason: 'must not draw both - would over-paint the outline');
+    });
+
+    test('paint.isAntiAlias is FALSE for sharp-corner rects (matches Rust contract)', () {
+      final canvas = _RecordingCanvas();
+      const sharp = RectElement(height: 50, width: 100, x: 10, y: 20);
+      const DrawPainter([sharp]).paint(canvas, const Size(200, 200));
+      expect(
+        canvas.isLastPaintAntiAlias,
+        isFalse,
+        reason: 'sharp rect must render pixel-aligned, no AA bleed at the edges',
+      );
+    });
+
+    test('paint.isAntiAlias is TRUE for rounded-corner rects (curves need AA)', () {
+      final canvas = _RecordingCanvas();
+      const rounded = RectElement(cornerRadius: 8, height: 50, width: 100, x: 10, y: 20);
+      const DrawPainter([rounded]).paint(canvas, const Size(200, 200));
+      expect(
+        canvas.isLastPaintAntiAlias,
+        isTrue,
+        reason: 'rounded corners need AA so the curve does not look jagged',
+      );
+    });
+
+    test('non-positive width or height is silently skipped (mirrors Rust export)', () {
+      // Rust's `draw_rect_on_pixmap` short-circuits on `width <= 0 || height <= 0`. Without
+      // the matching guard in the painter, Flutter would happily render a flipped rect from
+      // a negative-width `Rect.fromLTWH` — a preview-vs-export divergence the user would
+      // hit mid-drag. The original CodeRabbit hypothesis (that `clamp` would throw) is
+      // false because `Rect.shortestSide` is magnitude-based, but the divergence is real.
+      final canvas = _RecordingCanvas();
+      const cases = <RectElement>[
+        RectElement(cornerRadius: 8, height: 10, width: -10, x: 0, y: 0),
+        RectElement(cornerRadius: 8, height: -10, width: 10, x: 0, y: 0),
+        RectElement(cornerRadius: 8, height: 0, width: 10, x: 0, y: 0),
+        RectElement(cornerRadius: 8, height: 10, width: 0, x: 0, y: 0),
+        RectElement(height: 0, width: 0, x: 0, y: 0),
+      ];
+      const DrawPainter(cases).paint(canvas, const Size(100, 100));
+      expect(
+        (canvas.drawRectCount, canvas.drawRRectCount),
+        (0, 0),
+        reason: 'every non-positive-dimension rect must be skipped without painting',
+      );
+    });
+
+    test('drawRRect radius is clamped to half the shortest side (preview matches export)', () {
+      final canvas = _RecordingCanvas();
+      // Rect is 100x40, so the largest visually-meaningful radius is 20. We pass 9999 to
+      // verify the preview clamps just like Rust does.
+      const rounded = RectElement(cornerRadius: 9999, height: 40, width: 100, x: 0, y: 0);
+      const DrawPainter([rounded]).paint(canvas, const Size(200, 200));
+      final radius = canvas.lastRRect?.tlRadiusX;
+      expect(radius, isNotNull, reason: 'drawRRect call captured');
+      expect(
+        radius,
+        20.0,
+        reason: 'clamped to min(width, height) / 2 = 20 to mirror Rust auto-clamp',
+      );
+    });
+  });
+
   group('isPointOnRect', () {
     test('is true on the outline', () {
       expect(
@@ -95,3 +180,33 @@ void main() => group(DrawPainter, () {
     });
   });
 });
+
+/// Stub [Canvas] that counts the draw operations DrawPainter cares about. We can't subclass
+/// Canvas directly (its constructor needs a PictureRecorder) so we implement the interface and
+/// route all the `void` API surface through `noSuchMethod`.
+class _RecordingCanvas implements Canvas {
+  int drawRectCount = 0;
+  int drawRRectCount = 0;
+  RRect? lastRRect;
+  bool? isLastPaintAntiAlias;
+
+  @override
+  // ignore: parameters-ordering, signature must match dart:ui Canvas.
+  void drawRect(Rect rect, Paint paint) {
+    drawRectCount += 1;
+    isLastPaintAntiAlias = paint.isAntiAlias;
+  }
+
+  @override
+  // ignore: parameters-ordering, signature must match dart:ui Canvas.
+  void drawRRect(RRect rrect, Paint paint) {
+    drawRRectCount += 1;
+    lastRRect = rrect;
+    isLastPaintAntiAlias = paint.isAntiAlias;
+  }
+
+  /// Catch-all: every other Canvas method the painter happens to call (drawCircle for handles,
+  /// saveLayer, etc.) is a silent no-op for our recording purposes.
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}

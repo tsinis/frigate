@@ -1,3 +1,6 @@
+// FFI bindings — symbol names + parameter ordering are dictated by the C ABI of the Rust
+// `extern "C"` exports, not by our Dart style preferences. Top-level `@Native()` functions
+// (not a static-class wrapper) is the standard idiom for `dart:ffi`.
 // ignore_for_file: prefer-named-parameters, prefer-static-class
 // ignore_for_file: non_constant_identifier_names, prefer-typedefs-for-callbacks
 
