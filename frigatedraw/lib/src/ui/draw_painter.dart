@@ -35,7 +35,19 @@ class DrawPainter extends CustomPainter {
             ..color = element.uiOutlineColor
             ..style = .stroke
             ..strokeWidth = element.outlineThickness.toDouble();
-          canvas.drawRect(element.rect, strokePaint);
+          final radius = element.cornerRadius;
+          if (radius > 0) {
+            // Mirror Rust's clamp: radius can never exceed half the shortest side; otherwise
+            // the preview shows a different shape than the export.
+            final maxRadius = element.rect.shortestSide / 2;
+            final clamped = radius.toDouble().clamp(0.0, maxRadius);
+            canvas.drawRRect(
+              RRect.fromRectAndRadius(element.rect, .circular(clamped)),
+              strokePaint,
+            );
+          } else {
+            canvas.drawRect(element.rect, strokePaint);
+          }
 
         case TextElement():
           // TODO(tsinis): render TextElement in the preview painter.

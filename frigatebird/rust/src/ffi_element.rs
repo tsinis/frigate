@@ -51,7 +51,10 @@ pub struct FfiElement {
     pub text_offset: u32,
     /// Byte length in the shared text buffer; 0 when not a text element.
     pub text_length: u32,
-    // 4 bytes of trailing padding to bring the struct to a multiple of 8.
+    /// Generic shape-specific scalar in pixels — interpreted by each renderer:
+    /// rectangle = corner radius, text = unused (always 0). Fits in the 4-byte trailing pad
+    /// the previous layout already had, so total struct size stays 72 bytes.
+    pub shape_param: u32,
 }
 
 // Freeze the layout: the Dart side has a matching runtime `sizeOf<FfiElement>() == 72` test, and

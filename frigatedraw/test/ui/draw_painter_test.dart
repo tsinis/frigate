@@ -1,6 +1,13 @@
 // ignore_for_file: prefer-extracting-callbacks
 // ignore_for_file: prefer-extracting-function-callbacks
+// _RecordingCanvas is a test-only stub that lives at file bottom; main() is the entry point.
+// ignore_for_file: prefer-match-file-name
+// noSuchMethod requires a dynamic return per the Object contract.
+// ignore_for_file: avoid-dynamic
 
+import 'dart:ui' show Canvas, Offset, RRect, Rect;
+
+import 'package:flutter/rendering.dart' show Size;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frigatedraw/frigatedraw.dart';
 
@@ -69,6 +76,39 @@ void main() => group(DrawPainter, () {
     });
   });
 
+  group('paint', () {
+    test('uses drawRect for rectangles with cornerRadius=0', () {
+      final canvas = _RecordingCanvas();
+      const sharp = RectElement(height: 50, width: 100, x: 10, y: 20);
+      const DrawPainter([sharp]).paint(canvas, const Size(200, 200));
+      expect(canvas.drawRectCount, 1, reason: 'sharp rect should hit drawRect once');
+      expect(canvas.drawRRectCount, 0, reason: 'no rounded path for cornerRadius=0');
+    });
+
+    test('uses drawRRect for rectangles with cornerRadius>0', () {
+      final canvas = _RecordingCanvas();
+      const rounded = RectElement(cornerRadius: 8, height: 50, width: 100, x: 10, y: 20);
+      const DrawPainter([rounded]).paint(canvas, const Size(200, 200));
+      expect(canvas.drawRRectCount, 1, reason: 'rounded rect must take the drawRRect path');
+      expect(canvas.drawRectCount, 0, reason: 'must not draw both - would over-paint the outline');
+    });
+
+    test('drawRRect radius is clamped to half the shortest side (preview matches export)', () {
+      final canvas = _RecordingCanvas();
+      // Rect is 100x40, so the largest visually-meaningful radius is 20. We pass 9999 to
+      // verify the preview clamps just like Rust does.
+      const rounded = RectElement(cornerRadius: 9999, height: 40, width: 100, x: 0, y: 0);
+      const DrawPainter([rounded]).paint(canvas, const Size(200, 200));
+      final radius = canvas.lastRRect?.tlRadiusX;
+      expect(radius, isNotNull, reason: 'drawRRect call captured');
+      expect(
+        radius,
+        20.0,
+        reason: 'clamped to min(width, height) / 2 = 20 to mirror Rust auto-clamp',
+      );
+    });
+  });
+
   group('isPointOnRect', () {
     test('is true on the outline', () {
       expect(
@@ -95,3 +135,28 @@ void main() => group(DrawPainter, () {
     });
   });
 });
+
+/// Stub [Canvas] that counts the draw operations DrawPainter cares about. We can't subclass
+/// Canvas directly (its constructor needs a PictureRecorder) so we implement the interface and
+/// route all the `void` API surface through `noSuchMethod`.
+class _RecordingCanvas implements Canvas {
+  int drawRectCount = 0;
+  int drawRRectCount = 0;
+  RRect? lastRRect;
+
+  @override
+  // ignore: parameters-ordering, signature must match dart:ui Canvas.
+  void drawRect(Rect rect, Object paint) => drawRectCount += 1;
+
+  @override
+  // ignore: parameters-ordering, signature must match dart:ui Canvas.
+  void drawRRect(RRect rrect, Object paint) {
+    drawRRectCount += 1;
+    lastRRect = rrect;
+  }
+
+  /// Catch-all: every other Canvas method the painter happens to call (drawCircle for handles,
+  /// saveLayer, etc.) is a silent no-op for our recording purposes.
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}

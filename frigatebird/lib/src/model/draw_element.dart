@@ -33,6 +33,7 @@ sealed class DrawElement {
     this.outlineColor = FfiColor.transparent,
     this.outlineThickness = 0,
     this.rotation = 0,
+    this.shapeParam = 0,
   });
 
   /// Document-space x in pixels.
@@ -65,6 +66,20 @@ sealed class DrawElement {
   /// in y-down screen coords, which is mathematically counter-clockwise; the result looks
   /// clockwise to the user. Callers reason about the visual direction, not the math.
   final int rotation;
+
+  /// **Implementation detail** — do not read or write this field from outside the package.
+  ///
+  /// Subtypes write it via `super(...)` from a typed constructor parameter (e.g.
+  /// `RectElement.cornerRadius`); the FFI serializer reads it on the way out to Rust. Each
+  /// subtype interprets the same wire slot differently, which is exactly why there is no
+  /// generic public API for it — callers should reach for the subtype-specific typed alias.
+  ///
+  /// Sealed-class enforcement: only [RectElement] and [TextElement] can pass it through
+  /// `super`, so external code cannot mis-set it.
+  ///
+  /// `int` for the same SMI-tag-friendliness reason as [outlineThickness] / [blur].
+  // TODO(tsinis): add meta annotation to enforce that only the intended subtypes can set this via `super` once that is supported.
+  final int shapeParam;
 
   /// FFI discriminator for this element type. Implemented polymorphically by each subtype so the
   /// serializer doesn't need to runtime-check the subtype just to set the tag.

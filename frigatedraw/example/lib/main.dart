@@ -155,7 +155,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
 
       // Always start from the pristine asset — without this step, a second render would stack
       // text on top of the previous one (since output path == input path).
-      await renderImage(
+      await RenderImage.run(
         elements: [
           TextElement(
             fontSize: params.fontSize,

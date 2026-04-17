@@ -44,6 +44,7 @@ void main() {
   group('DrawElementListFfi.toNative', () {
     test('serializes a single rectangle in pixel space', () {
       const rect = RectElement(
+        cornerRadius: 8,
         fillColor: FfiColor(0xFF_11_22_33),
         height: 50,
         outlineColor: FfiColor(0xFF_AA_BB_CC),
@@ -62,6 +63,7 @@ void main() {
           :outlineColorArgb,
           :outlineThickness,
           :rotationDeg,
+          :shapeParam,
           :width,
           :x,
           :y,
@@ -73,6 +75,22 @@ void main() {
         expect(fillColorArgb, 0xFF_11_22_33, reason: 'fill color round-trip');
         expect(outlineColorArgb, 0xFF_AA_BB_CC, reason: 'outline color round-trip');
         expect(rotationDeg, 90, reason: 'rotation stays in int degrees on the wire');
+        expect(
+          shapeParam,
+          8,
+          reason: 'corner radius reaches the unified FfiElement as shape_param',
+        );
+      });
+    });
+
+    test('TextElement serializes shapeParam as 0 (the wire contract for text)', () {
+      const text = TextElement(text: 'x', x: 0, y: 0);
+      _withSerialized<void>([text], (bundle) {
+        expect(
+          bundle.elementsPtr.ref.shapeParam,
+          0,
+          reason: 'text writes shape_param=0 unconditionally - Rust treats it as unused',
+        );
       });
     });
 

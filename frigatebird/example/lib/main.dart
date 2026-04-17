@@ -20,7 +20,7 @@ Future<void> main() async {
   ];
 
   try {
-    await renderImage(elements: elements, imagePath: 'input.jpg', outputPath: 'output.jpg');
+    await RenderImage.run(elements: elements, imagePath: 'input.jpg', outputPath: 'output.jpg');
     print('wrote output.jpg');
   } on RenderException catch (error) {
     print('render failed: $error');

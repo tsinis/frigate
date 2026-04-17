@@ -14,7 +14,7 @@ import 'native_image.dart';
 
 /// Factory for conditional import — selected when `dart.library.ffi` is available.
 ExportBackend createExportBackend() {
-  assertFfiRectElementAbi();
+  FfiAbi.assertRectElement();
 
   return _NativeExportBackend();
 }

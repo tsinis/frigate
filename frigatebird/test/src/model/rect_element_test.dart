@@ -33,6 +33,28 @@ void main() => group(RectElement, () {
     expect(rect.outlineThickness, 2, reason: 'default outline thickness');
     expect(rect.outlineColor.argb, FfiColor.black.argb, reason: 'black outline by default');
     expect(rect.fillColor.argb, FfiColor.transparent.argb, reason: 'transparent fill by default');
+    expect(rect.cornerRadius, 0, reason: 'sharp corners by default');
+  });
+
+  test('cornerRadius constructor parameter is exposed via the typed getter', () {
+    const rect = RectElement(cornerRadius: 12, height: 50, width: 100, x: 10, y: 20);
+    expect(rect.cornerRadius, 12, reason: 'typed alias reads back what the constructor stored');
+  });
+
+  test('copyWith updates cornerRadius', () {
+    const original = RectElement(cornerRadius: 4, height: 50, width: 100, x: 10, y: 20);
+    final updated = original.copyWith(cornerRadius: 16);
+    expect(
+      (original.cornerRadius, updated.cornerRadius),
+      (4, 16),
+      reason: 'copy receives new radius, original unchanged',
+    );
+  });
+
+  test('copyWith preserves cornerRadius when not specified', () {
+    const original = RectElement(cornerRadius: 8, height: 50, width: 100, x: 10, y: 20);
+    final updated = original.copyWith(x: 99);
+    expect(updated.cornerRadius, 8, reason: 'omitted corner radius carries over from base');
   });
 
   test('copyWith preserves unchanged fields', () {

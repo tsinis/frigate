@@ -48,5 +48,10 @@ final class FfiElement extends Struct {
 
   @Uint32()
   external int textLength;
-  // 4 bytes trailing padding to align struct size to 8 (handled by Dart's Struct layout).
+
+  /// Generic shape-specific scalar in pixels — interpreted per-element-type by Rust:
+  /// rectangle = corner radius, text = unused (always 0). Fits in the previous trailing
+  /// padding slot so total struct size stays 72 bytes.
+  @Uint32()
+  external int shapeParam;
 }

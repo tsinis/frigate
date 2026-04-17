@@ -1,6 +1,6 @@
 import '../model/draw_element.dart';
 
-/// Arguments bundle for `renderImage`'s background-isolate worker.
+/// Arguments bundle for `RenderImage.run`'s background-isolate worker.
 ///
 /// The wrapper is a plain final class — `List` itself is not deeply-immutable, but the
 /// `DrawElement` instances inside *are* (each subtype carries `@pragma('vm:deeply-immutable')`),

@@ -4,7 +4,7 @@
 // subtype — that's the whole point of the factory — so the avoid-referencing-subclasses rule
 // is suppressed at the file level.
 
-/// Thrown by `renderImage` when the Rust FFI call returns a non-zero error code.
+/// Thrown by `RenderImage.run` when the Rust FFI call returns a non-zero error code.
 ///
 /// Sealed — switch over instances to branch on the specific failure. The numeric [code] mirrors
 /// `RenderError` discriminants in the Rust crate; callers that don't care about the specific kind

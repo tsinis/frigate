@@ -70,6 +70,7 @@ void _writeCommonFields(FfiElement ref, DrawElement element) {
     ..outlineColorArgb = element.outlineColor.argb
     ..outlineThickness = element.outlineThickness
     ..blur = element.blur
+    ..shapeParam = element.shapeParam
     // Text-specific defaults; overridden below for TextElement.
     ..textOffset = 0
     ..textLength = 0;

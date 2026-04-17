@@ -267,6 +267,78 @@ fn render_image_rejects_unsupported_output_extension() {
     assert_eq!(code, 6, "expected ImageWrite error code");
 }
 
+#[test]
+fn render_image_mixed_rect_text_rect_does_not_panic_or_leak() {
+    // Exercises the Surface state machine across element-type transitions
+    // (Rgba -> Pixmap -> Rgba -> Pixmap -> Rgba). If any conversion drops or duplicates a
+    // draw, this fails to encode a JPEG.
+    use std::ffi::CString;
+
+    let out = std::env::temp_dir().join("frigate_render_image_mixed.jpg");
+    let _ = std::fs::remove_file(&out);
+
+    let img_path = CString::new(assets_dir().join("paint.jpg").to_str().unwrap()).unwrap();
+    let font_path = CString::new(
+        assets_dir()
+            .join("RobotoMono-VariableFont_wght.ttf")
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap();
+    let out_path = CString::new(out.to_str().unwrap()).unwrap();
+
+    let text_buffer = b"Frigate";
+    let elements = [
+        make_rect_element(20.0, 20.0, 100.0, 80.0, 4, 0xFF_FF_00_00),
+        make_text_element(0, text_buffer.len() as u32),
+        make_rect_element(60.0, 60.0, 120.0, 90.0, 3, 0xFF_00_00_FF),
+    ];
+
+    let code = unsafe {
+        frigate::render_image(
+            img_path.as_ptr(),
+            out_path.as_ptr(),
+            font_path.as_ptr(),
+            elements.as_ptr(),
+            elements.len(),
+            text_buffer.as_ptr(),
+            text_buffer.len(),
+            90,
+        )
+    };
+    assert_eq!(code, 0, "mixed rect+text+rect run must succeed");
+    assert!(out.exists());
+    let decoded = image::open(&out).expect("output should decode");
+    assert!(decoded.width() > 0 && decoded.height() > 0);
+
+    std::fs::remove_file(&out).ok();
+}
+
+fn make_rect_element(
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    outline_thickness: u32,
+    outline_color_argb: u32,
+) -> FfiElement {
+    FfiElement {
+        element_type: element_type::RECTANGLE,
+        x,
+        y,
+        width,
+        height,
+        rotation_deg: 0,
+        fill_color_argb: 0,
+        outline_color_argb,
+        outline_thickness,
+        blur: 0,
+        text_offset: 0,
+        text_length: 0,
+        shape_param: 0,
+    }
+}
+
 fn make_text_element(text_offset: u32, text_length: u32) -> FfiElement {
     FfiElement {
         element_type: element_type::TEXT,
@@ -280,6 +352,7 @@ fn make_text_element(text_offset: u32, text_length: u32) -> FfiElement {
         outline_color_argb: 0,
         outline_thickness: 0,
         blur: 0,
+        shape_param: 0,
         text_offset,
         text_length,
     }
