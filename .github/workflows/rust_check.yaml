@@ -45,6 +45,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+            ~/.rustup/toolchains
             frigatebird/rust/target
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('frigatebird/rust/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-${{ runner.arch }}-cargo-
@@ -68,9 +69,9 @@ jobs:
         if: ${{ matrix.runner == 'ubuntu-latest' }}
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: 🧮 Generate coverage report # TODO(tsinis) - adjust min coverage.
+      - name: 🧮 Generate coverage report
         if: ${{ matrix.runner == 'ubuntu-latest' }}
-        run: cargo llvm-cov --all-features --lcov --output-path lcov.info
+        run: cargo llvm-cov --all-features --lcov --output-path lcov.info --fail-under-lines 98
 
       - name: 💯 Upload to Codecov
         if: ${{ matrix.runner == 'ubuntu-latest' }}

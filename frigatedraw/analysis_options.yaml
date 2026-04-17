@@ -1,16 +1,26 @@
 include: ../analysis_options.yaml
 
+# Duplicated from the root analysis_options.yaml: `dart format` — and therefore `pana` — does not
+# follow the `include:` chain outside the package directory, so it falls back to the 80-char
+# default when pana copies the package into an isolated sandbox for scoring. Keeping the value
+# here makes the package self-contained for external tooling while the root file still governs
+# the in-repo workspace.
+formatter:
+  page_width: 100
+
 dart_code_metrics:
   extends:
     - package:dart_code_metrics_presets/flutter_all.yaml
+  pubspec-rules:
+    # frigatedraw is unpublished today (`publish_to: none` in pubspec.yaml); flip this to `false`
+    # and drop `publish_to: none` together when we start shipping the Flutter UI layer to pub.dev.
+    - prefer-publish-to-none: true # TODO(tsinis): see comment above.
   rules:
-    - avoid-duplicate-cascades:
-        exclude:
-          - "**/ui/painter**"
     - avoid-returning-widgets:
         allow-nullable: true
     - prefer-widget-private-members:
         ignore-static: true
+    - avoid-duplicate-cascades: true
     - always-remove-listener: true
     - avoid-border-all: true
     - avoid-disposing-late-fields: true

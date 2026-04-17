@@ -13,7 +13,7 @@ topics:
   - rust
 
 environment:
-  sdk: ^3.11.4
+  sdk: ^3.11.5
 
 workspace:
   - frigatebird

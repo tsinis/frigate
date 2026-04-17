@@ -1,10 +1,53 @@
 include: ../analysis_options.yaml
 
+# Duplicated from the root analysis_options.yaml: `dart format` — and therefore `pana` — does not
+# follow the `include:` chain outside the package directory, so it falls back to the 80-char
+# default when pana copies the package into an isolated sandbox for scoring. Keeping the value
+# here makes the package self-contained for external tooling while the root file still governs
+# the in-repo workspace.
+formatter:
+  page_width: 100
+
 dart_code_metrics:
   extends:
     - package:dart_code_metrics_presets/dart_all.yaml
   rules:
-    - prefer-compute-over-isolate-run: false
-  pubspec-rules:
-    - prefer-publish-to-none: false
-    - add-resolution-workspace: true
+    # FFI folder exclusions: these rules fight the inherent shape of native bindings (struct
+    # slot mutation, multiple types per file, etc.). The glob `**/ffi/**` matches both
+    # `lib/src/ffi/` and `lib/src/helpers/extensions/ffi/` — extensions that cross the FFI
+    # boundary live under the latter by convention.
+    - avoid-mutating-parameters:
+        exclude:
+          - "**/ffi/**"
+    - prefer-class-destructuring:
+        min-occurrences: 4
+        exclude:
+          - "**/ffi/**"
+          - test/**
+    - prefer-match-file-name:
+        exclude:
+          - "**/ffi/**"
+    - avoid-long-functions:
+        exclude:
+          - "**/**_test.dart"
+          - "**/ffi/**"
+    - prefer-static-class:
+        exclude:
+          - test/**
+          - lib/**/*constants.dart
+          - "**/ffi/**"
+    - avoid-collection-mutating-methods:
+        exclude:
+          - "**/ffi/**"
+    - avoid-unsafe-collection-methods:
+        exclude:
+          - "**/ffi/**"
+    - parameters-ordering:
+        default: "last"
+        super: "unset"
+        required: "first"
+        ignore-overridden: false
+        only-named: false
+        alphabetize: true
+        exclude:
+          - "**/ffi/**"

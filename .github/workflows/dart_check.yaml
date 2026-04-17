@@ -54,15 +54,19 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: frigatebird
 
+      - name: 🏜️ Publish dry-run
+        if: ${{ github.event_name == 'pull_request' }}
+        run: dart pub publish --dry-run
+
       - name: 🧮 Check PANA score
-        if: false # TODO(tsinis) before publish change to ${{ github.event_name == 'pull_request' }}
+        if: ${{ github.event_name == 'pull_request' }}
+        # sudo apt-get install -y webp # TODO(tsinis) - add when screenshot is added to pubspec.
         run: |
-          sudo apt-get install -y webp
           dart pub global activate pana
           dart pub global run pana . --no-warning --exit-code-threshold 0
 
       - name: 🧪 Run tests with coverage # TODO(tsinis) - adjust --fail-under value.
-        run: dart run coverage:test_with_coverage --fail-under=1
+        run: dart run coverage:test_with_coverage --fail-under=76
 
       - name: 💯 Upload to Codecov
         uses: codecov/codecov-action@v6.0.0

@@ -75,8 +75,11 @@ reviews:
         - Return `ByteBuffer { null, 0 }` on panic, never propagate errors across FFI.
         - Use `into_boxed_slice()` + `Box::into_raw()` for returned buffers so
           capacity == len, enabling safe reconstruction in `free_bytes`.
-        - Rect coordinates arriving from Dart are normalized (0.0-1.0); Rust
-          denormalizes using decoded image dimensions.
+        - Coordinates cross the FFI boundary as **pixels end-to-end** — no
+          normalization step. Image width/height are NOT passed over FFI; Rust
+          reads the file and uses its own decoded dimensions. (CLAUDE.md is the
+          source of truth here; do not flag "normalized 0.0-1.0" wording, that
+          was removed.)
         - Color format is 0xAARRGGBB (alpha high byte, blue low byte).
 
     - path: "frigatebird/lib/**/ffi/**/*.dart"
@@ -127,6 +130,84 @@ reviews:
         rust_check.yaml (Cargo clippy, fmt, test, coverage in frigatebird/rust/).
         Workflow files live directly in .github/workflows/ (not .github/).
         Check that path triggers match the corresponding source directories.
+
+    - path: "**/*.{dart,rs}"
+      instructions: >
+        **Project conventions - do NOT re-litigate.** These decisions have been
+        made; flagging them as issues adds noise without value.
+
+        Deliberate design choices (accept, don't suggest changes):
+
+        - **assert + clamp** is the house pattern for stylistic params
+          (`imageQuality`, `fontSize`, etc.): debug builds assert a sane range,
+          release builds silently clamp. Do NOT suggest throwing
+          `RangeError`/`ArgumentError` for these - a stylistic param should not
+          raise a typed exception just because someone passed `150` instead of
+          `100`.
+
+        - `IoError` in `rust/src/io.rs` uses **unit variants by design**.
+          Rationale is in the module header comment (lines 6-8). Context-bearing
+          variants (`IoError::Decode(image::ImageError)` etc.) only make sense
+          together with a PR that also surfaces those details through the FFI
+          `i32` boundary - don't suggest the enum change in isolation.
+
+        - `NativeImage.fromBytes` is a **single-purpose factory** for encoded
+          image bytes (PNG/JPEG). Do not suggest splitting it into
+          `fromEncodedBytes` / `fromRawRgba` - there's one caller, encoded
+          bytes. Misuse surfaces loudly as an `ImageDecodeException` from the
+          Rust side, not silently. YAGNI applies; split when a second use case
+          actually lands.
+
+        - `RenderException.fromCode` is only invoked on `code != 0` (see
+          `render_image.dart` - `if (code != 0) throw fromCode(code)`). Do NOT
+          suggest changing the return type to nullable "to handle success" - 0
+          never reaches the function.
+
+        - `isLeaf: true` on `@Native` annotations means **"won't call back into
+          Dart"**, not "must be fast." `render_image` does heavy work but runs
+          in `Isolate.run()`; `isLeaf: true` is correct.
+
+        - The Rust `rotate_about` function deliberately runs trig + bilinear
+          math in `f64` despite the `f32` public signature. This is for
+          cross-platform libm portability (glibc x86_64 / glibc arm64 / Apple
+          libm disagree on `f32::cos`). Don't suggest "unify to f32" or
+          "why f64 for an f32 API?" - the comment above the function explains
+          why.
+
+        - `DrawPainter.paint`'s `TextElement` branch is an **explicit TODO**
+          (see comment in `draw_painter.dart`). Don't flag "TextElement renders
+          as a no-op" - that's the intended state until the painter is wired up
+          in a follow-up PR.
+
+
+        Anti-nitpick rules:
+
+        - Do NOT suggest arbitrary allocation ceilings like
+          `assert(length * sizeOf<T>() < (1 << 30))`. Dart `int` is 64-bit on
+          native; there is no multiplication overflow at realistic sizes, and
+          real OOM is handled by the platform allocator. Propose such a guard
+          only with evidence of a concrete overflow, not speculatively.
+
+        - Do NOT suggest collapsing comments into `expect(reason:)` strings or
+          vice versa - the project's test style is explicit: `reason:` strings
+          on `expect()` for non-obvious failure modes, no explanatory comments
+          around `expect` calls, fat-arrow body for single-`expect` tests.
+
+        - Do NOT suggest error `.source` chains on Dart `RenderException`
+          subtypes without also proposing how the source reaches Dart through
+          the FFI `i32` boundary. The hierarchy is intentionally slim until
+          structured diagnostics plumbing lands.
+
+        - Do NOT suggest splitting files that currently hold a
+          `sealed class` + its concrete subclasses. The sealed-parent
+          organization is deliberate (exhaustive `switch` + colocated
+          documentation); DCM's `prefer-single-declaration-per-file` is
+          already excluded for this case in `analysis_options.yaml`.
+
+        - Do NOT suggest `UnmodifiableListView` wrapping for private internal
+          state that already flows into deeply-immutable sinks (`Isolate.run`
+          argument, for instance). The `@pragma('vm:deeply-immutable')` on the
+          element types already gives the zero-copy / no-mutation guarantee.
 
   pre_merge_checks:
     title:

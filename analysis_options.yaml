@@ -81,7 +81,7 @@ dart_code_metrics:
     - avoid-any-version: false # Defined in the workspace pubspec.yaml
     - prefer-correct-package-name: false # Different naming conventions for Dart and Flutter packages.
     - prefer-pinned-version-syntax: false # Conflicts with prefer-caret-version-syntax.
-    - prefer-publish-to-none: false # Those are not published packages.
+    - prefer-publish-to-none: false # Those are published packages.
     - prefer-caret-version-syntax: false # Conflicts with avoid-any-version.
 
     # Enabled:
@@ -166,7 +166,7 @@ dart_code_metrics:
     - prefer-static-class:
         exclude:
           - test/**
-          - lib/**/constants.dart
+          - lib/**/*constants.dart
     - member-ordering:
         order:
           - constructors
@@ -185,11 +185,6 @@ dart_code_metrics:
     - avoid-collection-mutating-methods: true
 
     # Disabled:
-    # Shorthands:
-    - prefer-returning-shorthands: true
-    - prefer-shorthands-with-constructors: true
-    - prefer-shorthands-with-enums: true
-    - prefer-shorthands-with-static-fields: true
     # Other disabled:
     - avoid-adjacent-strings: false # It's not being used on one line strings.
     - avoid-continue: false # Just a matter of style.
@@ -206,6 +201,13 @@ dart_code_metrics:
     - prefer-test-matchers: false # Matter of style + introduces coupling in tests.
     - no-magic-number: false # Too restrictive for this project.
     - no-magic-string: false # Too restrictive for this project.
+    - prefer-compute-over-isolate-run: false # Doesn't exist in pure Dart.
+
+    # Shorthands:
+    - prefer-returning-shorthands: true
+    - prefer-shorthands-with-constructors: true
+    - prefer-shorthands-with-enums: true
+    - prefer-shorthands-with-static-fields: true
     - avoid-long-files: true
     - avoid-duplicate-collection-elements: true
     - avoid-ignoring-return-values: true

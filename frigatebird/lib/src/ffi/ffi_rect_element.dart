@@ -3,11 +3,10 @@ import 'dart:ffi';
 
 import '../model/draw_element.dart';
 
-/// Matches Rust `#[repr(C)] FfiRectElement` exactly. 44 bytes data: 5x f64 (40) + 1x u32 (4),
-/// padded to 48.
+/// Matches Rust `#[repr(C)] FfiRectElement` exactly: 4 × f64 (32) + 2 × u32 (8) = **40 bytes**.
 ///
-/// Coordinates are **normalized** (0.0-1.0 relative to image dimensions). Rust denormalizes using
-/// its own decoded dimensions.
+/// Coordinates are **document-space pixels** (no normalization). Rust uses them as-is.
+/// [outlineThickness] is `u32` on the wire to stay in Dart's SMI range without boxing.
 final class FfiRectElement extends Struct {
   @Double()
   external double x;
@@ -21,41 +20,32 @@ final class FfiRectElement extends Struct {
   @Double()
   external double height;
 
-  @Double()
-  external double strokeWidth;
+  @Uint32()
+  external int outlineThickness;
 
   @Uint32()
-  external int colorArgb;
+  external int outlineColorArgb;
 }
 
 extension RectElementFfi on RectElement {
-  /// Normalize and write this element's data into pre-allocated native memory.
-  ///
-  /// Coordinates are divided by image dimensions to produce 0.0-1.0 range. Rust denormalizes using
-  /// its own decoded dimensions, eliminating any Dart↔Rust decoder dimension mismatch.
-  void writeTo(Pointer<FfiRectElement> pointer, {required int imgHeight, required int imgWidth}) {
-    // ignore: avoid-mutating-parameters, it's purpose is to mutate the pointed-to struct fields.
+  void writeTo(Pointer<FfiRectElement> pointer) {
     pointer.ref
-      ..x = x / imgWidth
-      ..y = y / imgHeight
-      ..width = width / imgWidth
-      ..height = height / imgHeight
-      ..strokeWidth = strokeWidth / imgWidth
-      ..colorArgb = color.argb;
+      ..x = x
+      ..y = y
+      ..width = width
+      ..height = height
+      ..outlineThickness = outlineThickness
+      ..outlineColorArgb = outlineColor.argb;
   }
 }
 
 extension RectElementListFfi on List<RectElement> {
-  /// Allocate native array, normalize + write all elements. Caller MUST free the returned pointer.
-  Pointer<FfiRectElement> toNative(
-    Allocator allocator, {
-    required int imgHeight,
-    required int imgWidth,
-  }) {
+  /// Allocate a contiguous array, write each element's pixel-space fields, return the pointer.
+  /// Caller MUST free the returned pointer.
+  Pointer<FfiRectElement> toNative(Allocator allocator) {
     final pointer = allocator<FfiRectElement>(length);
     for (int i = 0; i < length; i += 1) {
-      // ignore: avoid-unsafe-collection-methods, bounded by 0..length loop.
-      this[i].writeTo(pointer + i, imgHeight: imgHeight, imgWidth: imgWidth);
+      this[i].writeTo(pointer + i);
     }
 
     return pointer;

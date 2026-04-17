@@ -1,2 +1,4 @@
 # Other keywords/terms
+footgun
 frigatebird
+safepoint

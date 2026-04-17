@@ -15,10 +15,6 @@ updates:
     labels:
       - "dependencies"
       - "rust"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
-    open-pull-requests-limit: 5
 
   # Maintain dependencies for GitHub Actions
   - package-ecosystem: "github-actions"
@@ -41,6 +37,22 @@ updates:
     versioning-strategy: increase
     directories:
       - "/frigatebird"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "09:00"
+      timezone: "Europe/Vienna"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "dart"
+
+  # Maintain dependencies for Flutter
+  - package-ecosystem: "pub"
+    versioning-strategy: increase
+    directories:
       - "/frigatedraw"
       - "/frigatedraw/example"
     schedule:
@@ -53,8 +65,7 @@ updates:
       include: "scope"
     labels:
       - "dependencies"
-      - "dart"
-    open-pull-requests-limit: 5
+      - "flutter"
 
   # Maintain dependencies for Android (example app)
   - package-ecosystem: "gradle"
@@ -69,7 +80,4 @@ updates:
       include: "scope"
     labels:
       - "dependencies"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
-    open-pull-requests-limit: 5
+      - "android"

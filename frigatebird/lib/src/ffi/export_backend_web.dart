@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../constants/draw_constants.dart';
 import '../model/draw_element.dart';
 import 'export_backend.dart';
 
@@ -9,10 +10,8 @@ import 'export_backend.dart';
 
 /// Factory for conditional import — selected when `dart.library.js_interop`
 /// is available (WASM builds).
-// ignore: prefer-static-class, required top-level for conditional import pattern.
 ExportBackend createExportBackend() => const _WebExportBackend();
 
-// ignore: prefer-match-file-name, it's conditional import target.
 class _WebExportBackend implements ExportBackend {
   const _WebExportBackend();
 
@@ -22,11 +21,13 @@ class _WebExportBackend implements ExportBackend {
   }
 
   @override
-  Future<Uint8List> export({required List<RectElement> rects, int jpegQuality = 90}) =>
-      throw UnimplementedError(
-        'WASM export backend not yet implemented. '
-        'Requires wasm-pack build pipeline for the Rust crate.',
-      );
+  Future<Uint8List> export({
+    required List<RectElement> rects,
+    int imageQuality = DrawConstants.defaultImageQuality,
+  }) => throw UnimplementedError(
+    'WASM export backend not yet implemented. '
+    'Requires wasm-pack build pipeline for the Rust crate.',
+  );
 
   @override
   void dispose() {
