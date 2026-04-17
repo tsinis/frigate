@@ -5,6 +5,8 @@ argb
 conv
 demul
 demultiply
+demultiplied
+demultiplying
 ffi
 freeable
 imageproc
@@ -15,6 +17,8 @@ pixmap
 pixmaps
 premul
 premultiply
+premultiplied
+premultiplying
 rasterizer
 rects
 roboto
@@ -22,6 +26,8 @@ scanline
 skia
 unpremul
 unpremultiply
+unpremultiplied
+unpremultiplying
 unrotated
 wght
 xywh
