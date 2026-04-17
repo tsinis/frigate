@@ -75,11 +75,18 @@ Future<void> renderImage({
 
 void _runRender(RenderImageArgs args) {
   final RenderImageArgs(:elements, :fontPath, :imagePath, :imageQuality, :outputPath) = args;
-  final imageCStr = imagePath.toNativeUtf8();
-  final outputCStr = outputPath.toNativeUtf8();
-  final fontCStr = fontPath?.toNativeUtf8() ?? nullptr;
-  final serialized = elements.toNative(malloc);
+  // Allocations live inside the try so that a partial failure (e.g. OOM on the second string)
+  // still hits the `finally` and releases anything that already succeeded. Each cleanup call
+  // null-guards independently because any of these four allocations can throw.
+  Pointer<Utf8> imageCStr = nullptr;
+  Pointer<Utf8> outputCStr = nullptr;
+  Pointer<Utf8> fontCStr = nullptr;
+  SerializedElements? serialized;
   try {
+    imageCStr = imagePath.toNativeUtf8();
+    outputCStr = outputPath.toNativeUtf8();
+    fontCStr = fontPath?.toNativeUtf8() ?? nullptr;
+    serialized = elements.toNative(malloc);
     final SerializedElements(:count, elementsPtr: elementArray, :textBufferLen, :textBufferPtr) =
         serialized;
     final code = ffi.render_image(
@@ -94,10 +101,9 @@ void _runRender(RenderImageArgs args) {
     );
     if (code != 0) throw RenderException.fromCode(code);
   } finally {
-    malloc
-      ..free(imageCStr)
-      ..free(outputCStr);
+    if (imageCStr != nullptr) malloc.free(imageCStr);
+    if (outputCStr != nullptr) malloc.free(outputCStr);
     if (fontCStr != nullptr) malloc.free(fontCStr);
-    serialized.free();
+    serialized?.free();
   }
 }

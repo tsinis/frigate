@@ -47,7 +47,15 @@ pub fn render_text_overlay(img: &mut RgbaImage, font: &FontRef<'_>, params: &Tex
     //     anyone could need — even a single glyph that fills the whole image lives in this
     //     range — and clamping silently matches how `imageQuality` is handled.
     let max_reasonable = (iw.max(ih) as f32) * 4.0;
-    let scale = PxScale::from(params.font_size_px.clamp(1.0, max_reasonable));
+    // `f32::clamp(NaN, lo, hi)` returns NaN (per the stdlib docs), and NaN propagates into
+    // ab_glyph's rasterizer where a downstream `as i32` cast is UB on nightly / panics on
+    // stable. Substitute the lower bound for any non-finite input (NaN, ±inf) before clamping.
+    let sanitized = if params.font_size_px.is_finite() {
+        params.font_size_px
+    } else {
+        1.0
+    };
+    let scale = PxScale::from(sanitized.clamp(1.0, max_reasonable));
 
     // Overlay buffer matches the base size so rotation shares a single coordinate system with
     // the base image — no per-glyph bounding-box math.
@@ -380,6 +388,29 @@ mod tests {
         );
         // Reaching this line is the assertion. (No `expect!` needed — the test framework
         // marks the test failed if anything above panicked.)
+    }
+
+    #[test]
+    fn render_text_survives_nan_and_infinite_font_size() {
+        // `f32::clamp(NaN, lo, hi)` returns NaN, which used to feed ab_glyph's rasterizer and
+        // panic inside a `_ as i32` cast. The non-finite guard substitutes the lower bound so
+        // NaN / ±inf all render as a tiny-but-valid glyph run.
+        let font = font();
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let mut img = black_image(32, 32);
+            render_text_overlay(
+                &mut img,
+                &font,
+                &TextParams {
+                    text: "Hi",
+                    x: 4.0,
+                    y: 4.0,
+                    font_size_px: bad,
+                    rotation_rad: 0.0,
+                    color: Rgba([255, 255, 255, 255]),
+                },
+            );
+        }
     }
 
     #[test]

@@ -201,7 +201,7 @@ dart_code_metrics:
     - prefer-test-matchers: false # Matter of style + introduces coupling in tests.
     - no-magic-number: false # Too restrictive for this project.
     - no-magic-string: false # Too restrictive for this project.
-    - prefer-compute-over-isolate-run: false # Doesn't exists in pure Dart.
+    - prefer-compute-over-isolate-run: false # Doesn't exist in pure Dart.
 
     # Shorthands:
     - prefer-returning-shorthands: true

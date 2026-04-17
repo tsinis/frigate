@@ -1,5 +1,13 @@
 include: ../analysis_options.yaml
 
+# Duplicated from the root analysis_options.yaml: `dart format` — and therefore `pana` — does not
+# follow the `include:` chain outside the package directory, so it falls back to the 80-char
+# default when pana copies the package into an isolated sandbox for scoring. Keeping the value
+# here makes the package self-contained for external tooling while the root file still governs
+# the in-repo workspace.
+formatter:
+  page_width: 100
+
 dart_code_metrics:
   extends:
     - package:dart_code_metrics_presets/flutter_all.yaml

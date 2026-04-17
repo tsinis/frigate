@@ -1,8 +1,18 @@
 # Keywords/terms specific to the Rust
 aarrggbb
 argb
+clippy
+conv
 ffi
+freeable
+imageproc
 pixmap
+rasterizer
 rects
+roboto
+rustup
+scanline
 skia
+unrotated
+wght
 xywh

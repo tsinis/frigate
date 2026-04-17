@@ -12,10 +12,11 @@ const _ffiElementBytes = 72;
 const _ffiRectElementBytes = 40;
 
 /// Guard that the Dart-side Struct layout for [FfiElement] matches the wire contract. Called from
-/// every FFI entry point that touches an [FfiElement] array. Cheap — `sizeOf<T>()` is a constant
-/// folded by the VM. The assertion fires in debug only (that's fine: CI runs in debug, and a
-/// mismatch crashes the very first test we run); release builds trust the compile-time asserts
-/// on both sides.
+/// every FFI entry point that touches an [FfiElement] array. Cheap — `sizeOf<T>()` is a runtime
+/// native-size lookup (not a compile-time constant, so it can't appear in `const` contexts), but
+/// the VM specializes it to a direct read for fixed-layout `Struct` subclasses. The assertion
+/// fires in debug only (that's fine: CI runs in debug, and a mismatch crashes the very first
+/// test we run); release builds trust the compile-time asserts on both sides.
 void assertFfiElementAbi({int expectedSize = _ffiElementBytes}) {
   final actualSize = sizeOf<FfiElement>();
   assert(
