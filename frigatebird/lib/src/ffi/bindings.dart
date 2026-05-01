@@ -10,8 +10,11 @@
 /// Rust library via the code asset system (`native_toolchain_rust` + build hook), so no
 /// `DynamicLibrary.open()` needed.
 ///
-/// Symbol names (snake_case) MUST match the Rust `#[no_mangle] pub extern "C"` function names
-/// exactly. Positional parameters are required by the C ABI.
+/// Symbol names (snake_case) MUST match the Rust `#[unsafe(no_mangle)] pub unsafe extern "C"`
+/// function names exactly. Positional parameters are required by the C ABI.
+///
+/// Note: `ffi_echo_element` (test-only round-trip helper) is declared in
+/// `ffi_echo_element.dart`, not here, to keep test infrastructure out of production code.
 @DefaultAsset('package:frigatebird/src/ffi/bindings.dart')
 library;
 
@@ -20,8 +23,10 @@ import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 
 import 'byte_buffer.dart';
+import 'ffi_arena.dart';
 import 'ffi_element.dart';
 import 'ffi_rect_element.dart';
+import 'ffi_result_unit.dart';
 
 /// Bytes-in / bytes-out path used by the Flutter `ExportBackend`.
 ///
@@ -42,45 +47,40 @@ external ByteBuffer export_image(
 @Native<Void Function(Pointer<Uint8>, Size)>(isLeaf: true)
 external void free_bytes(Pointer<Uint8> ptr, int len);
 
-/// Unified render call: takes a mixed [FfiElement] array (rectangles, text, future shapes), reads
-/// the image from [imagePath], writes the composited result to [outputPath].
+/// Unified render call: reads the image from [imagePath], composites all [FfiElement]s
+/// (rectangles, text, future shapes), writes the result to [outputPath].
 ///
-/// [fontPath] may be null when no [FfiElement] in the array has `elementType` of text.
-/// [textBuffer] + [textBufferLen] back the variable-length text content; each text element points
-/// into this buffer via `textOffset` + `textLength`. May be null when no text elements.
+/// [fontPath] may be null when no element has a text tag.
+/// Variable-length text and error data are exchanged through [arena]:
+///   - `arena.text_buf` / `arena.text_len` — UTF-8 text sidecar (Dart-owned, read-only by Rust).
+///   - `arena.error_buf` / `arena.error_cap` — error message buffer (Dart-owned, Rust writes on err).
 ///
-/// Returns an integer error code:
-/// - `0`  success
-/// - `1`  image read/decode failed
-/// - `2`  font read failed
-/// - `3`  font parse failed
-/// - `4`  text not valid UTF-8
-/// - `5`  path not valid UTF-8
-/// - `6`  image write failed
-/// - `7`  null pointer for a required argument
-/// - `8`  text element present but no font supplied
-/// - `99` Rust panic
+/// Result is written to [out] rather than returned by value. Returning a 6-byte struct by value
+/// has target-specific ABI differences between SysV x86-64, Win64, AArch64 AAPCS, and ARMv7;
+/// an out-pointer sidesteps these completely.
 ///
-/// `isLeaf: true` because the function performs synchronous I/O and never calls back into Dart.
+/// **Not `isLeaf: true`**: this is a CPU-heavy image-processing call. `isLeaf` would prevent the
+/// Dart VM from scheduling GC while it runs — acceptable only for O(1) functions. All real work
+/// must run via `Isolate.run` so the calling isolate stays responsive.
 @Native<
-  Int32 Function(
+  Void Function(
     Pointer<Utf8>,
     Pointer<Utf8>,
     Pointer<Utf8>,
     Pointer<FfiElement>,
     Size,
-    Pointer<Uint8>,
-    Size,
     Uint8,
+    Pointer<FfiArena>,
+    Pointer<FfiResultUnitStruct>,
   )
->(isLeaf: true)
-external int render_image(
+>()
+external void draw_elements(
   Pointer<Utf8> imagePath,
   Pointer<Utf8> outputPath,
   Pointer<Utf8> fontPath,
   Pointer<FfiElement> elementsPtr,
   int elementsCount,
-  Pointer<Uint8> textBuffer,
-  int textBufferLen,
   int imageQuality,
+  Pointer<FfiArena> arena,
+  Pointer<FfiResultUnitStruct> out,
 );

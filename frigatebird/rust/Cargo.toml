@@ -6,6 +6,12 @@ edition = "2024"
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
 
+[features]
+# Exposes `ffi_echo_element` — the test-only round-trip helper. Enabled automatically by
+# `native_toolchain_rust` when building for `dart test` (debug profile). Never set in the
+# production build hook.
+ffi-echo = []
+
 [dependencies]
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
 ab_glyph = "0.2.32"

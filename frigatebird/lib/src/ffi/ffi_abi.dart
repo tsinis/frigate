@@ -1,7 +1,11 @@
 import 'dart:ffi';
 
+import 'ffi_arena.dart';
 import 'ffi_element.dart';
+import 'ffi_error.dart';
 import 'ffi_rect_element.dart';
+import 'ffi_result_count.dart';
+import 'ffi_result_unit.dart';
 
 /// Runtime guards that the Dart-side `Struct` layouts for the FFI types match the wire
 /// contract baked into the Rust crate. Cheap — `sizeOf<T>()` specializes to a direct read for
@@ -13,28 +17,75 @@ import 'ffi_rect_element.dart';
 /// (`FfiAbi.` autocompletes both checks together) instead of leaking two unrelated-looking
 /// names into every file that imports `ffi_abi.dart`.
 sealed class FfiAbi {
-  /// Expected byte size of [FfiElement] as defined by the Rust `#[repr(C)]` layout +
-  /// compile-time assertions in `rust/src/ffi_element.rs`. Both sides MUST agree; a mismatch
-  /// means silent data corruption the moment we read back any field.
-  static const elementBytes = 72;
+  /// Expected byte size of [FfiElement] as defined by the Rust `#[repr(C, u8)]` layout.
+  static const elementBytes = 56;
+
+  /// Expected byte size of [FfiArena]. 3 pointers + 3 size_t.
+  static int get arenaBytes => sizeOf<Pointer>() * 3 + sizeOf<Size>() * 3;
+
+  /// Expected byte size of [FfiError].
+  static const errorBytes = 4;
 
   /// Expected byte size of [FfiRectElement]. Mirrors `rust/src/lib.rs` (4 × f64 + 3 × u32 with
   /// 8-byte alignment padding).
   static const rectElementBytes = 48;
 
+  /// Expected byte size of [FfiResultUnitStruct].
+  ///
+  /// Rust `repr(C, u8)` enum `FfiResultUnit { Ok(()) = 0, Err(FfiError) = 1 }`:
+  /// discriminant(1) + implicit_pad(1, align FfiError to 2) + payload_union(4) = **6 bytes**.
+  static const resultUnitBytes = 6;
+
+  /// Error buffer capacity allocated by `FfiMarshal.encodeElements` for Rust to write
+  /// diagnostic messages into. Single source of truth — Rust docs reference this value too.
+  static const errorCapBytes = 256;
+
   /// Guard that the Dart-side Struct layout for [FfiElement] matches the wire contract.
-  /// Called from every FFI entry point that touches an [FfiElement] array.
   static void assertElement({int expectedSize = elementBytes}) {
     final actualSize = sizeOf<FfiElement>();
     assert(
       actualSize == expectedSize,
-      'FfiElement ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize. '
-      'Struct layout has drifted between sides — all render calls would read garbage.',
+      'FfiElement ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
+    );
+  }
+
+  static void assertArena({int? expectedSize}) {
+    final actualSize = sizeOf<FfiArena>();
+    final targetSize = expectedSize ?? arenaBytes;
+    assert(
+      actualSize == targetSize,
+      'FfiArena ABI mismatch: Dart sees $actualSize bytes, Rust expects $targetSize.',
+    );
+  }
+
+  static void assertError({int expectedSize = errorBytes}) {
+    final actualSize = sizeOf<FfiError>();
+    assert(
+      actualSize == expectedSize,
+      'FfiError ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
+    );
+  }
+
+  static void assertResultUnit({int expectedSize = resultUnitBytes}) {
+    final actualSize = sizeOf<FfiResultUnitStruct>();
+    assert(
+      actualSize == expectedSize,
+      'FfiResultUnitStruct ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
+    );
+  }
+
+  /// Guard that the Dart-side [FfiResultCountStruct] layout matches Rust.
+  /// Called from `RenderImage.run` alongside the other startup layout guards.
+  static void assertResultCount({int expectedSize = 8}) {
+    final actualSize = sizeOf<FfiResultCountStruct>();
+    assert(
+      actualSize == expectedSize,
+      'FfiResultCountStruct ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
     );
   }
 
   /// Guard that the Dart-side Struct layout for [FfiRectElement] matches the wire contract.
-  /// Called from `createExportBackend`.
+  /// Called from `ExportBackendNative.loadImage`.
   static void assertRectElement({int expectedSize = rectElementBytes}) {
     final actualSize = sizeOf<FfiRectElement>();
     assert(

@@ -9,7 +9,7 @@ void main() => group(TextElement, () {
     const text = TextElement(text: 'hi', x: 10, y: 20);
     expect(text.text, 'hi', reason: 'text preserved');
     expect(text.fontSize, TextElement.defaultFontSize, reason: 'default font size');
-    expect((text.rotation, text.outlineThickness, text.blur), (0, 0, 0), reason: 'int defaults');
+    expect((text.rotation, text.blur), (0, 0), reason: 'int defaults');
     expect(text.fillColor.argb, FfiColor.black.argb, reason: 'default fill color');
   });
 

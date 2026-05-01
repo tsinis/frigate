@@ -1,3 +1,4 @@
+// ignore_for_file: prefer-class-destructuring
 import 'dart:ffi';
 import 'dart:isolate' show Isolate;
 
@@ -6,8 +7,8 @@ import 'package:ffi/ffi.dart';
 import '../constants/draw_constants.dart';
 import '../ffi/bindings.dart' as ffi;
 import '../ffi/ffi_abi.dart';
-import '../ffi/serialized_elements.dart';
-import '../helpers/extensions/ffi/draw_element_list_ffi.dart';
+import '../ffi/ffi_marshal.dart';
+import '../ffi/ffi_result_unit.dart';
 import '../model/draw_element.dart';
 import 'render_exception.dart';
 import 'render_image_args.dart';
@@ -42,13 +43,16 @@ sealed class RenderImage {
   static Future<void> run({
     required List<DrawElement> elements,
     required String imagePath,
-    required String outputPath,
+    required String outputPath, // TODO: Make nullable/optional.
     String? fontPath,
     int imageQuality = DrawConstants.defaultImageQuality,
   }) {
     // Fails loudly if the Dart VM struct layout has drifted from Rust `#[repr(C)]`. Debug-only,
     // but CI runs in debug and the mismatch would corrupt every subsequent read.
     FfiAbi.assertElement();
+    FfiAbi.assertArena();
+    FfiAbi.assertError();
+    FfiAbi.assertResultUnit();
     assert(
       !elements.any((e) => e is TextElement) || fontPath != null,
       'fontPath must be supplied when elements contains a TextElement',
@@ -80,36 +84,41 @@ sealed class RenderImage {
 
   static void _runWorker(RenderImageArgs args) {
     final RenderImageArgs(:elements, :fontPath, :imagePath, :imageQuality, :outputPath) = args;
-    // Allocations live inside the try so that a partial failure (e.g. OOM on the second string)
-    // still hits the `finally` and releases anything that already succeeded. Each cleanup call
-    // null-guards independently because any of these four allocations can throw.
     Pointer<Utf8> imageCStr = nullptr;
     Pointer<Utf8> outputCStr = nullptr;
     Pointer<Utf8> fontCStr = nullptr;
-    SerializedElements? serialized;
+    Pointer<FfiResultUnitStruct> outPtr = nullptr;
+    FfiArenaHandle? handle;
     try {
       imageCStr = imagePath.toNativeUtf8();
       outputCStr = outputPath.toNativeUtf8();
       fontCStr = fontPath?.toNativeUtf8() ?? nullptr;
-      serialized = elements.toNative(malloc);
-      final SerializedElements(:count, elementsPtr: elementArray, :textBufferLen, :textBufferPtr) =
-          serialized;
-      final code = ffi.render_image(
+      outPtr = malloc<FfiResultUnitStruct>();
+      handle = FfiMarshal.encodeElements(elements, malloc);
+
+      // Handle properties are not all unpacked at once because they are used sequentially, and
+      // some are nullable. Destructuring them all upfront would be less readable.
+      ffi.draw_elements(
         imageCStr,
         outputCStr,
         fontCStr,
-        elementArray,
-        count,
-        textBufferPtr,
-        textBufferLen,
+        handle.elementsPtr,
+        handle.count,
         imageQuality,
+        handle.arenaPtr,
+        outPtr,
       );
-      if (code != 0) throw RenderException.fromCode(code);
+
+      final domainResult = outPtr.ref.toDomain(handle.errorBufferPtr, handle.arenaPtr.ref.errorCap);
+      if (domainResult is ErrUnit) {
+        throw RenderException(domainResult.code, domainResult.message);
+      }
     } finally {
       if (imageCStr != nullptr) malloc.free(imageCStr);
       if (outputCStr != nullptr) malloc.free(outputCStr);
       if (fontCStr != nullptr) malloc.free(fontCStr);
-      serialized?.free();
+      if (outPtr != nullptr) malloc.free(outPtr);
+      handle?.free();
     }
   }
 }

@@ -85,18 +85,18 @@ void main() => group(FfiRectElement, () {
     );
   });
 
-  test('shapeParam respects the u32 wire range when written', () {
-    // The Dart-side cornerRadius is `int`; the FFI field is u32. Writing a value within u32
-    // range must round-trip exactly - anything past u32 would silently truncate, which is a
+  test('shapeParam respects the u16 wire range when written', () {
+    // The Dart-side cornerRadius is `int`; the FFI field is u16. Writing a value within u16
+    // range must round-trip exactly - anything past u16 would silently truncate, which is a
     // bug we want to catch loudly elsewhere (model/UI layer should clamp before reaching FFI).
-    const max = RectElement(cornerRadius: 0xFFFFFFFF, height: 10, width: 10, x: 0, y: 0);
+    const max = RectElement(cornerRadius: 0xFFFF, height: 10, width: 10, x: 0, y: 0);
     final ptr = malloc<FfiRectElement>();
     try {
       max.writeTo(ptr);
       expect(
         ptr.ref.shapeParam,
-        0xFFFFFFFF,
-        reason: 'u32::MAX must survive intact across the FFI write',
+        0xFFFF,
+        reason: 'u16::MAX must survive intact across the FFI write',
       );
     } finally {
       malloc.free(ptr);

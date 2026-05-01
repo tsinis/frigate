@@ -8,35 +8,20 @@ final class RectElement extends DrawElement {
     required super.x,
     required super.y,
     super.blur,
-    // Transparent fill by default — a rectangle overlay should show the image through it. Text
-    // is the opposite: fill color IS the text color, so the base default of opaque-black fits.
-    super.fillColor = FfiColor.transparent,
-    // Black outline by default — a rectangle is useless without a visible outline.
-    super.outlineColor = FfiColor.black,
-    super.outlineThickness = 2,
     super.rotation,
-    int cornerRadius = 0,
+    this.cornerRadius = 0,
+    super.fillColor = FfiColor.transparent,
+    this.outlineColor = FfiColor.black,
+    this.outlineThickness = 2,
   }) : assert(
-         cornerRadius >= 0,
-         'cornerRadius must be non-negative; negative values silently wrap to a huge u32 on '
-         'the FFI wire (Dart Uint32 marshaling) and Rust would render them as a pill while '
-         'the Flutter preview would draw sharp corners — preview-vs-export divergence.',
+         outlineThickness >= 0 && outlineThickness <= 255,
+         'outlineThickness must be in 0..255',
        ),
-       super(shapeParam: cornerRadius);
+       assert(cornerRadius >= 0 && cornerRadius <= 65535, 'cornerRadius must be in 0..65535');
 
-  /// Corner radius in pixels. Sharp corners when 0; clamped to `min(width, height) / 2` at
-  /// render time on both the preview and the Rust export.
-  // ignore: match-getter-setter-field-names, typed alias over the internal shape-param slot.
-  int get cornerRadius => shapeParam;
-
-  @override
-  FfiElementType get elementType => .rectangle;
-
-  @override
-  String toString() =>
-      'RectElement(x: $x, y: $y, width: $width, height: $height, fillColor: $fillColor, '
-      'outlineColor: $outlineColor, outlineThickness: $outlineThickness, '
-      'rotation: $rotation, blur: $blur, cornerRadius: $cornerRadius)';
+  final FfiColor outlineColor;
+  final int outlineThickness;
+  final int cornerRadius;
 
   @override
   RectElement copyWith({
@@ -62,4 +47,10 @@ final class RectElement extends DrawElement {
     x: x ?? this.x,
     y: y ?? this.y,
   );
+
+  @override
+  String toString() =>
+      'RectElement(x: $x, y: $y, width: $width, height: $height, fillColor: $fillColor, '
+      'outlineColor: $outlineColor, outlineThickness: $outlineThickness, '
+      'rotation: $rotation, blur: $blur, cornerRadius: $cornerRadius)';
 }

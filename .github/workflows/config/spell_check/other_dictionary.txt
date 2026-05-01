@@ -1,4 +1,16 @@
 # Other keywords/terms
+artefacts
+bytebuffer
+codepoint
+codepoints
+colour
+ctypes
+dlsym
 footgun
 frigatebird
+miri
+misalign
+multibyte
+nonoverlapping
 safepoint
+unrecognised

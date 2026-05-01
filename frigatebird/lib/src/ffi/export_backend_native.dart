@@ -7,17 +7,9 @@ import 'package:ffi/ffi.dart';
 import '../constants/draw_constants.dart';
 import '../model/draw_element.dart';
 import 'bindings.dart' as ffi;
-import 'export_backend.dart';
 import 'ffi_abi.dart';
 import 'ffi_rect_element.dart';
 import 'native_image.dart';
-
-/// Factory for conditional import — selected when `dart.library.ffi` is available.
-ExportBackend createExportBackend() {
-  FfiAbi.assertRectElement();
-
-  return _NativeExportBackend();
-}
 
 /// Zero-copy export backend using `dart:ffi` + Rust.
 ///
@@ -27,16 +19,15 @@ ExportBackend createExportBackend() {
 ///
 /// Manual free: result bytes are copied to a Dart [Uint8List] and the Rust-allocated buffer is
 /// freed immediately. Simple, safe, no finalizer signature mismatch.
-final class _NativeExportBackend implements ExportBackend {
+final class ExportBackendNative {
   NativeImage? _image;
 
-  @override
-  Future<void> loadImage(Uint8List bytes, {required int height, required int width}) async {
+  void loadImage(Uint8List bytes, {required int height, required int width}) {
+    FfiAbi.assertRectElement();
     _image?.dispose();
     _image = NativeImage.fromBytes(bytes, height: height, width: width);
   }
 
-  @override
   Future<Uint8List> export({
     required List<RectElement> rects,
     int imageQuality = DrawConstants.defaultImageQuality,
@@ -52,7 +43,6 @@ final class _NativeExportBackend implements ExportBackend {
     );
   }
 
-  @override
   void dispose() {
     _image?.dispose();
     _image = null;
@@ -88,7 +78,7 @@ final class _NativeExportBackend implements ExportBackend {
   }
 }
 
-/// Arguments for [_NativeExportBackend._doExport], sent to a background isolate.
+/// Arguments for `ExportBackendNative._doExport`, sent to a background isolate.
 final class _ExportArgs {
   const _ExportArgs({
     required this.imageQuality,

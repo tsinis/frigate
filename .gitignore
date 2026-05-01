@@ -27,6 +27,8 @@ target
 # Claude and other LLM-related files
 CLAUDE.md
 **/.claude/
+GEMINI.md
+**/.gemini/
 
 # IDE related files
 .vscode/settings.json
@@ -145,3 +147,5 @@ nohup.out
 # Other
 **/example/android/app/.cxx/*
 **/example/benchmarks/*.json
+.agent/audit/
+tools/

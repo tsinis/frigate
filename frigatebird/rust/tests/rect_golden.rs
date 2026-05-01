@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 use image::RgbaImage;
 
-use frigate::{FfiElement, element_type};
+use frigate::{FfiElement, RectanglePayload};
 
 fn assets_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -53,7 +53,7 @@ fn make_rect(
     y: f64,
     width: f64,
     height: f64,
-    outline_thickness: u32,
+    outline_thickness: u8,
     outline_color_argb: u32,
 ) -> FfiElement {
     make_rect_with_fill(
@@ -72,7 +72,7 @@ fn make_rect_with_fill(
     y: f64,
     width: f64,
     height: f64,
-    outline_thickness: u32,
+    outline_thickness: u8,
     outline_color_argb: u32,
     fill_color_argb: u32,
 ) -> FfiElement {
@@ -96,13 +96,12 @@ fn make_rect_full(
     y: f64,
     width: f64,
     height: f64,
-    outline_thickness: u32,
+    outline_thickness: u8,
     outline_color_argb: u32,
     fill_color_argb: u32,
-    corner_radius_px: u32,
+    corner_radius: u16,
 ) -> FfiElement {
-    FfiElement {
-        element_type: element_type::RECTANGLE,
+    FfiElement::Rectangle(RectanglePayload {
         x,
         y,
         width,
@@ -112,10 +111,8 @@ fn make_rect_full(
         outline_color_argb,
         outline_thickness,
         blur: 0,
-        text_offset: 0,
-        text_length: 0,
-        shape_param: corner_radius_px,
-    }
+        corner_radius,
+    })
 }
 
 fn render_rects(rects: &[FfiElement]) -> RgbaImage {
@@ -215,7 +212,7 @@ fn golden_rect_thickness_clamped_to_min_side() {
         0.10 * h,
         0.20 * w,
         0.20 * h,
-        9999,
+        u8::MAX,    // vastly exceeds min_side → clamped
         0xFF0000FF, // opaque blue
     );
     let img = render_rects(&[rect]);
@@ -248,7 +245,7 @@ fn golden_rect_rounded_pill_radius_at_clamp() {
     // Radius == min(w, h) / 2 → a pill (or a circle when w == h). Tests the clamp ceiling.
     let rect_w = 0.60 * w;
     let rect_h = 0.20 * h;
-    let radius = (rect_w.min(rect_h) / 2.0) as u32;
+    let radius = (rect_w.min(rect_h) / 2.0) as u16;
     let rect = make_rect_full(
         0.20 * w,
         0.40 * h,
@@ -279,7 +276,7 @@ fn golden_rect_rounded_radius_clamped_to_min_side() {
         4,
         0xFF_FF_00_00,
         0xFF_FF_FF_00,
-        99_999,
+        99_999u32.min(u16::MAX as u32) as u16,
     );
     let img = render_rects(&[rect]);
     assert_golden(&img, &golden_path("rect_rounded_clamped.png"));

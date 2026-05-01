@@ -1,5 +1,47 @@
 [
   {
+    "label": "Preflight Check: Rust",
+    "command": "bash",
+    "args": [
+      "-lc",
+      "set -euo pipefail; cd $ZED_WORKTREE_ROOT/frigatebird/rust; cargo fetch; cargo fmt --all -- --check; cargo clippy --all-targets --all-features -- -D warnings; cargo build --all-features; cargo test --all-features"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT/",
+    "use_new_terminal": true,
+    "tags": [
+      "preflight",
+      "rust"
+    ]
+  },
+  {
+    "label": "Preflight Check: Dart/Flutter",
+    "command": "bash",
+    "args": [
+      "-lc",
+      "set -euo pipefail; cd $ZED_WORKTREE_ROOT/frigatebird; dart format --set-exit-if-changed .; dart analyze; dart test; cd $ZED_WORKTREE_ROOT/frigatedraw; dart format --set-exit-if-changed .; flutter analyze; flutter test; dcm analyze ."
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT/",
+    "use_new_terminal": true,
+    "tags": [
+      "preflight",
+      "dart",
+      "flutter"
+    ]
+  },
+  {
+    "label": "Preflight Check: Full Project",
+    "command": "bash",
+    "args": [
+      "-lc",
+      "set -euo pipefail; echo '=== Rust ===' && cd $ZED_WORKTREE_ROOT/frigatebird/rust && cargo fetch && cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo build --all-features && cargo test --all-features && echo '✓ Rust checks passed' && echo '=== Dart/Flutter ===' && cd $ZED_WORKTREE_ROOT/frigatebird && dart format --set-exit-if-changed . && dart analyze && dart test && cd $ZED_WORKTREE_ROOT/frigatedraw && dart format --set-exit-if-changed . && flutter analyze && flutter test && dcm analyze . && echo '✓ Dart/Flutter checks passed'"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT/",
+    "use_new_terminal": true,
+    "tags": [
+      "preflight"
+    ]
+  },
+  {
     "label": "Flutter: Run",
     "command": "fvm",
     "args": [

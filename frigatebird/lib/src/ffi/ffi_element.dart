@@ -1,21 +1,18 @@
+// Padding fields are required FFI layout artefacts, not unused dead code.
+// ignore_for_file: unused_field
+
+// All four payload structs + the outer FfiElement are a single FFI surface; splitting across
+// files would create artificial import indirection for tightly coupled layout types.
+// ignore_for_file: prefer-single-declaration-per-file
+
+// The _pad fields in TextPayload and FfiElement must appear at specific byte offsets dictated
+// by the Rust #[repr(C)] layout and cannot be moved after public fields.
+// ignore_for_file: member-ordering
+
 import 'dart:ffi';
 
-/// Unified element struct passed across the FFI boundary. Tagged by [elementType] so a single
-/// array can mix shape kinds. Matches Rust `#[repr(C)] FfiElement` byte-for-byte: total
-/// **72 bytes** (verified by a runtime `sizeOf` test).
-///
-/// Variable-length text lives in a separate shared UTF-8 buffer — each text element references its
-/// slice via [textOffset] (byte offset) and [textLength] (byte length).
-///
-/// [blur], [outlineThickness] and [rotationDeg] are packed as `u32`/`i32` on the wire (not `f64`):
-/// the Dart-side model keeps them as `int`, which stays in the SMI tag range without heap boxing.
-/// Rust converts [rotationDeg] to radians at render time.
-final class FfiElement extends Struct {
-  @Uint32()
-  external int elementType;
-
-  // 4 bytes implicit padding inserted here by Dart Struct layout to align the next f64 to 8.
-
+/// Payload for a rectangle element.
+final class RectanglePayload extends Struct {
   @Double()
   external double x;
 
@@ -37,21 +34,66 @@ final class FfiElement extends Struct {
   @Uint32()
   external int outlineColorArgb;
 
-  @Uint32()
+  @Uint8()
   external int outlineThickness;
 
-  @Uint32()
+  @Uint8()
   external int blur;
+
+  @Uint16()
+  external int cornerRadius;
+}
+
+/// Payload for a text element.
+final class TextPayload extends Struct {
+  @Double()
+  external double x;
+
+  @Double()
+  external double y;
+
+  @Double()
+  external double height;
+
+  @Int32()
+  external int rotationDeg;
+
+  @Uint32()
+  external int fillColorArgb;
+
+  @Uint8()
+  external int blur;
+
+  /// Explicit padding to keep `fontId` 4-byte aligned, matching Rust `_pad: [u8; 3]`.
+  @Array(3)
+  external Array<Uint8> _pad;
+
+  @Uint32()
+  external int fontId;
 
   @Uint32()
   external int textOffset;
 
   @Uint32()
-  external int textLength;
+  external int textLen;
+}
 
-  /// Generic shape-specific scalar in pixels — interpreted per-element-type by Rust:
-  /// rectangle = corner radius, text = unused (always 0). Fits in the previous trailing
-  /// padding slot so total struct size stays 72 bytes.
-  @Uint32()
-  external int shapeParam;
+/// Union of all possible element payloads.
+final class FfiPayload extends Union {
+  external RectanglePayload rectangle;
+  external TextPayload text;
+}
+
+/// Tagged-union element struct passed across the FFI boundary.
+/// Matches Rust `#[repr(C, u8)] FfiElement`.
+final class FfiElement extends Struct {
+  @Uint8()
+  external int tag;
+
+  /// Explicit padding after the tag byte so `payload` starts at offset 8 (double alignment),
+  /// matching the Rust `#[repr(C, u8)]` layout: tag(1) + pad(7) + payload(48) = 56 bytes.
+  @Array(7)
+  external Array<Uint8> _pad;
+
+  external FfiPayload payload;
 }

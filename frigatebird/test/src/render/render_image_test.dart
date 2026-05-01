@@ -113,7 +113,7 @@ void main() {
       outFile.deleteSync();
     });
 
-    test('throws ImageDecodeException for a missing source image', () async {
+    test('throws RenderException(decode) for a missing source image', () async {
       const text = TextElement(text: 'x', x: 0, y: 0);
       final future = RenderImage.run(
         elements: [text],
@@ -121,20 +121,26 @@ void main() {
         imagePath: '/does/not/exist.jpg',
         outputPath: '${Directory.systemTemp.path}/nope.jpg',
       );
-      await expectLater(future, throwsA(isA<ImageDecodeException>()));
+      await expectLater(
+        future,
+        throwsA(isA<RenderException>().having((e) => e.code, 'code', FfiErrorCode.decode)),
+      );
     });
 
-    test('throws ImageWriteException for an unsupported output extension', () async {
+    test('throws RenderException(encode) for an unsupported output extension', () async {
       const rect = RectElement(height: 1, width: 1, x: 0, y: 0);
       final future = RenderImage.run(
         elements: [rect],
         imagePath: imagePath,
         outputPath: '${Directory.systemTemp.path}/nope.tiff',
       );
-      await expectLater(future, throwsA(isA<ImageWriteException>()));
+      await expectLater(
+        future,
+        throwsA(isA<RenderException>().having((e) => e.code, 'code', FfiErrorCode.encode)),
+      );
     });
 
-    test('throws FontReadException when fontPath does not exist', () async {
+    test('throws RenderException(io) when fontPath does not exist', () async {
       const text = TextElement(text: 'x', x: 0, y: 0);
       final future = RenderImage.run(
         elements: [text],
@@ -142,10 +148,13 @@ void main() {
         imagePath: imagePath,
         outputPath: '${Directory.systemTemp.path}/nope.jpg',
       );
-      await expectLater(future, throwsA(isA<FontReadException>()));
+      await expectLater(
+        future,
+        throwsA(isA<RenderException>().having((e) => e.code, 'code', FfiErrorCode.io)),
+      );
     });
 
-    test('throws FontParseException when the font file is not a valid font', () async {
+    test('throws RenderException(font) when the font file is not a valid font', () async {
       // Re-use the JPEG as a "font file" so the read succeeds but parsing fails — cheaper than
       // shipping a dedicated malformed-font fixture, and exercises the exact Rust branch.
       const text = TextElement(text: 'x', x: 0, y: 0);
@@ -155,7 +164,10 @@ void main() {
         imagePath: imagePath,
         outputPath: '${Directory.systemTemp.path}/nope.jpg',
       );
-      await expectLater(future, throwsA(isA<FontParseException>()));
+      await expectLater(
+        future,
+        throwsA(isA<RenderException>().having((e) => e.code, 'code', FfiErrorCode.font)),
+      );
     });
 
     test('max quality clamps to itself (release-mode path)', () async {

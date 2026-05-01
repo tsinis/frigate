@@ -64,7 +64,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
 
   final _controller = DrawController();
   // ignore: avoid-explicit-type-declaration, against specify_nonobvious_property_types.
-  final ExportBackend _backend = createExportBackend();
+  final ExportBackendNative _backend = ExportBackendNative();
 
   bool _isExporting = false;
   bool _isImageLoaded = false;
@@ -78,7 +78,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
   @awaitNotRequired
   Future<void> _loadImage() async {
     final data = await rootBundle.load(_sampleAsset);
-    await _backend.loadImage(data.buffer.asUint8List(), height: _imageHeight, width: _imageWidth);
+    _backend.loadImage(data.buffer.asUint8List(), height: _imageHeight, width: _imageWidth);
     if (mounted) setState(() => _isImageLoaded = true);
   }
 
