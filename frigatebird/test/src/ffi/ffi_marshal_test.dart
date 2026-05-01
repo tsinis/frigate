@@ -149,7 +149,8 @@ void main() {
     test('manual free is idempotent (second call is a no-op, not a double-free)', () {
       final allocator = _FailingAllocator(failAfter: 10);
       final bundle = FfiMarshal.encodeElements(
-        [const TextElement(text: 'hi', x: 0, y: 0)],
+        const [TextElement(text: 'hi', x: 0, y: 0)],
+        // Dart 3.8 formatting.
         allocator,
       )..free();
       expect(bundle.free, returnsNormally, reason: 'double-free must be safe');
