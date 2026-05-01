@@ -22,6 +22,11 @@ pub use ffi_element::{FfiElement, RectanglePayload, TextPayload};
 ffi_result!(FfiResultUnit, ());
 ffi_result!(FfiResultCount, u32);
 
+// Rust-side layout anchors: if these ever change, the Dart Struct declarations must be updated.
+// `repr(C, u8)` enum layout: discriminant(u8) + implicit_pad + payload_union → sizes below.
+const _: () = assert!(std::mem::size_of::<FfiResultUnit>() == 6);
+const _: () = assert!(std::mem::size_of::<FfiResultCount>() == 8);
+
 #[repr(C)]
 pub struct FfiRectElement {
     pub x: f64,
@@ -91,9 +96,9 @@ pub unsafe extern "C" fn export_image(
     } else {
         unsafe { slice::from_raw_parts(rects_ptr, rects_count) }
     };
-    // Panicking across an FFI boundary is undefined behavior.
+    // Panicking across an FFI boundary is undefined behavior; errors return a null ByteBuffer.
     match std::panic::catch_unwind(|| render_jpeg_with_rects(img_bytes, rects, image_quality)) {
-        Ok(bytes) => {
+        Ok(Ok(bytes)) => {
             // into_boxed_slice shrinks capacity to == len so free_bytes can reconstruct safely.
             let boxed = bytes.into_boxed_slice();
             let length = boxed.len();
@@ -102,7 +107,7 @@ pub unsafe extern "C" fn export_image(
                 length,
             }
         }
-        Err(_) => ByteBuffer {
+        Ok(Err(_)) | Err(_) => ByteBuffer {
             data: std::ptr::null_mut(),
             length: 0,
         },
@@ -257,9 +262,9 @@ fn render_jpeg_with_rects(
     img_bytes: &[u8],
     rects: &[FfiRectElement],
     image_quality: u8,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, io::IoError> {
     let img = image::load_from_memory(img_bytes)
-        .expect("failed to decode image")
+        .map_err(|_| io::IoError::Decode)?
         .into_rgba8();
     // One pixmap conversion pair for all rects — cheaper than per-rect round-trips.
     let mut pixmap = canvas::to_pixmap(&img);
@@ -271,8 +276,8 @@ fn render_jpeg_with_rects(
     let mut buf = std::io::Cursor::new(Vec::new());
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, image_quality)
         .encode_image(&rgb_img)
-        .unwrap();
-    buf.into_inner()
+        .map_err(|_| io::IoError::Encode)?;
+    Ok(buf.into_inner())
 }
 
 enum Surface {
@@ -352,7 +357,7 @@ fn argb_alpha(argb: u32) -> u8 {
 }
 
 pub(crate) struct RectStyle {
-    pub(crate) outline_thickness: u32,
+    pub(crate) outline_thickness: u8,
     pub(crate) outline_color_argb: u32,
     pub(crate) fill_color_argb: u32,
     pub(crate) corner_radius_px: u32,
@@ -369,7 +374,7 @@ impl RectStyle {
 impl From<&RectanglePayload> for RectStyle {
     fn from(p: &RectanglePayload) -> Self {
         Self {
-            outline_thickness: p.outline_thickness as u32,
+            outline_thickness: p.outline_thickness,
             outline_color_argb: p.outline_color_argb,
             fill_color_argb: p.fill_color_argb,
             corner_radius_px: p.corner_radius as u32,
@@ -380,7 +385,7 @@ impl From<&RectanglePayload> for RectStyle {
 impl From<&FfiRectElement> for RectStyle {
     fn from(r: &FfiRectElement) -> Self {
         Self {
-            outline_thickness: r.outline_thickness as u32,
+            outline_thickness: r.outline_thickness,
             outline_color_argb: r.outline_color_argb,
             fill_color_argb: 0,
             corner_radius_px: r.shape_param,
@@ -502,7 +507,7 @@ mod tests {
 
     #[test]
     fn render_no_rects_returns_valid_jpeg() {
-        let jpeg = render_jpeg_with_rects(&tiny_red_png(), &[], 80);
+        let jpeg = render_jpeg_with_rects(&tiny_red_png(), &[], 80).unwrap();
         assert!(jpeg.len() > 2);
         assert_eq!(&jpeg[..2], &[0xFF, 0xD8], "must start with JPEG SOI marker");
     }
@@ -518,7 +523,7 @@ mod tests {
             outline_color_argb: 0xFF_00_FF_00,
             shape_param: 0,
         };
-        let jpeg = render_jpeg_with_rects(&tiny_red_png(), &[rect], 90);
+        let jpeg = render_jpeg_with_rects(&tiny_red_png(), &[rect], 90).unwrap();
         assert_eq!(&jpeg[..2], &[0xFF, 0xD8]);
     }
 
@@ -539,8 +544,8 @@ mod tests {
             outline_thickness: 2,
             ..no_outline
         };
-        let a = render_jpeg_with_rects(&png, &[no_outline], 90);
-        let b = render_jpeg_with_rects(&png, &[with_outline], 90);
+        let a = render_jpeg_with_rects(&png, &[no_outline], 90).unwrap();
+        let b = render_jpeg_with_rects(&png, &[with_outline], 90).unwrap();
         assert_ne!(a, b, "visible outline must change the JPEG output");
     }
 
@@ -548,7 +553,7 @@ mod tests {
     fn render_quality_zero_and_max_both_produce_jpeg() {
         let png = tiny_red_png();
         for q in [0u8, 255] {
-            let jpeg = render_jpeg_with_rects(&png, &[], q);
+            let jpeg = render_jpeg_with_rects(&png, &[], q).unwrap();
             assert_eq!(
                 &jpeg[..2],
                 &[0xFF, 0xD8],
@@ -558,10 +563,11 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "failed to decode image")]
-    fn render_corrupt_bytes_panics_inside_helper() {
-        // render_jpeg_with_rects itself is allowed to panic — export_image wraps it in
-        // catch_unwind so the panic never crosses the FFI boundary.
-        render_jpeg_with_rects(&[0xDE, 0xAD, 0xBE, 0xEF], &[], 80);
+    fn render_corrupt_bytes_returns_decode_error() {
+        // render_jpeg_with_rects returns Err on corrupt input instead of panicking.
+        // export_image wraps it in catch_unwind as an extra safety net, but the primary
+        // contract is Result — no panic cross the FFI boundary even with panic=abort.
+        let result = render_jpeg_with_rects(&[0xDE, 0xAD, 0xBE, 0xEF], &[], 80);
+        assert!(result.is_err(), "corrupt input must return Err, not panic");
     }
 }

@@ -50,6 +50,9 @@ sealed class RenderImage {
     // Fails loudly if the Dart VM struct layout has drifted from Rust `#[repr(C)]`. Debug-only,
     // but CI runs in debug and the mismatch would corrupt every subsequent read.
     FfiAbi.assertElement();
+    FfiAbi.assertArena();
+    FfiAbi.assertError();
+    FfiAbi.assertResultUnit();
     assert(
       !elements.any((e) => e is TextElement) || fontPath != null,
       'fontPath must be supplied when elements contains a TextElement',

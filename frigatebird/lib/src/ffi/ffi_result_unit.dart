@@ -27,14 +27,19 @@ final class FfiResultUnitPayload extends Union {
 }
 
 /// Raw FFI struct for a Result<(), FfiError>.
+///
+/// Rust `repr(C, u8)` enum layout: discriminant `u8` (offset 0) + 1-byte implicit padding
+/// (Dart inserts this automatically to align the `FfiError` union to its natural 2-byte boundary)
+/// + payload union (4 bytes) = **6 bytes total**, align 2.
 final class FfiResultUnitStruct extends Struct {
   @Uint8()
   external int tag;
 
   external FfiResultUnitPayload payload;
 
-  @Uint8()
-  external int _pad;
+  // No explicit _pad here: Rust's implicit padding between the discriminant and the payload
+  // union is handled by Dart's automatic C-layout rules. Adding an explicit byte would
+  // over-extend the struct to 8 bytes, reading 2 bytes of stack garbage on every call.
 
   FfiResultUnit toDomain(Pointer<Uint8> errorBuf, int errorCap) {
     if (tag == 0) return const OkUnit();

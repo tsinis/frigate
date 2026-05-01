@@ -1,4 +1,4 @@
-// ignore_for_file: unused_field, prefer-single-declaration-per-file, prefer-correct-identifier-length
+// ignore_for_file: prefer-single-declaration-per-file, prefer-correct-identifier-length
 import 'dart:ffi';
 
 import 'ffi_error.dart';
@@ -28,14 +28,19 @@ final class FfiResultCountPayload extends Union {
 }
 
 /// Raw FFI struct for a `Result<u32, FfiError>`.
+///
+/// Rust `repr(C, u8)` enum layout: discriminant `u8` (offset 0) + 3-byte implicit padding
+/// (Dart inserts this to align the `u32` union variant to its natural 4-byte boundary)
+/// + payload union (4 bytes) = **8 bytes total**, align 4.
 final class FfiResultCountStruct extends Struct {
   @Uint8()
   external int tag;
 
-  external FfiResultCountPayload payload;
+  // No explicit _pad here: the 3 padding bytes between the discriminant and the payload union
+  // are inserted automatically by Dart's C-layout rules (same as Rust's implicit padding).
+  // Adding @Array(3) _pad here would push the struct to 12 bytes — 4 beyond Rust's 8.
 
-  @Array(3)
-  external Array<Uint8> _pad;
+  external FfiResultCountPayload payload;
 
   FfiResultCount toDomain(Pointer<Uint8> errorBuf, int errorCap) {
     if (tag == 0) return OkCount(payload.ok);

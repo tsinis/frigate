@@ -49,16 +49,26 @@ void main() {
     );
 
     test(
-      'fromCode returns panic for out-of-range code',
+      'fromCode returns unknown for out-of-range code (not panic: prevents telemetry poisoning)',
       () => expect(
         FfiErrorCode.fromCode(999),
-        FfiErrorCode.panic,
-        reason: 'unknown code falls back to panic',
+        FfiErrorCode.unknown,
+        reason:
+            'unrecognized wire code maps to unknown, not panic, so real panics stay distinguishable',
       ),
     );
 
-    test('fromCode round-trips all known codes', () {
+    test('fromCode returns panic only for the actual panic wire code (1)', () {
+      expect(
+        FfiErrorCode.fromCode(1),
+        FfiErrorCode.panic,
+        reason: 'wire code 1 is the Rust panic discriminant',
+      );
+    });
+
+    test('fromCode round-trips all known wire codes (0..8, excludes unknown)', () {
       for (final code in FfiErrorCode.values) {
+        if (code == .unknown) continue; // no wire code for unknown
         expect(
           FfiErrorCode.fromCode(code.index),
           code,

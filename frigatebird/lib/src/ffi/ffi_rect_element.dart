@@ -12,7 +12,7 @@ import '../model/draw_element.dart';
 ///
 /// Coordinates are **document-space pixels** (no normalization). Rust uses them as-is.
 /// [outlineThickness] is `u8` (stroke width in pixels; 0–255 covers every realistic overlay).
-/// [outlineColorArgb] and [shapeParam] remain `u32` — ARGB colour occupies a full 4-byte slot
+/// [outlineColorArgb] and [shapeParam] remain `u32` — ARGB color occupies a full 4-byte slot
 /// and keeps [shapeParam] naturally aligned at offset 40 without extra padding fields.
 final class FfiRectElement extends Struct {
   @Double()

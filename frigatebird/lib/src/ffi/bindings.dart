@@ -12,6 +12,9 @@
 ///
 /// Symbol names (snake_case) MUST match the Rust `#[unsafe(no_mangle)] pub unsafe extern "C"`
 /// function names exactly. Positional parameters are required by the C ABI.
+///
+/// Note: `ffi_echo_element` (test-only round-trip helper) is declared in
+/// `ffi_echo_element.dart`, not here, to keep test infrastructure out of production code.
 @DefaultAsset('package:frigatebird/src/ffi/bindings.dart')
 library;
 
@@ -24,13 +27,6 @@ import 'ffi_arena.dart';
 import 'ffi_element.dart';
 import 'ffi_rect_element.dart';
 import 'ffi_result_unit.dart';
-
-/// Round-trips an [FfiElement] through Rust unchanged. Used by layout round-trip tests to verify
-/// that the Dart-side struct layout matches the Rust-side layout without any data transformation.
-///
-/// `isLeaf: true` — O(1) identity function, never calls back into Dart.
-@Native<Pointer<FfiElement> Function(Pointer<FfiElement>)>(isLeaf: true)
-external Pointer<FfiElement> ffi_echo_element(Pointer<FfiElement> ptr);
 
 /// Bytes-in / bytes-out path used by the Flutter `ExportBackend`.
 ///
@@ -60,6 +56,10 @@ external void free_bytes(Pointer<Uint8> ptr, int len);
 ///   - `arena.error_buf` / `arena.error_cap` — error message buffer (Dart-owned, Rust writes on err).
 ///
 /// Returns [FfiResultUnitStruct]: `tag == 0` on success; `tag == 1` on error with code + message in arena.
+///
+/// **Not `isLeaf: true`**: this is a CPU-heavy image-processing call. `isLeaf` would prevent the
+/// Dart VM from scheduling GC while it runs — acceptable only for O(1) functions. All real work
+/// must run via `Isolate.run` so the calling isolate stays responsive.
 @Native<
   FfiResultUnitStruct Function(
     Pointer<Utf8>,

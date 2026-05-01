@@ -7,6 +7,7 @@ import 'dart:typed_data' show BytesBuilder, Uint8List;
 
 import '../model/draw_element.dart';
 import '../model/ffi_color.dart';
+import 'ffi_abi.dart';
 import 'ffi_arena.dart';
 import 'ffi_element.dart';
 import 'ffi_element_type.dart';
@@ -17,7 +18,9 @@ import 'ffi_element_type.dart';
 /// [textBufferPtr] and [errorBufferPtr] that the arena points to. Exposes an idempotent [free]
 /// method so the caller can guarantee no leaks from `try`/`finally`.
 final class FfiArenaHandle {
-  FfiArenaHandle({
+  // Private constructor — only [FfiMarshal.encodeElements] should create handles. A public
+  // constructor would let callers assemble mismatched pointers and call free() → double-free / UB.
+  FfiArenaHandle._({
     required this.allocator,
     required this.elementsPtr,
     required this.count,
@@ -53,7 +56,7 @@ sealed class FfiMarshal {
   static FfiArenaHandle encodeElements(
     List<DrawElement> drawElements,
     Allocator allocator, {
-    int errorCap = 1024,
+    int errorCap = FfiAbi.errorCapBytes,
   }) {
     final elementsPtr = allocator<FfiElement>(drawElements.length);
     final payloadBytes = BytesBuilder();
@@ -145,7 +148,7 @@ sealed class FfiMarshal {
         rethrow;
       }
 
-      return FfiArenaHandle(
+      return FfiArenaHandle._(
         allocator: allocator,
         arenaPtr: arenaPtr,
         count: drawElements.length,
@@ -172,40 +175,60 @@ sealed class FfiMarshal {
         ? Uint8List(0)
         : payloadBufferPtr.asTypedList(payloadBufferLen);
 
-    return List.generate(count, (i) {
+    final result = <DrawElement>[];
+    for (int i = 0; i < count; i += 1) {
       final element = (elementsPtr + i).ref;
-      final type = FfiElementType.values[element.tag];
+      final tag = element.tag;
 
-      if (type == .rectangle) {
-        final rect = element.payload.rectangle;
+      // Guard against tags that this Dart build doesn't know about (e.g. newer Rust binary).
+      // Unknown tags are skipped — same forward-compat contract as Rust's `_ => {}` arm.
+      if (tag < 0 || tag >= FfiElementType.values.length) continue;
 
-        return RectElement(
-          blur: rect.blur,
-          cornerRadius: rect.cornerRadius,
-          fillColor: FfiColor(rect.fillColorArgb),
-          height: rect.height,
-          outlineColor: FfiColor(rect.outlineColorArgb),
-          outlineThickness: rect.outlineThickness,
-          rotation: rect.rotationDeg,
-          width: rect.width,
-          x: rect.x,
-          y: rect.y,
-        );
+      // DrawElement is sealed with exactly 2 variants — exhaustive, cannot reach minimum of 3.
+      // ignore: prefer-correct-switch-length
+      switch (FfiElementType.values[tag]) {
+        case .rectangle:
+          final rect = element.payload.rectangle;
+          result.add(
+            RectElement(
+              blur: rect.blur,
+              cornerRadius: rect.cornerRadius,
+              fillColor: FfiColor(rect.fillColorArgb),
+              height: rect.height,
+              outlineColor: FfiColor(rect.outlineColorArgb),
+              outlineThickness: rect.outlineThickness,
+              rotation: rect.rotationDeg,
+              width: rect.width,
+              x: rect.x,
+              y: rect.y,
+            ),
+          );
+
+        case .text:
+          final txt = element.payload.text;
+          final start = txt.textOffset;
+          final end = start + txt.textLen;
+          // Guard against a corrupt or malicious text-slice reference.
+          if (start < 0 || end < start || end > textBytes.length) continue;
+          // Use a view (no copy) over the shared text buffer — `sublist` would allocate.
+          final text = utf8.decode(
+            textBytes.buffer.asUint8List(textBytes.offsetInBytes + start, txt.textLen),
+          );
+          result.add(
+            TextElement(
+              blur: txt.blur,
+              fillColor: FfiColor(txt.fillColorArgb),
+              fontId: txt.fontId,
+              fontSize: txt.height,
+              rotation: txt.rotationDeg,
+              text: text,
+              x: txt.x,
+              y: txt.y,
+            ),
+          );
       }
+    }
 
-      final txt = element.payload.text;
-      final text = utf8.decode(textBytes.sublist(txt.textOffset, txt.textOffset + txt.textLen));
-
-      return TextElement(
-        blur: txt.blur,
-        fillColor: FfiColor(txt.fillColorArgb),
-        fontId: txt.fontId,
-        fontSize: txt.height,
-        rotation: txt.rotationDeg,
-        text: text,
-        x: txt.x,
-        y: txt.y,
-      );
-    });
+    return result;
   }
 }

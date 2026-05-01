@@ -5,6 +5,7 @@ import 'ffi_arena.dart';
 import 'ffi_element.dart';
 import 'ffi_error.dart';
 import 'ffi_rect_element.dart';
+import 'ffi_result_count.dart';
 import 'ffi_result_unit.dart';
 
 /// Runtime guards that the Dart-side `Struct` layouts for the FFI types match the wire
@@ -31,7 +32,14 @@ sealed class FfiAbi {
   static const rectElementBytes = 48;
 
   /// Expected byte size of [FfiResultUnitStruct].
-  static const resultUnitBytes = 8;
+  ///
+  /// Rust `repr(C, u8)` enum `FfiResultUnit { Ok(()) = 0, Err(FfiError) = 1 }`:
+  /// discriminant(1) + implicit_pad(1, align FfiError to 2) + payload_union(4) = **6 bytes**.
+  static const resultUnitBytes = 6;
+
+  /// Error buffer capacity allocated by `FfiMarshal.encodeElements` for Rust to write
+  /// diagnostic messages into. Single source of truth — Rust docs reference this value too.
+  static const errorCapBytes = 256;
 
   /// Guard that the Dart-side Struct layout for [FfiElement] matches the wire contract.
   static void assertElement({int expectedSize = elementBytes}) {
@@ -64,6 +72,16 @@ sealed class FfiAbi {
     assert(
       actualSize == expectedSize,
       'FfiResultUnitStruct ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
+    );
+  }
+
+  /// Guard that the Dart-side [FfiResultCountStruct] layout matches Rust.
+  /// Called from `RenderImage.run` alongside the other startup layout guards.
+  static void assertResultCount({int expectedSize = 8}) {
+    final actualSize = sizeOf<FfiResultCountStruct>();
+    assert(
+      actualSize == expectedSize,
+      'FfiResultCountStruct ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
     );
   }
 

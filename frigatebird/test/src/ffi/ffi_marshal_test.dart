@@ -1,6 +1,6 @@
 import 'dart:ffi';
 import 'package:ffi/ffi.dart';
-import 'package:frigatebird/src/ffi/bindings.dart' as ffi;
+import 'package:frigatebird/src/ffi/ffi_echo_element.dart';
 import 'package:frigatebird/src/ffi/ffi_marshal.dart';
 import 'package:frigatebird/src/model/draw_element.dart';
 import 'package:frigatebird/src/model/ffi_color.dart';
@@ -24,7 +24,7 @@ void main() {
 
       final bundle = FfiMarshal.encodeElements([rect], malloc);
       try {
-        final echoedPtr = ffi.ffi_echo_element(bundle.elementsPtr);
+        final echoedPtr = ffi_echo_element(bundle.elementsPtr);
         final decoded = FfiMarshal.decodeElements(
           echoedPtr,
           bundle.count,
@@ -64,7 +64,7 @@ void main() {
 
       final bundle = FfiMarshal.encodeElements([text], malloc);
       try {
-        final echoedPtr = ffi.ffi_echo_element(bundle.elementsPtr);
+        final echoedPtr = ffi_echo_element(bundle.elementsPtr);
         final decoded = FfiMarshal.decodeElements(
           echoedPtr,
           bundle.count,
@@ -98,7 +98,7 @@ void main() {
 
       final bundle = FfiMarshal.encodeElements(elements, malloc);
       try {
-        final echoedPtr = ffi.ffi_echo_element(bundle.elementsPtr);
+        final echoedPtr = ffi_echo_element(bundle.elementsPtr);
         final decoded = FfiMarshal.decodeElements(
           echoedPtr,
           bundle.count,
@@ -154,6 +154,51 @@ void main() {
         allocator,
       )..free();
       expect(bundle.free, returnsNormally, reason: 'double-free must be safe');
+    });
+  });
+
+  group('FfiMarshal.decodeElements wire-safety', () {
+    test('unknown tag is silently skipped (forward-compat)', () {
+      // Encode a single rect so the pointer is valid, then manually corrupt the tag byte
+      // to simulate a future variant this Dart build doesn't know about.
+      const rect = RectElement(height: 10, width: 10, x: 0, y: 0);
+      final bundle = FfiMarshal.encodeElements([rect], malloc);
+      try {
+        // Overwrite tag with a value beyond FfiElementType.values.length.
+        bundle.elementsPtr.ref.tag = 99;
+        final decoded = FfiMarshal.decodeElements(
+          bundle.elementsPtr,
+          1,
+          bundle.textBufferPtr,
+          payloadBufferLen: 0,
+        );
+        expect(decoded, isEmpty, reason: 'unknown tag must be skipped, not decoded as text');
+      } finally {
+        bundle.free();
+      }
+    });
+
+    test('out-of-bounds text offset is skipped without throwing', () {
+      // Encode a text element, then corrupt textOffset so it points past the buffer end.
+      const text = TextElement(text: 'hi', x: 0, y: 0);
+      final bundle = FfiMarshal.encodeElements([text], malloc);
+      try {
+        // Force an out-of-bounds offset on the first element's text payload.
+        bundle.elementsPtr.ref.payload.text.textOffset = 999_999;
+        final decoded = FfiMarshal.decodeElements(
+          bundle.elementsPtr,
+          1,
+          bundle.textBufferPtr,
+          payloadBufferLen: bundle.arenaPtr.ref.textLen,
+        );
+        expect(
+          decoded,
+          isEmpty,
+          reason: 'out-of-bounds text slice must be skipped, not throw RangeError',
+        );
+      } finally {
+        bundle.free();
+      }
     });
   });
 }
