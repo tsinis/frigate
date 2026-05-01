@@ -6,7 +6,6 @@ import 'package:ffi/ffi.dart';
 import '../constants/draw_constants.dart';
 import '../ffi/bindings.dart' as ffi;
 import '../ffi/ffi_abi.dart';
-import '../ffi/serialized_elements.dart';
 import '../helpers/extensions/ffi/draw_element_list_ffi.dart';
 import '../model/draw_element.dart';
 import 'render_exception.dart';
@@ -86,14 +85,13 @@ sealed class RenderImage {
     Pointer<Utf8> imageCStr = nullptr;
     Pointer<Utf8> outputCStr = nullptr;
     Pointer<Utf8> fontCStr = nullptr;
-    SerializedElements? serialized;
+    FfiElementBundle? bundle;
     try {
       imageCStr = imagePath.toNativeUtf8();
       outputCStr = outputPath.toNativeUtf8();
       fontCStr = fontPath?.toNativeUtf8() ?? nullptr;
-      serialized = elements.toNative(malloc);
-      final SerializedElements(:count, elementsPtr: elementArray, :textBufferLen, :textBufferPtr) =
-          serialized;
+      bundle = elements.toNative(malloc);
+      final (elementsPtr: elementArray, :count, :textBufferPtr, :textBufferLen) = bundle;
       final code = ffi.render_image(
         imageCStr,
         outputCStr,
@@ -109,7 +107,10 @@ sealed class RenderImage {
       if (imageCStr != nullptr) malloc.free(imageCStr);
       if (outputCStr != nullptr) malloc.free(outputCStr);
       if (fontCStr != nullptr) malloc.free(fontCStr);
-      serialized?.free();
+      if (bundle != null) {
+        malloc.free(bundle.elementsPtr);
+        if (bundle.textBufferPtr != nullptr) malloc.free(bundle.textBufferPtr);
+      }
     }
   }
 }

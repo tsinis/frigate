@@ -3,20 +3,20 @@ import 'dart:ffi';
 import 'dart:typed_data' show BytesBuilder;
 
 import '../../../ffi/ffi_element.dart';
-import '../../../ffi/serialized_elements.dart';
 import '../../../model/draw_element.dart';
 
-/// Serialize a list of [DrawElement]s into native memory: a contiguous [FfiElement] array plus a
-/// shared UTF-8 text buffer (only allocated when the list contains [TextElement]s).
-///
-/// Ownership: the returned [SerializedElements] owns both pointers; caller MUST call
-/// `serialized.free()` to release them.
+/// Pointers to native memory containing a contiguous [FfiElement] array plus a shared UTF-8
+/// text buffer.
+typedef FfiElementBundle = ({
+  int count,
+  Pointer<FfiElement> elementsPtr,
+  int textBufferLen,
+  Pointer<Uint8> textBufferPtr,
+});
+
+/// Extension to convert a list of [DrawElement]s into native memory buffers.
 extension DrawElementListFfi on List<DrawElement> {
-  SerializedElements toNative(Allocator allocator) {
-    // The elements pointer is allocated BEFORE the try-block so the `final` binding is in scope
-    // for the catch. Anything that can throw after this point (text buffer allocation, UTF-8
-    // encoding) must free this pointer — otherwise the SerializedElements wrapper is never
-    // returned and the caller can't reach it.
+  FfiElementBundle toNative(Allocator allocator) {
     final elementsPtr = allocator<FfiElement>(length);
     try {
       final textBytes = BytesBuilder();
@@ -39,12 +39,11 @@ extension DrawElementListFfi on List<DrawElement> {
         }
       }
 
-      return SerializedElements(
-        allocator: allocator,
-        count: length,
+      return (
         elementsPtr: elementsPtr,
-        textBufferLen: textTotal,
+        count: length,
         textBufferPtr: textBufferPtr,
+        textBufferLen: textTotal,
       );
     } on Object {
       allocator.free(elementsPtr);
