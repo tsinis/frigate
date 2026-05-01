@@ -87,16 +87,18 @@ sealed class RenderImage {
     Pointer<Utf8> imageCStr = nullptr;
     Pointer<Utf8> outputCStr = nullptr;
     Pointer<Utf8> fontCStr = nullptr;
+    Pointer<FfiResultUnitStruct> outPtr = nullptr;
     FfiArenaHandle? handle;
     try {
       imageCStr = imagePath.toNativeUtf8();
       outputCStr = outputPath.toNativeUtf8();
       fontCStr = fontPath?.toNativeUtf8() ?? nullptr;
+      outPtr = malloc<FfiResultUnitStruct>();
       handle = FfiMarshal.encodeElements(elements, malloc);
 
       // Handle properties are not all unpacked at once because they are used sequentially, and
       // some are nullable. Destructuring them all upfront would be less readable.
-      final rawResult = ffi.draw_elements(
+      ffi.draw_elements(
         imageCStr,
         outputCStr,
         fontCStr,
@@ -104,9 +106,10 @@ sealed class RenderImage {
         handle.count,
         imageQuality,
         handle.arenaPtr,
+        outPtr,
       );
 
-      final domainResult = rawResult.toDomain(handle.errorBufferPtr, handle.arenaPtr.ref.errorCap);
+      final domainResult = outPtr.ref.toDomain(handle.errorBufferPtr, handle.arenaPtr.ref.errorCap);
       if (domainResult is ErrUnit) {
         throw RenderException(domainResult.code, domainResult.message);
       }
@@ -114,6 +117,7 @@ sealed class RenderImage {
       if (imageCStr != nullptr) malloc.free(imageCStr);
       if (outputCStr != nullptr) malloc.free(outputCStr);
       if (fontCStr != nullptr) malloc.free(fontCStr);
+      if (outPtr != nullptr) malloc.free(outPtr);
       handle?.free();
     }
   }

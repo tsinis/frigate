@@ -4,7 +4,7 @@ import 'package:test/test.dart';
 void main() {
   group('FfiAbi.assertElement', () {
     test(
-      'succeeds on the host platform (64 bytes)',
+      'succeeds on the host platform (56 bytes)',
       () => expect(FfiAbi.assertElement, returnsNormally),
     );
 

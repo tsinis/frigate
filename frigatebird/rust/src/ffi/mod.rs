@@ -96,6 +96,13 @@ pub unsafe fn write_error_to_arena(
 
     let bytes = msg.as_bytes();
     let limit = bytes.len().min(arena_ref.error_cap);
+    // Guard: error_cap is stored as usize but message_len is u16. If cap ever exceeds
+    // u16::MAX the cast below would silently truncate the length. Catch this in debug builds.
+    debug_assert!(
+        arena_ref.error_cap <= u16::MAX as usize,
+        "error_cap {} exceeds u16::MAX",
+        arena_ref.error_cap
+    );
     // Clamp to the last valid UTF-8 boundary: a plain byte-count truncation can cut a
     // multi-byte codepoint in half, causing `utf8.decode` on the Dart side to throw a
     // FormatException. `valid_up_to()` gives us the byte index of the first invalid byte
@@ -111,7 +118,7 @@ pub unsafe fn write_error_to_arena(
     FfiError {
         code: code as u8,
         _pad: 0,
-        message_len: len as u16,
+        message_len: len.min(u16::MAX as usize) as u16,
     }
 }
 

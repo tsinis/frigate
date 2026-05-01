@@ -1,4 +1,3 @@
-// ignore_for_file: unused_field, prefer-single-declaration-per-file
 import 'dart:ffi';
 
 import 'ffi_error.dart';
@@ -20,6 +19,11 @@ final class ErrUnit extends FfiResultUnit {
 }
 
 /// FFI payload for a result that returns nothing (void).
+///
+/// `_dummyOk` exists because Dart's `Union` type requires at least one field. The `Ok(())`
+/// variant in Rust carries no payload; this byte is never read and is only present to satisfy
+/// the Dart FFI layout requirement.
+// ignore_for_file: unused_field, prefer-single-declaration-per-file
 final class FfiResultUnitPayload extends Union {
   external FfiError err;
   @Uint8()

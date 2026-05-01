@@ -6,9 +6,6 @@ use std::slice;
 
 use tiny_skia::{Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
 
-#[macro_use]
-extern crate ffi_helpers;
-
 mod canvas;
 mod ffi;
 mod ffi_element;
@@ -47,17 +44,6 @@ const _: () = assert!(std::mem::size_of::<FfiRectElement>() == 48);
 pub struct ByteBuffer {
     pub data: *mut u8,
     pub length: usize,
-}
-
-#[unsafe(no_mangle)]
-/// # Safety
-///
-/// `ptr` must be a pointer previously returned by a Rust allocation function (e.g.
-/// `Box::into_raw` on a boxed slice of length `len`), or null. Double-free is UB.
-pub unsafe extern "C" fn frigate_free(ptr: *mut u8, len: usize) {
-    null_pointer_check!(ptr);
-    // SAFETY: Rust allocated this buffer via into_boxed_slice -> Box::into_raw; capacity == len.
-    unsafe { drop(Vec::from_raw_parts(ptr, len, len)) };
 }
 
 /// Bytes-in / bytes-out export: composites [rects_count] rectangles over a PNG/JPEG image and
@@ -130,113 +116,162 @@ pub unsafe extern "C" fn free_bytes(ptr: *mut u8, len: usize) {
     unsafe { drop(Vec::from_raw_parts(ptr, len, len)) };
 }
 
-/// Echo an FfiElement pointer back unchanged. Used by layout round-trip tests to verify the
-/// Dart-side struct layout matches the Rust-side layout without any data transformation.
+/// Echo an FfiElement pointer back unchanged. Only compiled in debug builds — its only purpose
+/// is layout round-trip tests. The Rust symbol must not be present in release `.dylib`s.
 ///
 /// # Safety
 ///
 /// `ptr` must be a valid, aligned pointer to a single `FfiElement` that lives at least
 /// as long as the returned pointer is used.
+#[cfg(any(test, feature = "ffi-echo"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_echo_element(ptr: *const FfiElement) -> *const FfiElement {
     ptr
 }
 
-// Ported and renamed existing render_image to new API
-ffi_export! {
-    fn draw_elements(
-        image_path_ptr: *const c_char,
-        output_path_ptr: *const c_char,
-        font_path_ptr: *const c_char,
-        elements_ptr: *const FfiElement,
-        elements_count: usize,
-        image_quality: u8;
-        arena: *mut FfiArena,
-    ) -> FfiResultUnit {
-        if arena.is_null() {
-            return Err(FfiError::new(FfiErrorCode::InvalidArg));
-        }
-        let image_path = unsafe { c_str_to_str(image_path_ptr, arena)? };
-        let output_path = unsafe { c_str_to_str(output_path_ptr, arena)? };
-
-        let elements: &[FfiElement] = if elements_count == 0 {
-            &[]
-        } else {
-            if elements_ptr.is_null() {
+/// Unified render call: reads the image from `image_path_ptr`, composites all `FfiElement`s
+/// (rectangles, text, future shapes), writes the result to `output_path_ptr`.
+///
+/// Returns `void`; result is written to `*out`. Using an out-pointer avoids struct-return ABI
+/// differences between SysV x86-64, Win64, AArch64 AAPCS and ARMv7 for the 6-byte result type.
+///
+/// # Safety
+///
+/// All pointer arguments must be valid for the duration of the call. `arena` and `out` must
+/// be non-null. `elements_ptr` may be null only when `elements_count == 0`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn draw_elements(
+    image_path_ptr: *const c_char,
+    output_path_ptr: *const c_char,
+    font_path_ptr: *const c_char,
+    elements_ptr: *const FfiElement,
+    elements_count: usize,
+    image_quality: u8,
+    arena: *mut FfiArena,
+    out: *mut FfiResultUnit,
+) {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let inner: Result<_, FfiError> = (|| {
+            if arena.is_null() {
                 return Err(FfiError::new(FfiErrorCode::InvalidArg));
             }
-            unsafe { slice::from_raw_parts(elements_ptr, elements_count) }
-        };
+            let image_path = unsafe { c_str_to_str(image_path_ptr, arena)? };
+            let output_path = unsafe { c_str_to_str(output_path_ptr, arena)? };
 
-        let arena_ref = unsafe { &*arena };
-        let text_buffer: &[u8] = if arena_ref.text_len == 0 {
-            &[]
-        } else {
-            if arena_ref.text_buf.is_null() {
-                return Err(FfiError::new(FfiErrorCode::InvalidArg));
-            }
-            unsafe { slice::from_raw_parts(arena_ref.text_buf, arena_ref.text_len) }
-        };
-
-        let needs_font = elements.iter().any(|e| matches!(e, FfiElement::Text(_)));
-        let font_bytes_holder;
-        let font: Option<ab_glyph::FontRef<'_>> = if needs_font {
-            if font_path_ptr.is_null() {
-                // SAFETY: arena is non-null (checked above in draw_elements body).
-                return Err(unsafe { write_error_to_arena(arena, FfiErrorCode::InvalidArg, "Missing font path") });
-            }
-            let font_path = unsafe { c_str_to_str(font_path_ptr, arena)? };
-            font_bytes_holder = io::read_font(Path::new(font_path))
-                // SAFETY: arena is non-null.
-                .map_err(|_| unsafe { write_error_to_arena(arena, FfiErrorCode::Io, "Failed to read font") })?;
-            Some(
-                ab_glyph::FontRef::try_from_slice(&font_bytes_holder)
-                    // SAFETY: arena is non-null.
-                    .map_err(|_| unsafe { write_error_to_arena(arena, FfiErrorCode::Font, "Failed to parse font") })?,
-            )
-        } else {
-            None
-        };
-
-        let img = io::read_image(Path::new(image_path))
-            // SAFETY: arena is non-null.
-            .map_err(|_| unsafe { write_error_to_arena(arena, FfiErrorCode::Decode, "Failed to decode image") })?
-            .into_rgba8();
-
-        let mut surface = Surface::Rgba(img);
-
-        for element in elements {
-            match element {
-                FfiElement::Rectangle(p) => {
-                    let style: RectStyle = p.into();
-                    if !style.paints_anything() {
-                        continue;
-                    }
-                    draw_rect_on_pixmap(
-                        surface.as_pixmap(),
-                        p.x,
-                        p.y,
-                        p.width,
-                        p.height,
-                        &style,
-                    );
+            let elements: &[FfiElement] = if elements_count == 0 {
+                &[]
+            } else {
+                if elements_ptr.is_null() {
+                    return Err(FfiError::new(FfiErrorCode::InvalidArg));
                 }
-                FfiElement::Text(p) => {
-                    let text_slice = element_text(p, text_buffer)
-                        .map_err(|_| unsafe { write_error_to_arena(arena, FfiErrorCode::Utf8, "Invalid UTF-8 in text element") })?;
-                    if let Some(font_ref) = &font {
-                        draw_text_element(surface.as_rgba(), font_ref, p, text_slice);
+                unsafe { slice::from_raw_parts(elements_ptr, elements_count) }
+            };
+
+            let arena_ref = unsafe { &*arena };
+            // SAFETY: arena is non-null (checked above). Copy text buffer scalars into local
+            // variables so `arena_ref` can be dropped before any `write_error_to_arena` call
+            // creates `&mut *arena` — having both alive simultaneously would violate Rust's
+            // aliasing rules.
+            let (text_buf_ptr, text_buf_len) = (arena_ref.text_buf, arena_ref.text_len);
+            let _ = arena_ref;
+            let text_buffer: &[u8] = if text_buf_len == 0 {
+                &[]
+            } else {
+                if text_buf_ptr.is_null() {
+                    return Err(FfiError::new(FfiErrorCode::InvalidArg));
+                }
+                unsafe { slice::from_raw_parts(text_buf_ptr, text_buf_len) }
+            };
+
+            let needs_font = elements.iter().any(|e| matches!(e, FfiElement::Text(_)));
+            let font_bytes_holder;
+            let font: Option<ab_glyph::FontRef<'_>> = if needs_font {
+                if font_path_ptr.is_null() {
+                    // SAFETY: arena is non-null (checked above).
+                    return Err(unsafe {
+                        write_error_to_arena(arena, FfiErrorCode::InvalidArg, "Missing font path")
+                    });
+                }
+                let font_path = unsafe { c_str_to_str(font_path_ptr, arena)? };
+                font_bytes_holder = io::read_font(Path::new(font_path)).map_err(|_| unsafe {
+                    write_error_to_arena(arena, FfiErrorCode::Io, "Failed to read font")
+                })?;
+                Some(
+                    ab_glyph::FontRef::try_from_slice(&font_bytes_holder).map_err(|_| unsafe {
+                        write_error_to_arena(arena, FfiErrorCode::Font, "Failed to parse font")
+                    })?,
+                )
+            } else {
+                None
+            };
+
+            let img = io::read_image(Path::new(image_path))
+                .map_err(|_| unsafe {
+                    write_error_to_arena(arena, FfiErrorCode::Decode, "Failed to decode image")
+                })?
+                .into_rgba8();
+
+            let mut surface = Surface::Rgba(img);
+
+            for element in elements {
+                match element {
+                    FfiElement::Rectangle(p) => {
+                        let style: RectStyle = p.into();
+                        if !style.paints_anything() {
+                            continue;
+                        }
+                        draw_rect_on_pixmap(
+                            surface.as_pixmap(),
+                            p.x,
+                            p.y,
+                            p.width,
+                            p.height,
+                            &style,
+                        );
+                    }
+                    FfiElement::Text(p) => {
+                        let text_slice = element_text(p, text_buffer).map_err(|_| unsafe {
+                            write_error_to_arena(
+                                arena,
+                                FfiErrorCode::Utf8,
+                                "Invalid UTF-8 in text element",
+                            )
+                        })?;
+                        if let Some(font_ref) = &font {
+                            draw_text_element(surface.as_rgba(), font_ref, p, text_slice);
+                        }
                     }
                 }
             }
+
+            let img = surface.into_rgba();
+            io::write_image(Path::new(output_path), &img, image_quality).map_err(|_| unsafe {
+                write_error_to_arena(arena, FfiErrorCode::Encode, "Failed to encode image")
+            })?;
+
+            Ok(())
+        })();
+        inner
+    }));
+
+    let ffi_result = match result {
+        Ok(Ok(v)) => FfiResultUnit::ok(v),
+        Ok(Err(e)) => FfiResultUnit::err(e),
+        Err(payload) => {
+            let msg = if let Some(s) = payload.downcast_ref::<&'static str>() {
+                (*s).to_string()
+            } else if let Some(s) = payload.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "panic with non-string payload".to_string()
+            };
+            // SAFETY: arena was validated non-null before any code that could panic runs.
+            let err = unsafe { write_panic_to_arena(arena, &msg) };
+            FfiResultUnit::err(err)
         }
-
-        let img = surface.into_rgba();
-        io::write_image(Path::new(output_path), &img, image_quality)
-            .map_err(|_| unsafe { write_error_to_arena(arena, FfiErrorCode::Encode, "Failed to encode image") })?;
-
-        Ok(())
-    }
+    };
+    // SAFETY: `out` is non-null and writable for the duration of this call.
+    unsafe { out.write(ffi_result) };
 }
 
 unsafe fn c_str_to_str<'a>(ptr: *const c_char, arena: *mut FfiArena) -> Result<&'a str, FfiError> {
@@ -387,6 +422,7 @@ impl From<&FfiRectElement> for RectStyle {
         Self {
             outline_thickness: r.outline_thickness,
             outline_color_argb: r.outline_color_argb,
+            // `export_image` is an outline-only path — fill is always transparent.
             fill_color_argb: 0,
             corner_radius_px: r.shape_param,
         }

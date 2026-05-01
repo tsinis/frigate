@@ -20,7 +20,6 @@ pub struct RectanglePayload {
 pub struct TextPayload {
     pub x: f64,
     pub y: f64,
-    pub width: f64,
     pub height: f64,
     pub rotation_deg: i32,
     pub fill_color_argb: u32,
@@ -42,8 +41,8 @@ pub enum FfiElement {
 // We assert size and alignment.
 // Dart side MUST match these exactly using Struct + Union + padding.
 const _: () = assert!(std::mem::size_of::<RectanglePayload>() == 48);
-const _: () = assert!(std::mem::size_of::<TextPayload>() == 56);
-const _: () = assert!(std::mem::size_of::<FfiElement>() == 64); // Tag(1) + Pad(7) + TextPayload(56)
+const _: () = assert!(std::mem::size_of::<TextPayload>() == 48);
+const _: () = assert!(std::mem::size_of::<FfiElement>() == 56); // Tag(1) + Pad(7) + TextPayload(48)
 const _: () = assert!(std::mem::align_of::<FfiElement>() == 8);
 
 #[cfg(test)]
@@ -53,8 +52,8 @@ mod tests {
     #[test]
     fn ffi_element_layout() {
         assert_eq!(std::mem::size_of::<RectanglePayload>(), 48);
-        assert_eq!(std::mem::size_of::<TextPayload>(), 56);
-        assert_eq!(std::mem::size_of::<FfiElement>(), 64);
+        assert_eq!(std::mem::size_of::<TextPayload>(), 48);
+        assert_eq!(std::mem::size_of::<FfiElement>(), 56);
         assert_eq!(std::mem::align_of::<FfiElement>(), 8);
     }
 }

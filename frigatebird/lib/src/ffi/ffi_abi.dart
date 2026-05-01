@@ -1,6 +1,5 @@
 import 'dart:ffi';
 
-import 'export_backend_native.dart' show ExportBackendNative;
 import 'ffi_arena.dart';
 import 'ffi_element.dart';
 import 'ffi_error.dart';
@@ -19,7 +18,7 @@ import 'ffi_result_unit.dart';
 /// names into every file that imports `ffi_abi.dart`.
 sealed class FfiAbi {
   /// Expected byte size of [FfiElement] as defined by the Rust `#[repr(C, u8)]` layout.
-  static const elementBytes = 64;
+  static const elementBytes = 56;
 
   /// Expected byte size of [FfiArena]. 3 pointers + 3 size_t.
   static int get arenaBytes => sizeOf<Pointer>() * 3 + sizeOf<Size>() * 3;
@@ -86,7 +85,7 @@ sealed class FfiAbi {
   }
 
   /// Guard that the Dart-side Struct layout for [FfiRectElement] matches the wire contract.
-  /// Called from [ExportBackendNative.loadImage].
+  /// Called from `ExportBackendNative.loadImage`.
   static void assertRectElement({int expectedSize = rectElementBytes}) {
     final actualSize = sizeOf<FfiRectElement>();
     assert(

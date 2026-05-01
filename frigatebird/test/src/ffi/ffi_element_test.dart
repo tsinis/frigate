@@ -7,8 +7,8 @@ import 'package:test/test.dart';
 void main() {
   group('FfiElement layout', () {
     test(
-      'struct is 64 bytes (tag(1)+pad(7)+payload(56))',
-      () => expect(sizeOf<FfiElement>(), 64, reason: 'wire-size contract'),
+      'struct is 56 bytes (tag(1)+pad(7)+payload(48))',
+      () => expect(sizeOf<FfiElement>(), 56, reason: 'wire-size contract'),
     );
 
     test(
@@ -21,11 +21,11 @@ void main() {
     );
 
     test(
-      'TextPayload is 56 bytes',
+      'TextPayload is 48 bytes',
       () => expect(
         sizeOf<TextPayload>(),
-        56,
-        reason: '4*f64(32)+i32(4)+u32(4)+u8+pad(3)+u32+u32+u32 = 56',
+        48,
+        reason: '3*f64(24)+i32(4)+u32(4)+u8+pad(3)+u32+u32+u32 = 48',
       ),
     );
   });

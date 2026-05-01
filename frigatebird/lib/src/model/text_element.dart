@@ -29,30 +29,20 @@ final class TextElement extends DrawElement {
     FfiColor? fillColor,
     int? fontId,
     double? fontSize,
-    double? height,
     int? rotation,
     String? text,
-    double? width,
     double? x,
     double? y,
-  }) {
-    assert(
-      fontSize == null || height == null || fontSize == height,
-      'fontSize and height update the same backing field',
-    );
-    assert(width == null || width == 0, 'TextElement width is fixed');
-
-    return TextElement(
-      blur: blur ?? this.blur,
-      fillColor: fillColor ?? this.fillColor,
-      fontId: fontId ?? this.fontId,
-      fontSize: fontSize ?? height ?? this.fontSize,
-      rotation: rotation ?? this.rotation,
-      text: text ?? this.text,
-      x: x ?? this.x,
-      y: y ?? this.y,
-    );
-  }
+  }) => .new(
+    blur: blur ?? this.blur,
+    fillColor: fillColor ?? this.fillColor,
+    fontId: fontId ?? this.fontId,
+    fontSize: fontSize ?? this.fontSize,
+    rotation: rotation ?? this.rotation,
+    text: text ?? this.text,
+    x: x ?? this.x,
+    y: y ?? this.y,
+  );
 
   @override
   String toString() =>

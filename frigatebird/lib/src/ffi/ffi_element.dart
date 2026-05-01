@@ -53,9 +53,6 @@ final class TextPayload extends Struct {
   external double y;
 
   @Double()
-  external double width;
-
-  @Double()
   external double height;
 
   @Int32()
@@ -94,7 +91,7 @@ final class FfiElement extends Struct {
   external int tag;
 
   /// Explicit padding after the tag byte so `payload` starts at offset 8 (double alignment),
-  /// matching the Rust `#[repr(C, u8)]` layout: tag(1) + pad(7) + payload(56) = 64 bytes.
+  /// matching the Rust `#[repr(C, u8)]` layout: tag(1) + pad(7) + payload(48) = 56 bytes.
   @Array(7)
   external Array<Uint8> _pad;
 

@@ -55,13 +55,15 @@ external void free_bytes(Pointer<Uint8> ptr, int len);
 ///   - `arena.text_buf` / `arena.text_len` — UTF-8 text sidecar (Dart-owned, read-only by Rust).
 ///   - `arena.error_buf` / `arena.error_cap` — error message buffer (Dart-owned, Rust writes on err).
 ///
-/// Returns [FfiResultUnitStruct]: `tag == 0` on success; `tag == 1` on error with code + message in arena.
+/// Result is written to [out] rather than returned by value. Returning a 6-byte struct by value
+/// has target-specific ABI differences between SysV x86-64, Win64, AArch64 AAPCS, and ARMv7;
+/// an out-pointer sidesteps these completely.
 ///
 /// **Not `isLeaf: true`**: this is a CPU-heavy image-processing call. `isLeaf` would prevent the
 /// Dart VM from scheduling GC while it runs — acceptable only for O(1) functions. All real work
 /// must run via `Isolate.run` so the calling isolate stays responsive.
 @Native<
-  FfiResultUnitStruct Function(
+  Void Function(
     Pointer<Utf8>,
     Pointer<Utf8>,
     Pointer<Utf8>,
@@ -69,9 +71,10 @@ external void free_bytes(Pointer<Uint8> ptr, int len);
     Size,
     Uint8,
     Pointer<FfiArena>,
+    Pointer<FfiResultUnitStruct>,
   )
 >()
-external FfiResultUnitStruct draw_elements(
+external void draw_elements(
   Pointer<Utf8> imagePath,
   Pointer<Utf8> outputPath,
   Pointer<Utf8> fontPath,
@@ -79,4 +82,5 @@ external FfiResultUnitStruct draw_elements(
   int elementsCount,
   int imageQuality,
   Pointer<FfiArena> arena,
+  Pointer<FfiResultUnitStruct> out,
 );

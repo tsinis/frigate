@@ -22,7 +22,7 @@ const rect = RectElement(height: 100, width: 200, x: 10, y: 20);
 
 // Export with overlays baked in
 final backend = ExportBackendNative();
-await backend.loadImage(imageBytes, height: 600, width: 800);
+backend.loadImage(imageBytes, height: 600, width: 800);
 final jpeg = await backend.export(rects: [rect]);
 backend.dispose();
 ```

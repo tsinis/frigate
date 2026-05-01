@@ -182,6 +182,7 @@ fn render_image_end_to_end_writes_jpeg() {
         error_cap: error_buf.len(),
     };
     let result = unsafe {
+        let mut out = std::mem::MaybeUninit::uninit();
         frigate::draw_elements(
             img_path.as_ptr(),
             out_path.as_ptr(),
@@ -190,7 +191,9 @@ fn render_image_end_to_end_writes_jpeg() {
             elements.len(),
             90,
             &mut arena,
-        )
+            out.as_mut_ptr(),
+        );
+        out.assume_init()
     };
     assert!(
         matches!(result, frigate::FfiResultUnit::Ok(())),
@@ -226,6 +229,7 @@ fn render_image_rejects_text_without_font() {
         error_cap: error_buf.len(),
     };
     let result = unsafe {
+        let mut out = std::mem::MaybeUninit::uninit();
         frigate::draw_elements(
             img_path.as_ptr(),
             out_path.as_ptr(),
@@ -234,7 +238,9 @@ fn render_image_rejects_text_without_font() {
             elements.len(),
             90,
             &mut arena,
-        )
+            out.as_mut_ptr(),
+        );
+        out.assume_init()
     };
     let frigate::FfiResultUnit::Err(e) = result else {
         panic!("expected error, got Ok");
@@ -259,6 +265,7 @@ fn render_image_rejects_null_image_path() {
         error_cap: error_buf.len(),
     };
     let result = unsafe {
+        let mut out = std::mem::MaybeUninit::uninit();
         frigate::draw_elements(
             std::ptr::null(),
             out_path.as_ptr(),
@@ -267,7 +274,9 @@ fn render_image_rejects_null_image_path() {
             0,
             100,
             &mut arena,
-        )
+            out.as_mut_ptr(),
+        );
+        out.assume_init()
     };
 
     assert!(
@@ -294,6 +303,7 @@ fn render_image_rejects_nonexistent_source_image() {
         error_cap: error_buf.len(),
     };
     let result = unsafe {
+        let mut out = std::mem::MaybeUninit::uninit();
         frigate::draw_elements(
             bad_img.as_ptr(),
             out_path.as_ptr(),
@@ -302,7 +312,9 @@ fn render_image_rejects_nonexistent_source_image() {
             0,
             80,
             &mut arena,
-        )
+            out.as_mut_ptr(),
+        );
+        out.assume_init()
     };
     let frigate::FfiResultUnit::Err(e) = result else {
         panic!("expected error, got Ok");
@@ -332,6 +344,7 @@ fn render_image_rejects_unsupported_output_extension() {
         error_cap: error_buf.len(),
     };
     let result = unsafe {
+        let mut out = std::mem::MaybeUninit::uninit();
         frigate::draw_elements(
             img_path.as_ptr(),
             out_path.as_ptr(),
@@ -340,7 +353,9 @@ fn render_image_rejects_unsupported_output_extension() {
             0,
             80,
             &mut arena,
-        )
+            out.as_mut_ptr(),
+        );
+        out.assume_init()
     };
     let frigate::FfiResultUnit::Err(e) = result else {
         panic!("expected error, got Ok");
@@ -387,6 +402,7 @@ fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
         error_cap: error_buf.len(),
     };
     let result = unsafe {
+        let mut out = std::mem::MaybeUninit::uninit();
         frigate::draw_elements(
             img_path.as_ptr(),
             out_path.as_ptr(),
@@ -395,7 +411,9 @@ fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
             elements.len(),
             90,
             &mut arena,
-        )
+            out.as_mut_ptr(),
+        );
+        out.assume_init()
     };
     assert!(
         matches!(result, frigate::FfiResultUnit::Ok(())),
@@ -435,7 +453,6 @@ fn make_text_element(text_offset: u32, text_length: u32) -> FfiElement {
     FfiElement::Text(TextPayload {
         x: 50.0,
         y: 250.0,
-        width: 0.0,
         // `height` doubles as font em-box size for text elements.
         height: 40.0,
         rotation_deg: 0,

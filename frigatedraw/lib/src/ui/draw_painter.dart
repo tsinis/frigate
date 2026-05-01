@@ -1,7 +1,6 @@
 import 'package:flutter/rendering.dart';
 
 import 'package:frigatebird/frigatebird.dart';
-import '../helpers/draw_element_extension.dart';
 import '../helpers/rect_element_extension.dart';
 
 class DrawPainter extends CustomPainter {

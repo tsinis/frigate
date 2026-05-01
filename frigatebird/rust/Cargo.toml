@@ -6,8 +6,13 @@ edition = "2024"
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
 
+[features]
+# Exposes `ffi_echo_element` — the test-only round-trip helper. Enabled automatically by
+# `native_toolchain_rust` when building for `dart test` (debug profile). Never set in the
+# production build hook.
+ffi-echo = []
+
 [dependencies]
-ffi_helpers = "0.3" # TODO: Consider removal, not updated for years.
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
 ab_glyph = "0.2.32"
 # Drop tiny-skia's `png-format` feature — we use `image` for PNG/JPEG decode and encode, so

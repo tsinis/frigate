@@ -26,13 +26,5 @@ sealed class DrawElement {
   final FfiColor fillColor;
   final int blur;
 
-  DrawElement copyWith({
-    int? blur,
-    FfiColor? fillColor,
-    double? height,
-    int? rotation,
-    double? width,
-    double? x,
-    double? y,
-  });
+  DrawElement copyWith({int? blur, FfiColor? fillColor, int? rotation, double? x, double? y});
 }

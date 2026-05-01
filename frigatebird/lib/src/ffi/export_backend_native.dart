@@ -78,7 +78,7 @@ final class ExportBackendNative {
   }
 }
 
-/// Arguments for `_NativeExportBackend._doExport`, sent to a background isolate.
+/// Arguments for `ExportBackendNative._doExport`, sent to a background isolate.
 final class _ExportArgs {
   const _ExportArgs({
     required this.imageQuality,

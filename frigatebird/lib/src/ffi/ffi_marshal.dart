@@ -41,7 +41,7 @@ final class FfiArenaHandle {
   void free() {
     if (_freed) return;
     _freed = true;
-    allocator.free(elementsPtr);
+    if (elementsPtr != nullptr) allocator.free(elementsPtr);
     if (textBufferPtr != nullptr) allocator.free(textBufferPtr);
     if (errorBufferPtr != nullptr) allocator.free(errorBufferPtr);
     allocator.free(arenaPtr);
@@ -58,7 +58,7 @@ sealed class FfiMarshal {
     Allocator allocator, {
     int errorCap = FfiAbi.errorCapBytes,
   }) {
-    final elementsPtr = allocator<FfiElement>(drawElements.length);
+    final elementsPtr = drawElements.isEmpty ? nullptr : allocator<FfiElement>(drawElements.length);
     final payloadBytes = BytesBuilder();
 
     try {
@@ -95,10 +95,10 @@ sealed class FfiMarshal {
             assert(item.blur >= 0 && item.blur <= 255, 'blur must be in 0..255');
 
             final encoded = utf8.encode(item.text);
+            // Offset captured *before* append so it points to the start of this element's text.
             (ref..tag = FfiElementType.text.value).payload.text
               ..x = item.x
               ..y = item.y
-              ..width = item.width
               ..height = item.height
               ..rotationDeg = item.rotation
               ..fillColorArgb = item.fillColor.argb
@@ -157,7 +157,7 @@ sealed class FfiMarshal {
         textBufferPtr: textBufferPtr,
       );
     } on Object {
-      allocator.free(elementsPtr);
+      if (elementsPtr != nullptr) allocator.free(elementsPtr);
       rethrow;
     }
   }
@@ -181,8 +181,8 @@ sealed class FfiMarshal {
       final tag = element.tag;
 
       // Guard against tags that this Dart build doesn't know about (e.g. newer Rust binary).
-      // Unknown tags are skipped — same forward-compat contract as Rust's `_ => {}` arm.
-      if (tag < 0 || tag >= FfiElementType.values.length) continue;
+      // `tag` is @Uint8 so it is always ≥ 0; only the upper bound matters.
+      if (tag >= FfiElementType.values.length) continue;
 
       // DrawElement is sealed with exactly 2 variants — exhaustive, cannot reach minimum of 3.
       // ignore: prefer-correct-switch-length
@@ -209,7 +209,8 @@ sealed class FfiMarshal {
           final start = txt.textOffset;
           final end = start + txt.textLen;
           // Guard against a corrupt or malicious text-slice reference.
-          if (start < 0 || end < start || end > textBytes.length) continue;
+          // `start` and `end` are u32-derived so always ≥ 0; only the upper bound matters.
+          if (end < start || end > textBytes.length) continue;
           // Use a view (no copy) over the shared text buffer — `sublist` would allocate.
           final text = utf8.decode(
             textBytes.buffer.asUint8List(textBytes.offsetInBytes + start, txt.textLen),
