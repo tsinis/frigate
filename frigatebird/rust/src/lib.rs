@@ -55,6 +55,60 @@ pub unsafe extern "C" fn frigate_free(ptr: *mut u8, len: usize) {
     unsafe { drop(Vec::from_raw_parts(ptr, len, len)) };
 }
 
+/// Bytes-in / bytes-out export: composites [rects_count] rectangles over a PNG/JPEG image and
+/// returns the result as a JPEG byte buffer owned by Rust.
+///
+/// Returns a [ByteBuffer] with `data == null` on panic (catch_unwind boundary).
+/// Caller must free the returned buffer with [free_bytes].
+///
+/// # Safety
+///
+/// `img_ptr` must point to `img_len` valid bytes of image data.
+/// `rects_ptr` must point to `rects_count` valid `FfiRectElement` values (or be null when
+/// `rects_count == 0`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn export_image(
+    img_ptr: *const u8,
+    img_len: usize,
+    rects_ptr: *const FfiRectElement,
+    rects_count: usize,
+    image_quality: u8,
+) -> ByteBuffer {
+    let img_bytes = unsafe { slice::from_raw_parts(img_ptr, img_len) };
+    // Handle empty case explicitly — `slice::from_raw_parts` requires non-null even for len == 0.
+    let rects: &[FfiRectElement] = if rects_count == 0 {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(rects_ptr, rects_count) }
+    };
+    // Panicking across an FFI boundary is undefined behavior.
+    match std::panic::catch_unwind(|| render_jpeg_with_rects(img_bytes, rects, image_quality)) {
+        Ok(bytes) => {
+            // into_boxed_slice shrinks capacity to == len so free_bytes can reconstruct safely.
+            let boxed = bytes.into_boxed_slice();
+            let length = boxed.len();
+            ByteBuffer { data: Box::into_raw(boxed) as *mut u8, length }
+        }
+        Err(_) => ByteBuffer { data: std::ptr::null_mut(), length: 0 },
+    }
+}
+
+/// Free a Rust-allocated byte buffer (returned by [export_image]). Null-safe.
+///
+/// `isLeaf: true` — never calls back into Dart, so the Dart VM can skip the safepoint preamble.
+///
+/// # Safety
+///
+/// `ptr` must have been returned by `export_image` (and not yet freed); `len` must match.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn free_bytes(ptr: *mut u8, len: usize) {
+    if ptr.is_null() {
+        return;
+    }
+    // SAFETY: ptr came from export_image → into_boxed_slice → Box::into_raw; capacity == len.
+    unsafe { drop(Vec::from_raw_parts(ptr, len, len)) };
+}
+
 /// Echo an FfiElement pointer back unchanged. Used by layout round-trip tests to verify the
 /// Dart-side struct layout matches the Rust-side layout without any data transformation.
 ///
@@ -174,6 +228,24 @@ fn element_text<'b>(p: &TextPayload, text_buffer: &'b [u8]) -> Result<&'b str, (
         return Err(());
     }
     std::str::from_utf8(&text_buffer[start..end]).map_err(|_| ())
+}
+
+fn render_jpeg_with_rects(img_bytes: &[u8], rects: &[FfiRectElement], image_quality: u8) -> Vec<u8> {
+    let img = image::load_from_memory(img_bytes)
+        .expect("failed to decode image")
+        .into_rgba8();
+    // One pixmap conversion pair for all rects — cheaper than per-rect round-trips.
+    let mut pixmap = canvas::to_pixmap(&img);
+    for r in rects {
+        draw_rect_on_pixmap(&mut pixmap, r.x, r.y, r.width, r.height, &r.into());
+    }
+    let img = canvas::from_pixmap(&pixmap);
+    let rgb_img = image::DynamicImage::ImageRgba8(img).into_rgb8();
+    let mut buf = std::io::Cursor::new(Vec::new());
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, image_quality)
+        .encode_image(&rgb_img)
+        .unwrap();
+    buf.into_inner()
 }
 
 enum Surface {

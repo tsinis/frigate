@@ -14,6 +14,7 @@ extension DrawElementExtension on DrawElement {
   Color get uiOutlineColor {
     final element = this;
 
+    // ignore: prefer-switch-with-sealed-classes, it's TODO.
     return .new(element is RectElement ? element.outlineColor.argb : FfiColor.black.argb);
   }
 }
