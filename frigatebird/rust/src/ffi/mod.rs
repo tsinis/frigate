@@ -70,7 +70,13 @@ pub unsafe fn write_panic_to_arena(arena: *mut FfiArena, msg: &str) -> FfiError 
 /// Writes a custom error message into the arena's error buffer.
 ///
 /// If `arena` is null, or the arena has no error buffer, returns a bare `FfiError` with no
-/// message. The function checks for null before dereferencing, so passing a null arena is safe.
+/// message.
+///
+/// # Safety
+///
+/// If `arena` is non-null, it must be a valid, aligned, dereferenceable `*mut FfiArena` for
+/// the duration of the call. A null pointer is explicitly allowed and handled safely (no-op
+/// message write, bare error returned).
 // The raw pointer dereference is guarded by the `is_null()` check above; all callers are
 // `unsafe extern "C"` entry points that guarantee arena validity.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

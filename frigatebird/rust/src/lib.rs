@@ -177,21 +177,25 @@ ffi_export! {
         let font_bytes_holder;
         let font: Option<ab_glyph::FontRef<'_>> = if needs_font {
             if font_path_ptr.is_null() {
-                return Err(write_error_to_arena(arena, FfiErrorCode::InvalidArg, "Missing font path"));
+                // SAFETY: arena is non-null (checked above in draw_elements body).
+                return Err(unsafe { write_error_to_arena(arena, FfiErrorCode::InvalidArg, "Missing font path") });
             }
             let font_path = unsafe { c_str_to_str(font_path_ptr, arena)? };
             font_bytes_holder = io::read_font(Path::new(font_path))
-                .map_err(|_| write_error_to_arena(arena, FfiErrorCode::Io, "Failed to read font"))?;
+                // SAFETY: arena is non-null.
+                .map_err(|_| unsafe { write_error_to_arena(arena, FfiErrorCode::Io, "Failed to read font") })?;
             Some(
                 ab_glyph::FontRef::try_from_slice(&font_bytes_holder)
-                    .map_err(|_| write_error_to_arena(arena, FfiErrorCode::Font, "Failed to parse font"))?,
+                    // SAFETY: arena is non-null.
+                    .map_err(|_| unsafe { write_error_to_arena(arena, FfiErrorCode::Font, "Failed to parse font") })?,
             )
         } else {
             None
         };
 
         let img = io::read_image(Path::new(image_path))
-            .map_err(|_| write_error_to_arena(arena, FfiErrorCode::Decode, "Failed to decode image"))?
+            // SAFETY: arena is non-null.
+            .map_err(|_| unsafe { write_error_to_arena(arena, FfiErrorCode::Decode, "Failed to decode image") })?
             .into_rgba8();
 
         let mut surface = Surface::Rgba(img);

@@ -193,16 +193,21 @@ fn export_image_with_rects_changes_output() {
 }
 
 unsafe fn export_bytes(img: &[u8], rects: &[FfiRectElement], quality: u8, ctx: &str) -> Vec<u8> {
-    let buf = frigate::export_image(
-        img.as_ptr(),
-        img.len(),
-        rects.as_ptr(),
-        rects.len(),
-        quality,
-    );
+    // SAFETY: img and rects are valid slices for the call duration; quality is a plain u8.
+    let buf = unsafe {
+        frigate::export_image(
+            img.as_ptr(),
+            img.len(),
+            rects.as_ptr(),
+            rects.len(),
+            quality,
+        )
+    };
     assert!(!buf.data.is_null(), "{ctx}: returned null (panic)");
-    let bytes = std::slice::from_raw_parts(buf.data, buf.length).to_vec();
-    frigate::free_bytes(buf.data, buf.length);
+    // SAFETY: buf.data was returned by export_image and not yet freed; buf.length is correct.
+    let bytes = unsafe { std::slice::from_raw_parts(buf.data, buf.length) }.to_vec();
+    // SAFETY: buf.data ownership transferred; matching free for the allocation above.
+    unsafe { frigate::free_bytes(buf.data, buf.length) };
     bytes
 }
 
