@@ -26,7 +26,7 @@ enum FfiErrorCode {
   utf8,
 
   /// A wire code outside the known range — typically a version skew where a newer Rust binary
-  /// emits a discriminant this Dart build doesn't recognise. Kept separate from [panic] so
+  /// emits a discriminant this Dart build doesn't recognize. Kept separate from [panic] so
   /// telemetry can distinguish a real Rust panic from a version-skew mismatch.
   unknown;
 
