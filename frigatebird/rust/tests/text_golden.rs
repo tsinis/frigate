@@ -192,7 +192,10 @@ fn render_image_end_to_end_writes_jpeg() {
             &mut arena,
         )
     };
-    assert!(matches!(result, frigate::FfiResultUnit::Ok(())), "draw_elements returned error");
+    assert!(
+        matches!(result, frigate::FfiResultUnit::Ok(())),
+        "draw_elements returned error"
+    );
     assert!(out.exists(), "expected output file {out:?} to exist");
 
     let decoded = image::open(&out).expect("output should decode as a valid image");
@@ -236,7 +239,11 @@ fn render_image_rejects_text_without_font() {
     let frigate::FfiResultUnit::Err(e) = result else {
         panic!("expected error, got Ok");
     };
-    assert_eq!(e.code, frigate::FfiErrorCode::InvalidArg as u8, "expected InvalidArg for missing font");
+    assert_eq!(
+        e.code,
+        frigate::FfiErrorCode::InvalidArg as u8,
+        "expected InvalidArg for missing font"
+    );
 }
 
 #[test]
@@ -261,7 +268,10 @@ fn render_image_rejects_null_image_path() {
             &mut arena,
         )
     };
-    assert!(matches!(result, frigate::FfiResultUnit::Err(_)), "expected error for null path");
+    assert!(
+        matches!(result, frigate::FfiResultUnit::Err(_)),
+        "expected error for null path"
+    );
 }
 
 #[test]
@@ -295,7 +305,11 @@ fn render_image_rejects_nonexistent_source_image() {
     let frigate::FfiResultUnit::Err(e) = result else {
         panic!("expected error, got Ok");
     };
-    assert_eq!(e.code, frigate::FfiErrorCode::Decode as u8, "expected Decode error for missing image");
+    assert_eq!(
+        e.code,
+        frigate::FfiErrorCode::Decode as u8,
+        "expected Decode error for missing image"
+    );
 }
 
 #[test]
@@ -329,7 +343,11 @@ fn render_image_rejects_unsupported_output_extension() {
     let frigate::FfiResultUnit::Err(e) = result else {
         panic!("expected error, got Ok");
     };
-    assert_eq!(e.code, frigate::FfiErrorCode::Encode as u8, "expected Encode error for bad extension");
+    assert_eq!(
+        e.code,
+        frigate::FfiErrorCode::Encode as u8,
+        "expected Encode error for bad extension"
+    );
 }
 
 #[test]
@@ -377,7 +395,10 @@ fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
             &mut arena,
         )
     };
-    assert!(matches!(result, frigate::FfiResultUnit::Ok(())), "mixed rect+text+rect run must succeed");
+    assert!(
+        matches!(result, frigate::FfiResultUnit::Ok(())),
+        "mixed rect+text+rect run must succeed"
+    );
     assert!(out.exists());
     let decoded = image::open(&out).expect("output should decode");
     assert!(decoded.width() > 0 && decoded.height() > 0);

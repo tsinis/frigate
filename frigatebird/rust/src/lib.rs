@@ -87,9 +87,15 @@ pub unsafe extern "C" fn export_image(
             // into_boxed_slice shrinks capacity to == len so free_bytes can reconstruct safely.
             let boxed = bytes.into_boxed_slice();
             let length = boxed.len();
-            ByteBuffer { data: Box::into_raw(boxed) as *mut u8, length }
+            ByteBuffer {
+                data: Box::into_raw(boxed) as *mut u8,
+                length,
+            }
         }
-        Err(_) => ByteBuffer { data: std::ptr::null_mut(), length: 0 },
+        Err(_) => ByteBuffer {
+            data: std::ptr::null_mut(),
+            length: 0,
+        },
     }
 }
 
@@ -230,7 +236,11 @@ fn element_text<'b>(p: &TextPayload, text_buffer: &'b [u8]) -> Result<&'b str, (
     std::str::from_utf8(&text_buffer[start..end]).map_err(|_| ())
 }
 
-fn render_jpeg_with_rects(img_bytes: &[u8], rects: &[FfiRectElement], image_quality: u8) -> Vec<u8> {
+fn render_jpeg_with_rects(
+    img_bytes: &[u8],
+    rects: &[FfiRectElement],
+    image_quality: u8,
+) -> Vec<u8> {
     let img = image::load_from_memory(img_bytes)
         .expect("failed to decode image")
         .into_rgba8();
@@ -392,7 +402,10 @@ fn draw_rect_on_pixmap(
     if style.outline_thickness > 0 && argb_alpha(style.outline_color_argb) > 0 {
         let [r, g, b, a] = argb_unpack(style.outline_color_argb);
         paint.set_color_rgba8(r, g, b, a);
-        let stroke = Stroke { width: style.outline_thickness.min(width.min(height) as u32) as f32, ..Stroke::default() };
+        let stroke = Stroke {
+            width: style.outline_thickness.min(width.min(height) as u32) as f32,
+            ..Stroke::default()
+        };
 
         if style.corner_radius_px > 0 {
             let path = build_rect_path(x, y, width, height, style.corner_radius_px);
@@ -478,7 +491,15 @@ mod tests {
 
     #[test]
     fn render_with_outline_rect_returns_valid_jpeg() {
-        let rect = FfiRectElement { x: 0.0, y: 0.0, width: 4.0, height: 4.0, outline_thickness: 1, outline_color_argb: 0xFF_00_FF_00, shape_param: 0 };
+        let rect = FfiRectElement {
+            x: 0.0,
+            y: 0.0,
+            width: 4.0,
+            height: 4.0,
+            outline_thickness: 1,
+            outline_color_argb: 0xFF_00_FF_00,
+            shape_param: 0,
+        };
         let jpeg = render_jpeg_with_rects(&tiny_red_png(), &[rect], 90);
         assert_eq!(&jpeg[..2], &[0xFF, 0xD8]);
     }
@@ -487,8 +508,19 @@ mod tests {
     fn render_with_zero_thickness_differs_from_with_outline() {
         // A visible outline must change the JPEG bytes versus no outline (thickness=0).
         let png = tiny_red_png();
-        let no_outline = FfiRectElement { x: 0.0, y: 0.0, width: 4.0, height: 4.0, outline_thickness: 0, outline_color_argb: 0xFF_00_FF_00, shape_param: 0 };
-        let with_outline = FfiRectElement { outline_thickness: 2, ..no_outline };
+        let no_outline = FfiRectElement {
+            x: 0.0,
+            y: 0.0,
+            width: 4.0,
+            height: 4.0,
+            outline_thickness: 0,
+            outline_color_argb: 0xFF_00_FF_00,
+            shape_param: 0,
+        };
+        let with_outline = FfiRectElement {
+            outline_thickness: 2,
+            ..no_outline
+        };
         let a = render_jpeg_with_rects(&png, &[no_outline], 90);
         let b = render_jpeg_with_rects(&png, &[with_outline], 90);
         assert_ne!(a, b, "visible outline must change the JPEG output");
@@ -499,7 +531,11 @@ mod tests {
         let png = tiny_red_png();
         for q in [0u8, 255] {
             let jpeg = render_jpeg_with_rects(&png, &[], q);
-            assert_eq!(&jpeg[..2], &[0xFF, 0xD8], "quality={q} must yield a valid JPEG");
+            assert_eq!(
+                &jpeg[..2],
+                &[0xFF, 0xD8],
+                "quality={q} must yield a valid JPEG"
+            );
         }
     }
 
@@ -511,4 +547,3 @@ mod tests {
         render_jpeg_with_rects(&[0xDE, 0xAD, 0xBE, 0xEF], &[], 80);
     }
 }
-

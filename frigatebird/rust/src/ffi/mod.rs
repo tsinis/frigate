@@ -50,7 +50,11 @@ pub struct FfiError {
 
 impl FfiError {
     pub fn new(code: FfiErrorCode) -> Self {
-        Self { code: code as u8, _pad: 0, message_len: 0 }
+        Self {
+            code: code as u8,
+            _pad: 0,
+            message_len: 0,
+        }
     }
 }
 
@@ -88,5 +92,9 @@ pub fn write_error_to_arena(arena: *mut FfiArena, code: FfiErrorCode, msg: &str)
         ptr::copy_nonoverlapping(bytes.as_ptr(), arena_ref.error_buf, len);
     }
 
-    FfiError { code: code as u8, _pad: 0, message_len: len as u16 }
+    FfiError {
+        code: code as u8,
+        _pad: 0,
+        message_len: len as u16,
+    }
 }

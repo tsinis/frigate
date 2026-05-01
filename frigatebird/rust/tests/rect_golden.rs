@@ -212,7 +212,7 @@ fn golden_rect_thickness_clamped_to_min_side() {
         0.10 * h,
         0.20 * w,
         0.20 * h,
-        u8::MAX, // vastly exceeds min_side → clamped
+        u8::MAX,    // vastly exceeds min_side → clamped
         0xFF0000FF, // opaque blue
     );
     let img = render_rects(&[rect]);

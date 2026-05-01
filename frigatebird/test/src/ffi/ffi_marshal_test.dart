@@ -152,10 +152,9 @@ void main() {
 
     test('double-free is caught by the tracking allocator', () {
       final allocator = _FailingAllocator(failAfter: 10);
-      final bundle = FfiMarshal.encodeElements(
-        [const TextElement(text: 'hi', x: 0, y: 0)],
-        allocator,
-      );
+      final bundle = FfiMarshal.encodeElements([
+        const TextElement(text: 'hi', x: 0, y: 0),
+      ], allocator);
       allocator.free(bundle.elementsPtr);
       if (bundle.payloadBufferPtr != nullptr) allocator.free(bundle.payloadBufferPtr);
       expect(

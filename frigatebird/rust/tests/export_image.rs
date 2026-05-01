@@ -43,10 +43,21 @@ unsafe fn export_and_free(
     quality: u8,
     context: &str,
 ) -> usize {
-    let rects_ptr = if rects.is_empty() { dangling_rects_ptr() } else { rects.as_ptr() };
-    let buf = unsafe { frigate::export_image(png.as_ptr(), png.len(), rects_ptr, rects.len(), quality) };
-    assert!(!buf.data.is_null(), "{context}: export_image returned null (caught panic)");
-    assert!(buf.length > 0, "{context}: ByteBuffer.length must be > 0 on success");
+    let rects_ptr = if rects.is_empty() {
+        dangling_rects_ptr()
+    } else {
+        rects.as_ptr()
+    };
+    let buf =
+        unsafe { frigate::export_image(png.as_ptr(), png.len(), rects_ptr, rects.len(), quality) };
+    assert!(
+        !buf.data.is_null(),
+        "{context}: export_image returned null (caught panic)"
+    );
+    assert!(
+        buf.length > 0,
+        "{context}: ByteBuffer.length must be > 0 on success"
+    );
     let len = buf.length;
     unsafe { frigate::free_bytes(buf.data, len) };
     len
@@ -147,7 +158,11 @@ fn export_image_output_starts_with_jpeg_magic_bytes() {
     assert!(!buf.data.is_null());
     // JPEG always starts with SOI marker 0xFF 0xD8.
     let first_two = unsafe { std::slice::from_raw_parts(buf.data, 2) };
-    assert_eq!(first_two, &[0xFF, 0xD8], "output must begin with JPEG SOI marker");
+    assert_eq!(
+        first_two,
+        &[0xFF, 0xD8],
+        "output must begin with JPEG SOI marker"
+    );
     unsafe { frigate::free_bytes(buf.data, buf.length) };
 }
 
@@ -183,7 +198,10 @@ fn export_image_returns_null_bytebuffer_on_corrupt_input() {
     // Corrupt bytes that can't be decoded must be caught by catch_unwind, not abort the process.
     let rects_ptr = dangling_rects_ptr();
     let buf = unsafe { frigate::export_image(b"not an image".as_ptr(), 12, rects_ptr, 0, 80) };
-    assert!(buf.data.is_null(), "corrupt input must produce null ByteBuffer, not a valid pointer");
+    assert!(
+        buf.data.is_null(),
+        "corrupt input must produce null ByteBuffer, not a valid pointer"
+    );
     assert_eq!(buf.length, 0);
 }
 
@@ -207,9 +225,33 @@ fn export_image_nan_rect_coords_do_not_panic() {
     // `Rect::from_xywh`, not cause a panic that crosses the FFI boundary.
     let png = tiny_red_png();
     let rects = [
-        FfiRectElement { x: f64::NAN, y: 0.0, width: 4.0, height: 4.0, outline_thickness: 1, outline_color_argb: 0xFF_FF_00_00, shape_param: 0 },
-        FfiRectElement { x: 0.0, y: f64::INFINITY, width: 4.0, height: 4.0, outline_thickness: 1, outline_color_argb: 0xFF_00_FF_00, shape_param: 0 },
-        FfiRectElement { x: 0.0, y: 0.0, width: f64::NEG_INFINITY, height: 4.0, outline_thickness: 1, outline_color_argb: 0xFF_00_00_FF, shape_param: 0 },
+        FfiRectElement {
+            x: f64::NAN,
+            y: 0.0,
+            width: 4.0,
+            height: 4.0,
+            outline_thickness: 1,
+            outline_color_argb: 0xFF_FF_00_00,
+            shape_param: 0,
+        },
+        FfiRectElement {
+            x: 0.0,
+            y: f64::INFINITY,
+            width: 4.0,
+            height: 4.0,
+            outline_thickness: 1,
+            outline_color_argb: 0xFF_00_FF_00,
+            shape_param: 0,
+        },
+        FfiRectElement {
+            x: 0.0,
+            y: 0.0,
+            width: f64::NEG_INFINITY,
+            height: 4.0,
+            outline_thickness: 1,
+            outline_color_argb: 0xFF_00_00_FF,
+            shape_param: 0,
+        },
     ];
     unsafe { export_and_free(&png, &rects, 80, "non-finite rect coords") };
 }
@@ -219,8 +261,12 @@ fn export_image_max_u32_corner_radius_clamps_safely() {
     // u32::MAX corner radius must clamp to min(w, h)/2 without panicking.
     let png = tiny_red_png();
     let rect = FfiRectElement {
-        x: 0.0, y: 0.0, width: 4.0, height: 4.0,
-        outline_thickness: 1, outline_color_argb: 0xFF_FF_FF_FF,
+        x: 0.0,
+        y: 0.0,
+        width: 4.0,
+        height: 4.0,
+        outline_thickness: 1,
+        outline_color_argb: 0xFF_FF_FF_FF,
         shape_param: u32::MAX,
     };
     unsafe { export_and_free(&png, &[rect], 80, "u32::MAX corner radius") };
@@ -231,8 +277,12 @@ fn export_image_max_u8_outline_thickness_clamps_safely() {
     // outline_thickness is u8 (0..=255). The max value must clamp to min(w, h), not panic.
     let png = tiny_red_png();
     let rect = FfiRectElement {
-        x: 0.0, y: 0.0, width: 4.0, height: 4.0,
-        outline_thickness: u8::MAX, outline_color_argb: 0xFF_FF_FF_FF,
+        x: 0.0,
+        y: 0.0,
+        width: 4.0,
+        height: 4.0,
+        outline_thickness: u8::MAX,
+        outline_color_argb: 0xFF_FF_FF_FF,
         shape_param: 0,
     };
     unsafe { export_and_free(&png, &[rect], 80, "u8::MAX outline thickness") };
