@@ -150,6 +150,9 @@ pub unsafe extern "C" fn draw_elements(
     arena: *mut FfiArena,
     out: *mut FfiResultUnit,
 ) {
+    if out.is_null() {
+        return;
+    }
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let inner: Result<_, FfiError> = (|| {
             if arena.is_null() {
@@ -230,12 +233,19 @@ pub unsafe extern "C" fn draw_elements(
                         );
                     }
                     FfiElement::Text(p) => {
-                        let text_slice = element_text(p, text_buffer).map_err(|_| unsafe {
-                            write_error_to_arena(
-                                arena,
-                                FfiErrorCode::Utf8,
-                                "Invalid UTF-8 in text element",
-                            )
+                        let text_slice = element_text(p, text_buffer).map_err(|e| unsafe {
+                            match e {
+                                ElementTextError::Bounds => write_error_to_arena(
+                                    arena,
+                                    FfiErrorCode::InvalidArg,
+                                    "Text element slice out of bounds",
+                                ),
+                                ElementTextError::Utf8 => write_error_to_arena(
+                                    arena,
+                                    FfiErrorCode::Utf8,
+                                    "Invalid UTF-8 in text element",
+                                ),
+                            }
                         })?;
                         if let Some(font_ref) = &font {
                             draw_text_element(surface.as_rgba(), font_ref, p, text_slice);
@@ -283,14 +293,22 @@ unsafe fn c_str_to_str<'a>(ptr: *const c_char, arena: *mut FfiArena) -> Result<&
     })
 }
 
-fn element_text<'b>(p: &TextPayload, text_buffer: &'b [u8]) -> Result<&'b str, ()> {
+#[derive(Debug)]
+enum ElementTextError {
+    /// The slice bounds are out of range — maps to `FfiErrorCode::InvalidArg`.
+    Bounds,
+    /// The bytes are not valid UTF-8 — maps to `FfiErrorCode::Utf8`.
+    Utf8,
+}
+
+fn element_text<'b>(p: &TextPayload, text_buffer: &'b [u8]) -> Result<&'b str, ElementTextError> {
     let start = p.text_offset as usize;
     let len = p.text_len as usize;
-    let end = start.checked_add(len).ok_or(())?;
+    let end = start.checked_add(len).ok_or(ElementTextError::Bounds)?;
     if end > text_buffer.len() {
-        return Err(());
+        return Err(ElementTextError::Bounds);
     }
-    std::str::from_utf8(&text_buffer[start..end]).map_err(|_| ())
+    std::str::from_utf8(&text_buffer[start..end]).map_err(|_| ElementTextError::Utf8)
 }
 
 fn render_jpeg_with_rects(
@@ -605,5 +623,109 @@ mod tests {
         // contract is Result — no panic cross the FFI boundary even with panic=abort.
         let result = render_jpeg_with_rects(&[0xDE, 0xAD, 0xBE, 0xEF], &[], 80);
         assert!(result.is_err(), "corrupt input must return Err, not panic");
+    }
+}
+
+#[cfg(test)]
+mod element_text_tests {
+    use super::*;
+
+    fn make_text_payload(text_offset: u32, text_len: u32) -> TextPayload {
+        TextPayload {
+            x: 0.0,
+            y: 0.0,
+            height: 16.0,
+            rotation_deg: 0,
+            fill_color_argb: 0xFF_00_00_00,
+            blur: 0,
+            _pad: [0; 3],
+            font_id: 0,
+            text_offset,
+            text_len,
+        }
+    }
+
+    #[test]
+    fn happy_path_returns_correct_slice() {
+        let buf = b"hello world";
+        let p = make_text_payload(6, 5); // "world"
+        assert_eq!(element_text(&p, buf).unwrap(), "world");
+    }
+
+    #[test]
+    fn full_buffer_returns_whole_string() {
+        let buf = b"abc";
+        let p = make_text_payload(0, 3);
+        assert_eq!(element_text(&p, buf).unwrap(), "abc");
+    }
+
+    #[test]
+    fn zero_length_returns_empty_str() {
+        let buf = b"ignored";
+        let p = make_text_payload(0, 0);
+        assert_eq!(element_text(&p, buf).unwrap(), "");
+    }
+
+    #[test]
+    fn end_beyond_buffer_returns_bounds_error() {
+        let buf = b"hi";
+        // end = 1 + 5 = 6 > 2 → Bounds
+        let p = make_text_payload(1, 5);
+        assert!(matches!(
+            element_text(&p, buf),
+            Err(ElementTextError::Bounds)
+        ));
+    }
+
+    #[test]
+    fn offset_beyond_buffer_returns_bounds_error() {
+        let buf = b"x";
+        // start = u32::MAX → start alone exceeds buf.len() when added to any len
+        let p = make_text_payload(u32::MAX, 0);
+        assert!(matches!(
+            element_text(&p, buf),
+            Err(ElementTextError::Bounds)
+        ));
+    }
+
+    #[test]
+    fn invalid_utf8_returns_utf8_error() {
+        // 0xFF is never valid in UTF-8.
+        let buf: &[u8] = &[0xFF, 0xFE];
+        let p = make_text_payload(0, 2);
+        assert!(matches!(element_text(&p, buf), Err(ElementTextError::Utf8)));
+    }
+}
+
+#[cfg(test)]
+mod draw_elements_tests {
+    use super::*;
+
+    #[test]
+    fn null_out_is_silent_noop() {
+        // Passing a null `out` pointer must be a silent no-op — no panic, no write to *out.
+        // This guards the defensive null-check added to prevent UB on a misuse path.
+        let mut error_buf = [0u8; 256];
+        let mut arena = FfiArena {
+            text_buf: std::ptr::null(),
+            text_len: 0,
+            image_buf: std::ptr::null(),
+            image_len: 0,
+            error_buf: error_buf.as_mut_ptr(),
+            error_cap: error_buf.len(),
+        };
+        unsafe {
+            draw_elements(
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                90,
+                &mut arena,
+                std::ptr::null_mut(), // out = null → must return immediately
+            );
+        }
+        // Reaching here without panicking confirms the null-out guard works.
     }
 }

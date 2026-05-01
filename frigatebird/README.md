@@ -31,7 +31,7 @@ backend.dispose();
 
 - **Zero Flutter dependency** — uses `Isolate.run()` instead of `compute()`
 - **Zero-copy export** — `NativeImage` stores bytes in `malloc`'d memory; stable `int address` crosses isolate boundaries
-- **Normalized coordinates** — Dart normalizes rects to 0.0-1.0; Rust denormalizes using decoded image dimensions
+- **Pixel coordinates** — coordinates cross the FFI boundary as pixel values end-to-end; no normalization occurs in Dart or Rust
 - **`@pragma('vm:deeply-immutable')`** — element types are shared across isolates by reference, not copied
 
 ## Rust Toolchain Notes
