@@ -1,5 +1,6 @@
 import 'dart:ffi';
 
+import 'export_backend_native.dart' show ExportBackendNative;
 import 'ffi_element.dart';
 import 'ffi_rect_element.dart';
 
@@ -34,7 +35,7 @@ sealed class FfiAbi {
   }
 
   /// Guard that the Dart-side Struct layout for [FfiRectElement] matches the wire contract.
-  /// Called from `createExportBackend`.
+  /// Called from [ExportBackendNative.loadImage].
   static void assertRectElement({int expectedSize = rectElementBytes}) {
     final actualSize = sizeOf<FfiRectElement>();
     assert(
