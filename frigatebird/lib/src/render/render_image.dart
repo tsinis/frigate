@@ -6,7 +6,9 @@ import 'package:ffi/ffi.dart';
 import '../constants/draw_constants.dart';
 import '../ffi/bindings.dart' as ffi;
 import '../ffi/ffi_abi.dart';
-import '../helpers/extensions/ffi/draw_element_list_ffi.dart';
+import '../ffi/ffi_arena.dart';
+import '../ffi/ffi_marshal.dart';
+import '../ffi/ffi_result.dart';
 import '../model/draw_element.dart';
 import 'render_exception.dart';
 import 'render_image_args.dart';
@@ -41,7 +43,7 @@ sealed class RenderImage {
   static Future<void> run({
     required List<DrawElement> elements,
     required String imagePath,
-    required String outputPath,
+    required String outputPath, // TODO: Make nullable/optional.
     String? fontPath,
     int imageQuality = DrawConstants.defaultImageQuality,
   }) {
@@ -79,37 +81,50 @@ sealed class RenderImage {
 
   static void _runWorker(RenderImageArgs args) {
     final RenderImageArgs(:elements, :fontPath, :imagePath, :imageQuality, :outputPath) = args;
-    // Allocations live inside the try so that a partial failure (e.g. OOM on the second string)
-    // still hits the `finally` and releases anything that already succeeded. Each cleanup call
-    // null-guards independently because any of these four allocations can throw.
+    const msgBufCapacity = 256;
     Pointer<Utf8> imageCStr = nullptr;
     Pointer<Utf8> outputCStr = nullptr;
     Pointer<Utf8> fontCStr = nullptr;
+    Pointer<FfiArena> arenaPtr = nullptr;
+    Pointer<Uint8> msgBuf = nullptr;
     FfiElementBundle? bundle;
     try {
       imageCStr = imagePath.toNativeUtf8();
       outputCStr = outputPath.toNativeUtf8();
       fontCStr = fontPath?.toNativeUtf8() ?? nullptr;
-      bundle = elements.toNative(malloc);
-      final (elementsPtr: elementArray, :count, :textBufferPtr, :textBufferLen) = bundle;
-      final code = ffi.render_image(
+      bundle = FfiMarshal.encodeElements(elements, malloc);
+      arenaPtr = malloc<FfiArena>();
+      msgBuf = malloc<Uint8>(msgBufCapacity);
+      arenaPtr.ref
+        ..textBuf = bundle.payloadBufferPtr
+        ..textLen = bundle.payloadBufferLen
+        ..imageBuf = nullptr
+        ..imageLen = 0
+        ..errorBuf = msgBuf
+        ..errorCap = msgBufCapacity;
+
+      final rawResult = ffi.draw_elements(
         imageCStr,
         outputCStr,
         fontCStr,
-        elementArray,
-        count,
-        textBufferPtr,
-        textBufferLen,
+        bundle.elementsPtr,
+        bundle.count,
         imageQuality,
+        arenaPtr,
       );
-      if (code != 0) throw RenderException.fromCode(code);
+
+      if (rawResult.toDomain(msgBuf, msgBufCapacity) case Err(:final code, :final message)) {
+        throw RenderException(code, message);
+      }
     } finally {
       if (imageCStr != nullptr) malloc.free(imageCStr);
       if (outputCStr != nullptr) malloc.free(outputCStr);
       if (fontCStr != nullptr) malloc.free(fontCStr);
+      if (msgBuf != nullptr) malloc.free(msgBuf);
+      if (arenaPtr != nullptr) malloc.free(arenaPtr);
       if (bundle != null) {
         malloc.free(bundle.elementsPtr);
-        if (bundle.textBufferPtr != nullptr) malloc.free(bundle.textBufferPtr);
+        if (bundle.payloadBufferPtr != nullptr) malloc.free(bundle.payloadBufferPtr);
       }
     }
   }

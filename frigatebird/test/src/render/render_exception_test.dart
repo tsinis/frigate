@@ -1,83 +1,76 @@
+import 'package:frigatebird/src/ffi/ffi_error.dart';
 import 'package:frigatebird/src/render/render_exception.dart';
 import 'package:test/test.dart';
 
 void main() {
   group(RenderException, () {
     test(
-      'all subclasses implement Exception',
-      () => expect(const ImageDecodeException(), isA<Exception>(), reason: 'Exception interface'),
+      'implements Exception',
+      () => expect(const RenderException(.decode), isA<Exception>(), reason: 'Exception interface'),
     );
 
-    test('toString labels code + description for every known subclass', () {
-      for (final entry in _subclassDescriptions.entries) {
-        expect(
-          entry.key.toString(),
-          contains(entry.value),
-          reason: 'code ${entry.key.code} toString must mention "${entry.value}"',
-        );
-      }
-    });
+    test(
+      'toString includes description from FfiErrorCode',
+      () => expect(
+        const RenderException(.decode).toString(),
+        contains('image decode failed'),
+        reason: 'description comes from FfiErrorCode.description',
+      ),
+    );
 
-    test('each subclass exposes its own wire code', () {
-      for (final entry in _codeByType.entries) {
-        expect(entry.key.code, entry.value, reason: 'code for ${entry.key.runtimeType}');
-      }
-    });
-  });
+    test(
+      'toString includes Rust message when non-empty',
+      () => expect(
+        const RenderException(.io, 'file not found').toString(),
+        contains('file not found'),
+        reason: 'Rust arena message is included',
+      ),
+    );
 
-  group(RenderException.fromCode, () {
-    test('dispatches known codes to specific subtypes', () {
-      for (final entry in _subtypeByCode.entries) {
-        expect(
-          RenderException.fromCode(entry.key),
-          isA<RenderException>().having((e) => e.runtimeType, 'runtimeType', entry.value),
-          reason: 'code ${entry.key} -> ${entry.value}',
-        );
-      }
+    test('toString omits colon when message is empty', () {
+      final str = const RenderException(.font).toString();
+      expect(str, isNot(contains(': ')), reason: 'no colon when message is empty');
     });
 
     test(
-      'unknown code falls back to UnknownRenderException with the passed code',
+      'code is accessible',
       () => expect(
-        RenderException.fromCode(1234),
-        isA<UnknownRenderException>().having((e) => e.code, 'code', 1234),
+        const RenderException(.utf8).code,
+        FfiErrorCode.utf8,
+        reason: 'code field is preserved',
       ),
     );
   });
+
+  group(FfiErrorCode, () {
+    test(
+      'fromCode(0) returns success',
+      () => expect(FfiErrorCode.fromCode(0), FfiErrorCode.success),
+    );
+
+    test(
+      'fromCode returns panic for out-of-range code',
+      () => expect(
+        FfiErrorCode.fromCode(999),
+        FfiErrorCode.panic,
+        reason: 'unknown code falls back to panic',
+      ),
+    );
+
+    test('fromCode round-trips all known codes', () {
+      for (final code in FfiErrorCode.values) {
+        expect(
+          FfiErrorCode.fromCode(code.index),
+          code,
+          reason: 'fromCode(${code.index}) should return $code',
+        );
+      }
+    });
+
+    test('description is non-empty for every value', () {
+      for (final code in FfiErrorCode.values) {
+        expect(code.description, isNotEmpty, reason: '$code.description must not be empty');
+      }
+    });
+  });
 }
-
-const _subclassDescriptions = <RenderException, String>{
-  ImageDecodeException(): 'image decode failed',
-  FontReadException(): 'font read failed',
-  FontParseException(): 'font parse failed',
-  TextNotUtf8Exception(): 'text not valid UTF-8',
-  PathNotUtf8Exception(): 'path not valid UTF-8',
-  ImageWriteException(): 'image write failed',
-  NullPointerException(): 'null pointer argument',
-  MissingFontException(): 'text element present',
-  RustPanicException(): 'Rust panic',
-};
-
-const _codeByType = <RenderException, int>{
-  ImageDecodeException(): 1,
-  FontReadException(): 2,
-  FontParseException(): 3,
-  TextNotUtf8Exception(): 4,
-  PathNotUtf8Exception(): 5,
-  ImageWriteException(): 6,
-  NullPointerException(): 7,
-  MissingFontException(): 8,
-  RustPanicException(): 99,
-};
-
-const _subtypeByCode = <int, Type>{
-  1: ImageDecodeException,
-  2: FontReadException,
-  3: FontParseException,
-  4: TextNotUtf8Exception,
-  5: PathNotUtf8Exception,
-  6: ImageWriteException,
-  7: NullPointerException,
-  8: MissingFontException,
-  99: RustPanicException,
-};

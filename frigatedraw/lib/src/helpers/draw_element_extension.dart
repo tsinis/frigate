@@ -11,5 +11,9 @@ extension DrawElementExtension on DrawElement {
   /// Converts outline color to `dart:ui` [Color] for rendering only.
   @pragma('dart2js:tryInline')
   @pragma('vm:prefer-inline')
-  Color get uiOutlineColor => .new(outlineColor.argb);
+  Color get uiOutlineColor {
+    final element = this;
+
+    return .new(element is RectElement ? element.outlineColor.argb : FfiColor.black.argb);
+  }
 }

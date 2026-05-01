@@ -1,8 +1,11 @@
 import 'dart:ffi';
 
 import 'export_backend_native.dart' show ExportBackendNative;
+import 'ffi_arena.dart';
 import 'ffi_element.dart';
+import 'ffi_error.dart';
 import 'ffi_rect_element.dart';
+import 'ffi_result.dart';
 
 /// Runtime guards that the Dart-side `Struct` layouts for the FFI types match the wire
 /// contract baked into the Rust crate. Cheap — `sizeOf<T>()` specializes to a direct read for
@@ -14,23 +17,53 @@ import 'ffi_rect_element.dart';
 /// (`FfiAbi.` autocompletes both checks together) instead of leaking two unrelated-looking
 /// names into every file that imports `ffi_abi.dart`.
 sealed class FfiAbi {
-  /// Expected byte size of [FfiElement] as defined by the Rust `#[repr(C)]` layout +
-  /// compile-time assertions in `rust/src/ffi_element.rs`. Both sides MUST agree; a mismatch
-  /// means silent data corruption the moment we read back any field.
-  static const elementBytes = 72;
+  /// Expected byte size of [FfiElement] as defined by the Rust `#[repr(C, u8)]` layout.
+  static const elementBytes = 64;
 
-  /// Expected byte size of [FfiRectElement]. Mirrors `rust/src/lib.rs` (4 × f64 + 3 × u32 with
-  /// 8-byte alignment padding).
+  /// Expected byte size of [FfiArena].
+  static const arenaBytes = 48;
+
+  /// Expected byte size of [FfiError].
+  static const errorBytes = 4;
+
+  /// Expected byte size of [FfiResultUnit].
+  static const resultUnitBytes = 6;
+
+  /// Expected byte size of [FfiRectElement].
+  // Both arenaBytes and rectElementBytes equal 48 by coincidence — different structs.
+  // ignore: avoid-duplicate-constant-values
   static const rectElementBytes = 48;
 
   /// Guard that the Dart-side Struct layout for [FfiElement] matches the wire contract.
-  /// Called from every FFI entry point that touches an [FfiElement] array.
   static void assertElement({int expectedSize = elementBytes}) {
     final actualSize = sizeOf<FfiElement>();
     assert(
       actualSize == expectedSize,
-      'FfiElement ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize. '
-      'Struct layout has drifted between sides — all render calls would read garbage.',
+      'FfiElement ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
+    );
+  }
+
+  static void assertArena({int expectedSize = arenaBytes}) {
+    final actualSize = sizeOf<FfiArena>();
+    assert(
+      actualSize == expectedSize,
+      'FfiArena ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
+    );
+  }
+
+  static void assertError({int expectedSize = errorBytes}) {
+    final actualSize = sizeOf<FfiError>();
+    assert(
+      actualSize == expectedSize,
+      'FfiError ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
+    );
+  }
+
+  static void assertResultUnit({int expectedSize = resultUnitBytes}) {
+    final actualSize = sizeOf<FfiResultUnit>();
+    assert(
+      actualSize == expectedSize,
+      'FfiResultUnit ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
     );
   }
 
