@@ -452,3 +452,63 @@ pub fn draw_rect_element(img: &mut image::RgbaImage, e: &FfiElement) {
         *img = canvas::from_pixmap(&pixmap);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tiny_red_png() -> Vec<u8> {
+        use image::{ImageEncoder, RgbaImage};
+        let img = RgbaImage::from_pixel(4, 4, image::Rgba([255, 0, 0, 255]));
+        let mut buf = std::io::Cursor::new(Vec::new());
+        image::codecs::png::PngEncoder::new(&mut buf)
+            .write_image(img.as_raw(), 4, 4, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        buf.into_inner()
+    }
+
+    // ── render_jpeg_with_rects ───────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn render_no_rects_returns_valid_jpeg() {
+        let jpeg = render_jpeg_with_rects(&tiny_red_png(), &[], 80);
+        assert!(jpeg.len() > 2);
+        assert_eq!(&jpeg[..2], &[0xFF, 0xD8], "must start with JPEG SOI marker");
+    }
+
+    #[test]
+    fn render_with_outline_rect_returns_valid_jpeg() {
+        let rect = FfiRectElement { x: 0.0, y: 0.0, width: 4.0, height: 4.0, outline_thickness: 1, outline_color_argb: 0xFF_00_FF_00, shape_param: 0 };
+        let jpeg = render_jpeg_with_rects(&tiny_red_png(), &[rect], 90);
+        assert_eq!(&jpeg[..2], &[0xFF, 0xD8]);
+    }
+
+    #[test]
+    fn render_with_zero_thickness_differs_from_with_outline() {
+        // A visible outline must change the JPEG bytes versus no outline (thickness=0).
+        let png = tiny_red_png();
+        let no_outline = FfiRectElement { x: 0.0, y: 0.0, width: 4.0, height: 4.0, outline_thickness: 0, outline_color_argb: 0xFF_00_FF_00, shape_param: 0 };
+        let with_outline = FfiRectElement { outline_thickness: 2, ..no_outline };
+        let a = render_jpeg_with_rects(&png, &[no_outline], 90);
+        let b = render_jpeg_with_rects(&png, &[with_outline], 90);
+        assert_ne!(a, b, "visible outline must change the JPEG output");
+    }
+
+    #[test]
+    fn render_quality_zero_and_max_both_produce_jpeg() {
+        let png = tiny_red_png();
+        for q in [0u8, 255] {
+            let jpeg = render_jpeg_with_rects(&png, &[], q);
+            assert_eq!(&jpeg[..2], &[0xFF, 0xD8], "quality={q} must yield a valid JPEG");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "failed to decode image")]
+    fn render_corrupt_bytes_panics_inside_helper() {
+        // render_jpeg_with_rects itself is allowed to panic — export_image wraps it in
+        // catch_unwind so the panic never crosses the FFI boundary.
+        render_jpeg_with_rects(&[0xDE, 0xAD, 0xBE, 0xEF], &[], 80);
+    }
+}
+
