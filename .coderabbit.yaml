@@ -91,7 +91,6 @@ reviews:
         - Use `Size` (not `IntPtr`) for buffer lengths — maps to C `size_t` / Rust `usize`.
         - Mark trivial FFI functions with `isLeaf: true` only if they never call back into Dart.
         - No `dart:ffi` or `dart:io` imports in shared (non-conditional-import) files.
-        - Conditional imports pattern: `dart.library.ffi` for native, `dart.library.js_interop` for web.
         - Caller MUST free Rust-allocated buffers via `free_bytes`. Check for null before use.
         - Export runs in `Isolate.run()` — pass `int address` across isolates, not Pointer.
 

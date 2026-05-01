@@ -1,17 +1,21 @@
 {
   "version": "0.2",
   "language": "en",
-  "flagWords": ["teh", "hte"],
+  "flagWords": [
+    "teh",
+    "hte"
+  ],
   "ignorePaths": [
     ".github/**",
     "**/macos/**",
     "**/windows/**",
     "**/linux/**",
-    "**/web/**",
     "**/ios/**",
     "**/android/**"
   ],
-  "ignoreRegExpList": ["\\#[\\w\\-]+"],
+  "ignoreRegExpList": [
+    "\\#[\\w\\-]+"
+  ],
   "dictionaries": [
     "en_US",
     "softwareTerms",

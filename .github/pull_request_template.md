@@ -38,7 +38,6 @@
 - [ ] Tested on iOS
 - [ ] Tested on Linux
 - [ ] Tested on macOS
-- [ ] Tested on Web
 - [ ] Tested on Windows
 - [ ] Unit tests added/updated
 
