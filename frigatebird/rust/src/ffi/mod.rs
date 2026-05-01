@@ -64,7 +64,7 @@ const _: () = assert!(std::mem::size_of::<FfiError>() == 4);
 ///
 /// # Safety `arena` must be a valid pointer to an `FfiArena`.
 pub unsafe fn write_panic_to_arena(arena: *mut FfiArena, msg: &str) -> FfiError {
-    write_error_to_arena(arena, FfiErrorCode::Panic, msg)
+    unsafe { write_error_to_arena(arena, FfiErrorCode::Panic, msg) }
 }
 
 /// Writes a custom error message into the arena's error buffer.
@@ -74,7 +74,11 @@ pub unsafe fn write_panic_to_arena(arena: *mut FfiArena, msg: &str) -> FfiError 
 // The raw pointer dereference is guarded by the `is_null()` check above; all callers are
 // `unsafe extern "C"` entry points that guarantee arena validity.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn write_error_to_arena(arena: *mut FfiArena, code: FfiErrorCode, msg: &str) -> FfiError {
+pub unsafe fn write_error_to_arena(
+    arena: *mut FfiArena,
+    code: FfiErrorCode,
+    msg: &str,
+) -> FfiError {
     if arena.is_null() {
         return FfiError::new(code);
     }

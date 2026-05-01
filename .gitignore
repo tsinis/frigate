@@ -147,5 +147,5 @@ nohup.out
 # Other
 **/example/android/app/.cxx/*
 **/example/benchmarks/*.json
-.agent/audit/*
-tools/*
+.agent/audit/
+tools/

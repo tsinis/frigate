@@ -23,7 +23,7 @@ import 'byte_buffer.dart';
 import 'ffi_arena.dart';
 import 'ffi_element.dart';
 import 'ffi_rect_element.dart';
-import 'ffi_result.dart';
+import 'ffi_result_unit.dart';
 
 /// Round-trips an [FfiElement] through Rust unchanged. Used by layout round-trip tests to verify
 /// that the Dart-side struct layout matches the Rust-side layout without any data transformation.
@@ -59,9 +59,9 @@ external void free_bytes(Pointer<Uint8> ptr, int len);
 ///   - `arena.text_buf` / `arena.text_len` — UTF-8 text sidecar (Dart-owned, read-only by Rust).
 ///   - `arena.error_buf` / `arena.error_cap` — error message buffer (Dart-owned, Rust writes on err).
 ///
-/// Returns [FfiResultUnit]: `tag == 0` on success; `tag == 1` on error with code + message in arena.
+/// Returns [FfiResultUnitStruct]: `tag == 0` on success; `tag == 1` on error with code + message in arena.
 @Native<
-  FfiResultUnit Function(
+  FfiResultUnitStruct Function(
     Pointer<Utf8>,
     Pointer<Utf8>,
     Pointer<Utf8>,
@@ -71,7 +71,7 @@ external void free_bytes(Pointer<Uint8> ptr, int len);
     Pointer<FfiArena>,
   )
 >()
-external FfiResultUnit draw_elements(
+external FfiResultUnitStruct draw_elements(
   Pointer<Utf8> imagePath,
   Pointer<Utf8> outputPath,
   Pointer<Utf8> fontPath,

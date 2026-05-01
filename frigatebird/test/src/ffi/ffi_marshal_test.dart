@@ -28,8 +28,8 @@ void main() {
         final decoded = FfiMarshal.decodeElements(
           echoedPtr,
           bundle.count,
-          bundle.payloadBufferPtr,
-          payloadBufferLen: bundle.payloadBufferLen,
+          bundle.textBufferPtr,
+          payloadBufferLen: bundle.arenaPtr.ref.textLen,
         );
 
         expect(decoded.length, 1);
@@ -46,8 +46,7 @@ void main() {
         expect(result.blur, rect.blur);
         expect(result.cornerRadius, rect.cornerRadius);
       } finally {
-        malloc.free(bundle.elementsPtr);
-        if (bundle.payloadBufferPtr != nullptr) malloc.free(bundle.payloadBufferPtr);
+        bundle.free();
       }
     });
 
@@ -69,8 +68,8 @@ void main() {
         final decoded = FfiMarshal.decodeElements(
           echoedPtr,
           bundle.count,
-          bundle.payloadBufferPtr,
-          payloadBufferLen: bundle.payloadBufferLen,
+          bundle.textBufferPtr,
+          payloadBufferLen: bundle.arenaPtr.ref.textLen,
         );
 
         expect(decoded.length, 1);
@@ -85,8 +84,7 @@ void main() {
         expect(result.blur, text.blur);
         expect(result.fontId, text.fontId);
       } finally {
-        malloc.free(bundle.elementsPtr);
-        if (bundle.payloadBufferPtr != nullptr) malloc.free(bundle.payloadBufferPtr);
+        bundle.free();
       }
     });
 
@@ -104,8 +102,8 @@ void main() {
         final decoded = FfiMarshal.decodeElements(
           echoedPtr,
           bundle.count,
-          bundle.payloadBufferPtr,
-          payloadBufferLen: bundle.payloadBufferLen,
+          bundle.textBufferPtr,
+          payloadBufferLen: bundle.arenaPtr.ref.textLen,
         );
 
         expect(decoded.length, elements.length);
@@ -113,8 +111,7 @@ void main() {
           expect(decoded[i].toString(), item.toString());
         }
       } finally {
-        malloc.free(bundle.elementsPtr);
-        if (bundle.payloadBufferPtr != nullptr) malloc.free(bundle.payloadBufferPtr);
+        bundle.free();
       }
     });
   });
@@ -141,8 +138,7 @@ void main() {
       final inputs = <DrawElement>[const TextElement(text: 'hi', x: 0, y: 0)];
       final bundle = FfiMarshal.encodeElements(inputs, allocator);
       expect(allocator.freedCount, isZero, reason: 'no frees until manual free()');
-      allocator.free(bundle.elementsPtr);
-      if (bundle.payloadBufferPtr != nullptr) allocator.free(bundle.payloadBufferPtr);
+      bundle.free();
       expect(
         allocator.freedCount,
         allocator.succeededAllocations,
@@ -150,18 +146,13 @@ void main() {
       );
     });
 
-    test('double-free is caught by the tracking allocator', () {
+    test('manual free is idempotent (second call is a no-op, not a double-free)', () {
       final allocator = _FailingAllocator(failAfter: 10);
-      final bundle = FfiMarshal.encodeElements([
-        const TextElement(text: 'hi', x: 0, y: 0),
-      ], allocator);
-      allocator.free(bundle.elementsPtr);
-      if (bundle.payloadBufferPtr != nullptr) allocator.free(bundle.payloadBufferPtr);
-      expect(
-        () => allocator.free(bundle.elementsPtr),
-        throwsA(anything),
-        reason: 'double-free throws in our mock',
-      );
+      final bundle = FfiMarshal.encodeElements(
+        [const TextElement(text: 'hi', x: 0, y: 0)],
+        allocator,
+      )..free();
+      expect(bundle.free, returnsNormally, reason: 'double-free must be safe');
     });
   });
 }

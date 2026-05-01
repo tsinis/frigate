@@ -51,7 +51,7 @@ pub struct ByteBuffer {
 /// `Box::into_raw` on a boxed slice of length `len`), or null. Double-free is UB.
 pub unsafe extern "C" fn frigate_free(ptr: *mut u8, len: usize) {
     null_pointer_check!(ptr);
-    // SAFETY: Dart allocated this buffer via Rust `into_boxed_slice` → `Box::into_raw`.
+    // SAFETY: Rust allocated this buffer via into_boxed_slice -> Box::into_raw; capacity == len.
     unsafe { drop(Vec::from_raw_parts(ptr, len, len)) };
 }
 
@@ -74,7 +74,17 @@ pub unsafe extern "C" fn export_image(
     rects_count: usize,
     image_quality: u8,
 ) -> ByteBuffer {
-    let img_bytes = unsafe { slice::from_raw_parts(img_ptr, img_len) };
+    let img_bytes: &[u8] = if img_len == 0 {
+        &[]
+    } else {
+        if img_ptr.is_null() {
+            return ByteBuffer {
+                data: std::ptr::null_mut(),
+                length: 0,
+            };
+        }
+        unsafe { slice::from_raw_parts(img_ptr, img_len) }
+    };
     // Handle empty case explicitly — `slice::from_raw_parts` requires non-null even for len == 0.
     let rects: &[FfiRectElement] = if rects_count == 0 {
         &[]
@@ -138,6 +148,9 @@ ffi_export! {
         image_quality: u8;
         arena: *mut FfiArena,
     ) -> FfiResultUnit {
+        if arena.is_null() {
+            return Err(FfiError::new(FfiErrorCode::InvalidArg));
+        }
         let image_path = unsafe { c_str_to_str(image_path_ptr, arena)? };
         let output_path = unsafe { c_str_to_str(output_path_ptr, arena)? };
 
@@ -201,7 +214,7 @@ ffi_export! {
                 }
                 FfiElement::Text(p) => {
                     let text_slice = element_text(p, text_buffer)
-                        .map_err(|_| write_error_to_arena(arena, FfiErrorCode::Utf8, "Invalid UTF-8 in text element"))?;
+                        .map_err(|_| unsafe { write_error_to_arena(arena, FfiErrorCode::Utf8, "Invalid UTF-8 in text element") })?;
                     if let Some(font_ref) = &font {
                         draw_text_element(surface.as_rgba(), font_ref, p, text_slice);
                     }
@@ -211,7 +224,7 @@ ffi_export! {
 
         let img = surface.into_rgba();
         io::write_image(Path::new(output_path), &img, image_quality)
-            .map_err(|_| write_error_to_arena(arena, FfiErrorCode::Encode, "Failed to encode image"))?;
+            .map_err(|_| unsafe { write_error_to_arena(arena, FfiErrorCode::Encode, "Failed to encode image") })?;
 
         Ok(())
     }
@@ -221,9 +234,9 @@ unsafe fn c_str_to_str<'a>(ptr: *const c_char, arena: *mut FfiArena) -> Result<&
     if ptr.is_null() {
         return Err(FfiError::new(FfiErrorCode::InvalidArg));
     }
-    unsafe { CStr::from_ptr(ptr) }
-        .to_str()
-        .map_err(|_| write_error_to_arena(arena, FfiErrorCode::Utf8, "Invalid UTF-8 in path"))
+    unsafe { CStr::from_ptr(ptr) }.to_str().map_err(|_| unsafe {
+        write_error_to_arena(arena, FfiErrorCode::Utf8, "Invalid UTF-8 in path")
+    })
 }
 
 fn element_text<'b>(p: &TextPayload, text_buffer: &'b [u8]) -> Result<&'b str, ()> {
@@ -319,6 +332,12 @@ fn argb_unpack(argb: u32) -> [u8; 4] {
     ]
 }
 
+#[inline]
+fn argb_to_tiny_color(argb: u32) -> tiny_skia::Color {
+    let [r, g, b, a] = argb_unpack(argb);
+    tiny_skia::Color::from_rgba8(r, g, b, a)
+}
+
 fn argb_to_rgba(argb: u32) -> image::Rgba<u8> {
     image::Rgba(argb_unpack(argb))
 }
@@ -376,75 +395,70 @@ fn draw_rect_on_pixmap(
     if width <= 0.0 || height <= 0.0 || !x.is_finite() || !y.is_finite() {
         return;
     }
+    let Some(rect) = Rect::from_xywh(x as f32, y as f32, width as f32, height as f32) else {
+        return;
+    };
+    let path = build_rect_path(rect, style.corner_radius_px);
+    let anti_alias = style.corner_radius_px > 0;
 
-    let rect = Rect::from_xywh(x as f32, y as f32, width as f32, height as f32);
-    let Some(rect) = rect else { return };
-
-    let mut paint = Paint::default();
     if argb_alpha(style.fill_color_argb) > 0 {
-        let [r, g, b, a] = argb_unpack(style.fill_color_argb);
-        paint.set_color_rgba8(r, g, b, a);
-
-        if style.corner_radius_px > 0 {
-            let path = build_rect_path(x, y, width, height, style.corner_radius_px);
-            pixmap.fill_path(
-                &path,
-                &paint,
-                tiny_skia::FillRule::Winding,
-                Transform::identity(),
-                None,
-            );
-        } else {
-            pixmap.fill_rect(rect, &paint, Transform::identity(), None);
-        }
+        let mut paint = Paint::default();
+        paint.set_color(argb_to_tiny_color(style.fill_color_argb));
+        paint.anti_alias = anti_alias;
+        pixmap.fill_path(
+            &path,
+            &paint,
+            tiny_skia::FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
     }
 
     if style.outline_thickness > 0 && argb_alpha(style.outline_color_argb) > 0 {
-        let [r, g, b, a] = argb_unpack(style.outline_color_argb);
-        paint.set_color_rgba8(r, g, b, a);
-        let stroke = Stroke {
-            width: style.outline_thickness.min(width.min(height) as u32) as f32,
-            ..Stroke::default()
-        };
-
-        if style.corner_radius_px > 0 {
-            let path = build_rect_path(x, y, width, height, style.corner_radius_px);
-            pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
-        } else if let Some(path) = build_sharp_rect_path(x, y, width, height) {
+        let max_stroke = rect.width().min(rect.height());
+        let stroke_width = (style.outline_thickness as f32).min(max_stroke);
+        if stroke_width > 0.0 {
+            let mut paint = Paint::default();
+            paint.set_color(argb_to_tiny_color(style.outline_color_argb));
+            paint.anti_alias = anti_alias;
+            let stroke = Stroke {
+                width: stroke_width,
+                ..Stroke::default()
+            };
             pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
         }
     }
 }
 
-fn build_rect_path(x: f64, y: f64, w: f64, h: f64, r: u32) -> tiny_skia::Path {
-    let (x, y, w, h) = (x as f32, y as f32, w as f32, h as f32);
-    let r = (r as f32).min(w / 2.0).min(h / 2.0);
+fn build_rect_path(rect: Rect, corner_radius_px: u32) -> tiny_skia::Path {
+    if corner_radius_px == 0 {
+        return PathBuilder::from_rect(rect);
+    }
+    let max_r = rect.width().min(rect.height()) * 0.5;
+    let r = (corner_radius_px as f32).min(max_r);
+    if r <= 0.0 {
+        return PathBuilder::from_rect(rect);
+    }
+    const KAPPA: f32 = 0.552_284_8;
+    let c = r * KAPPA;
+
+    let l = rect.left();
+    let t = rect.top();
+    let ri = rect.right();
+    let b = rect.bottom();
 
     let mut pb = PathBuilder::new();
-    pb.move_to(x + r, y);
-    pb.line_to(x + w - r, y);
-    pb.quad_to(x + w, y, x + w, y + r);
-    pb.line_to(x + w, y + h - r);
-    pb.quad_to(x + w, y + h, x + w - r, y + h);
-    pb.line_to(x + r, y + h);
-    pb.quad_to(x, y + h, x, y + h - r);
-    pb.line_to(x, y + r);
-    pb.quad_to(x, y, x + r, y);
+    pb.move_to(l + r, t);
+    pb.line_to(ri - r, t);
+    pb.cubic_to(ri - r + c, t, ri, t + r - c, ri, t + r);
+    pb.line_to(ri, b - r);
+    pb.cubic_to(ri, b - r + c, ri - r + c, b, ri - r, b);
+    pb.line_to(l + r, b);
+    pb.cubic_to(l + r - c, b, l, b - r + c, l, b - r);
+    pb.line_to(l, t + r);
+    pb.cubic_to(l, t + r - c, l + r - c, t, l + r, t);
     pb.close();
     pb.finish().unwrap()
-}
-
-/// Build a plain rectangle path (4 line segments, no rounding).
-/// `tiny_skia` 0.12 removed `Pixmap::stroke_rect`; use `stroke_path` with this helper.
-fn build_sharp_rect_path(x: f64, y: f64, w: f64, h: f64) -> Option<tiny_skia::Path> {
-    let (x, y, w, h) = (x as f32, y as f32, w as f32, h as f32);
-    let mut pb = PathBuilder::new();
-    pb.move_to(x, y);
-    pb.line_to(x + w, y);
-    pb.line_to(x + w, y + h);
-    pb.line_to(x, y + h);
-    pb.close();
-    pb.finish()
 }
 
 fn is_positive_finite(v: f64) -> bool {

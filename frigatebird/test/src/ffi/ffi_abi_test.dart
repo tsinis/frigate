@@ -42,7 +42,7 @@ void main() {
 
   group('FfiAbi.assertResultUnit', () {
     test(
-      'succeeds on the host platform (6 bytes)',
+      'succeeds on the host platform (8 bytes)',
       () => expect(FfiAbi.assertResultUnit, returnsNormally),
     );
 

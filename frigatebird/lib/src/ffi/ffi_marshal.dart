@@ -1,27 +1,60 @@
+// Co-locates the FfiArenaHandle with the marshaller that creates it. The index lookup is O(1) and safe by design.
+// ignore_for_file: prefer-single-declaration-per-file, avoid-enum-values-by-index, prefer-boolean-prefixes
+
 import 'dart:convert' show utf8;
 import 'dart:ffi';
-import 'dart:typed_data' show BytesBuilder;
+import 'dart:typed_data' show BytesBuilder, Uint8List;
 
 import '../model/draw_element.dart';
 import '../model/ffi_color.dart';
+import 'ffi_arena.dart';
 import 'ffi_element.dart';
 import 'ffi_element_type.dart';
 
-/// Pointers to native memory containing a contiguous [FfiElement] array plus a shared UTF-8
-/// text buffer.
-typedef FfiElementBundle = ({
-  int count,
-  Pointer<FfiElement> elementsPtr,
-  int payloadBufferLen,
-  Pointer<Uint8> payloadBufferPtr,
-});
+/// Safe handle for FFI memory spanning a render batch.
+///
+/// Owns the [elementsPtr], the [arenaPtr] (the struct itself), and the variable-length
+/// [textBufferPtr] and [errorBufferPtr] that the arena points to. Exposes an idempotent [free]
+/// method so the caller can guarantee no leaks from `try`/`finally`.
+final class FfiArenaHandle {
+  FfiArenaHandle({
+    required this.allocator,
+    required this.elementsPtr,
+    required this.count,
+    required this.arenaPtr,
+    required this.textBufferPtr,
+    required this.errorBufferPtr,
+  });
+
+  final Allocator allocator;
+  final Pointer<FfiElement> elementsPtr;
+  final int count;
+  final Pointer<FfiArena> arenaPtr;
+  final Pointer<Uint8> textBufferPtr;
+  final Pointer<Uint8> errorBufferPtr;
+
+  bool _freed = false;
+
+  void free() {
+    if (_freed) return;
+    _freed = true;
+    allocator.free(elementsPtr);
+    if (textBufferPtr != nullptr) allocator.free(textBufferPtr);
+    if (errorBufferPtr != nullptr) allocator.free(errorBufferPtr);
+    allocator.free(arenaPtr);
+  }
+}
 
 /// Marshaller to convert between domain [DrawElement]s and raw [FfiElement]s.
 sealed class FfiMarshal {
-  /// Encodes a list of [DrawElement]s into native memory.
+  /// Encodes a list of [DrawElement]s into native memory and builds a ready-to-use [FfiArena].
   ///
-  /// Caller MUST free both `elementsPtr` and `payloadBufferPtr` via `allocator.free`.
-  static FfiElementBundle encodeElements(List<DrawElement> drawElements, Allocator allocator) {
+  /// Caller MUST call [FfiArenaHandle.free] on the returned object to prevent memory leaks.
+  static FfiArenaHandle encodeElements(
+    List<DrawElement> drawElements,
+    Allocator allocator, {
+    int errorCap = 1024,
+  }) {
     final elementsPtr = allocator<FfiElement>(drawElements.length);
     final payloadBytes = BytesBuilder();
 
@@ -33,6 +66,16 @@ sealed class FfiMarshal {
         // ignore: prefer-correct-switch-length
         switch (item) {
           case RectElement():
+            assert(
+              item.outlineThickness >= 0 && item.outlineThickness <= 255,
+              'outlineThickness must be in 0..255',
+            );
+            assert(item.blur >= 0 && item.blur <= 255, 'blur must be in 0..255');
+            assert(
+              item.cornerRadius >= 0 && item.cornerRadius <= 65535,
+              'cornerRadius must be in 0..65535',
+            );
+
             (ref..tag = FfiElementType.rectangle.value).payload.rectangle
               ..x = item.x
               ..y = item.y
@@ -41,11 +84,13 @@ sealed class FfiMarshal {
               ..rotationDeg = item.rotation
               ..fillColorArgb = item.fillColor.argb
               ..outlineColorArgb = item.outlineColor.argb
-              ..outlineThickness = item.outlineThickness
-              ..blur = item.blur
-              ..cornerRadius = item.cornerRadius;
+              ..outlineThickness = item.outlineThickness.clamp(0, 255)
+              ..blur = item.blur.clamp(0, 255)
+              ..cornerRadius = item.cornerRadius.clamp(0, 65535);
 
           case TextElement():
+            assert(item.blur >= 0 && item.blur <= 255, 'blur must be in 0..255');
+
             final encoded = utf8.encode(item.text);
             (ref..tag = FfiElementType.text.value).payload.text
               ..x = item.x
@@ -54,7 +99,7 @@ sealed class FfiMarshal {
               ..height = item.height
               ..rotationDeg = item.rotation
               ..fillColorArgb = item.fillColor.argb
-              ..blur = item.blur
+              ..blur = item.blur.clamp(0, 255)
               ..fontId = item.fontId
               ..textOffset = payloadBytes.length
               ..textLen = encoded.length;
@@ -63,22 +108,50 @@ sealed class FfiMarshal {
       }
 
       final payloadTotal = payloadBytes.length;
-      Pointer<Uint8> payloadBufferPtr = nullptr;
+      Pointer<Uint8> textBufferPtr = nullptr;
       if (payloadTotal > 0) {
-        payloadBufferPtr = allocator<Uint8>(payloadTotal);
+        textBufferPtr = allocator<Uint8>(payloadTotal);
         try {
-          payloadBufferPtr.asTypedList(payloadTotal).setAll(0, payloadBytes.toBytes());
+          textBufferPtr.asTypedList(payloadTotal).setAll(0, payloadBytes.toBytes());
         } on Object {
-          allocator.free(payloadBufferPtr);
+          allocator.free(textBufferPtr);
           rethrow;
         }
       }
 
-      return (
+      Pointer<Uint8> errorBufferPtr = nullptr;
+      if (errorCap > 0) {
+        try {
+          errorBufferPtr = allocator<Uint8>(errorCap);
+        } on Object {
+          if (textBufferPtr != nullptr) allocator.free(textBufferPtr);
+          rethrow;
+        }
+      }
+
+      Pointer<FfiArena> arenaPtr;
+      try {
+        arenaPtr = allocator<FfiArena>();
+        arenaPtr.ref
+          ..textBuf = textBufferPtr
+          ..textLen = payloadTotal
+          ..imageBuf = nullptr
+          ..imageLen = 0
+          ..errorBuf = errorBufferPtr
+          ..errorCap = errorCap;
+      } on Object {
+        if (textBufferPtr != nullptr) allocator.free(textBufferPtr);
+        if (errorBufferPtr != nullptr) allocator.free(errorBufferPtr);
+        rethrow;
+      }
+
+      return FfiArenaHandle(
+        allocator: allocator,
+        arenaPtr: arenaPtr,
         count: drawElements.length,
         elementsPtr: elementsPtr,
-        payloadBufferLen: payloadTotal,
-        payloadBufferPtr: payloadBufferPtr,
+        errorBufferPtr: errorBufferPtr,
+        textBufferPtr: textBufferPtr,
       );
     } on Object {
       allocator.free(elementsPtr);
@@ -95,11 +168,13 @@ sealed class FfiMarshal {
     // ignore: avoid-similar-names
     required int payloadBufferLen,
   }) {
-    final textBytes = payloadBufferPtr.asTypedList(payloadBufferLen);
+    final textBytes = payloadBufferPtr == nullptr
+        ? Uint8List(0)
+        : payloadBufferPtr.asTypedList(payloadBufferLen);
 
     return List.generate(count, (i) {
       final element = (elementsPtr + i).ref;
-      final type = FfiElementType.values.firstWhere((candidate) => candidate.value == element.tag);
+      final type = FfiElementType.values[element.tag];
 
       if (type == .rectangle) {
         final rect = element.payload.rectangle;

@@ -1,3 +1,4 @@
+// ignore_for_file: prefer-class-destructuring
 import 'dart:ffi';
 import 'dart:isolate' show Isolate;
 
@@ -6,9 +7,8 @@ import 'package:ffi/ffi.dart';
 import '../constants/draw_constants.dart';
 import '../ffi/bindings.dart' as ffi;
 import '../ffi/ffi_abi.dart';
-import '../ffi/ffi_arena.dart';
 import '../ffi/ffi_marshal.dart';
-import '../ffi/ffi_result.dart';
+import '../ffi/ffi_result_unit.dart';
 import '../model/draw_element.dart';
 import 'render_exception.dart';
 import 'render_image_args.dart';
@@ -81,51 +81,37 @@ sealed class RenderImage {
 
   static void _runWorker(RenderImageArgs args) {
     final RenderImageArgs(:elements, :fontPath, :imagePath, :imageQuality, :outputPath) = args;
-    const msgBufCapacity = 256;
     Pointer<Utf8> imageCStr = nullptr;
     Pointer<Utf8> outputCStr = nullptr;
     Pointer<Utf8> fontCStr = nullptr;
-    Pointer<FfiArena> arenaPtr = nullptr;
-    Pointer<Uint8> msgBuf = nullptr;
-    FfiElementBundle? bundle;
+    FfiArenaHandle? handle;
     try {
       imageCStr = imagePath.toNativeUtf8();
       outputCStr = outputPath.toNativeUtf8();
       fontCStr = fontPath?.toNativeUtf8() ?? nullptr;
-      bundle = FfiMarshal.encodeElements(elements, malloc);
-      arenaPtr = malloc<FfiArena>();
-      msgBuf = malloc<Uint8>(msgBufCapacity);
-      arenaPtr.ref
-        ..textBuf = bundle.payloadBufferPtr
-        ..textLen = bundle.payloadBufferLen
-        ..imageBuf = nullptr
-        ..imageLen = 0
-        ..errorBuf = msgBuf
-        ..errorCap = msgBufCapacity;
+      handle = FfiMarshal.encodeElements(elements, malloc);
 
+      // Handle properties are not all unpacked at once because they are used sequentially, and
+      // some are nullable. Destructuring them all upfront would be less readable.
       final rawResult = ffi.draw_elements(
         imageCStr,
         outputCStr,
         fontCStr,
-        bundle.elementsPtr,
-        bundle.count,
+        handle.elementsPtr,
+        handle.count,
         imageQuality,
-        arenaPtr,
+        handle.arenaPtr,
       );
 
-      if (rawResult.toDomain(msgBuf, msgBufCapacity) case Err(:final code, :final message)) {
-        throw RenderException(code, message);
+      final domainResult = rawResult.toDomain(handle.errorBufferPtr, handle.arenaPtr.ref.errorCap);
+      if (domainResult is ErrUnit) {
+        throw RenderException(domainResult.code, domainResult.message);
       }
     } finally {
       if (imageCStr != nullptr) malloc.free(imageCStr);
       if (outputCStr != nullptr) malloc.free(outputCStr);
       if (fontCStr != nullptr) malloc.free(fontCStr);
-      if (msgBuf != nullptr) malloc.free(msgBuf);
-      if (arenaPtr != nullptr) malloc.free(arenaPtr);
-      if (bundle != null) {
-        malloc.free(bundle.elementsPtr);
-        if (bundle.payloadBufferPtr != nullptr) malloc.free(bundle.payloadBufferPtr);
-      }
+      handle?.free();
     }
   }
 }

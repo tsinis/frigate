@@ -47,14 +47,17 @@ final class FfiRectElement extends Struct {
 
 extension RectElementFfi on RectElement {
   void writeTo(Pointer<FfiRectElement> pointer) {
+    assert(outlineThickness >= 0 && outlineThickness <= 255, 'outlineThickness must be in 0..255');
+    assert(cornerRadius >= 0 && cornerRadius <= 65535, 'cornerRadius must be in 0..65535');
+
     pointer.ref
       ..x = x
       ..y = y
       ..width = width
       ..height = height
-      ..outlineThickness = outlineThickness
+      ..outlineThickness = outlineThickness.clamp(0, 255)
       ..outlineColorArgb = outlineColor.argb
-      ..shapeParam = cornerRadius;
+      ..shapeParam = cornerRadius.clamp(0, 65535);
   }
 }
 

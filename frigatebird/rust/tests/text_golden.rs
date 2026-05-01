@@ -245,10 +245,11 @@ fn render_image_rejects_text_without_font() {
         "expected InvalidArg for missing font"
     );
 }
-
 #[test]
 fn render_image_rejects_null_image_path() {
-    let mut error_buf = [0u8; 256];
+    let out_path = std::ffi::CString::new("dummy").unwrap();
+    let font_path = std::ffi::CString::new("dummy").unwrap();
+    let mut error_buf = vec![0u8; 256];
     let mut arena = FfiArena {
         text_buf: std::ptr::null(),
         text_len: 0,
@@ -260,14 +261,15 @@ fn render_image_rejects_null_image_path() {
     let result = unsafe {
         frigate::draw_elements(
             std::ptr::null(),
-            std::ptr::null(),
-            std::ptr::null(),
+            out_path.as_ptr(),
+            font_path.as_ptr(),
             std::ptr::NonNull::<FfiElement>::dangling().as_ptr(),
             0,
-            80,
+            100,
             &mut arena,
         )
     };
+
     assert!(
         matches!(result, frigate::FfiResultUnit::Err(_)),
         "expected error for null path"

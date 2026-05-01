@@ -169,9 +169,9 @@ fn export_image_output_starts_with_jpeg_magic_bytes() {
 #[test]
 fn export_image_with_rects_changes_output() {
     let png = tiny_red_png();
-    let no_rects = unsafe { export_and_free(&png, &[], 90, "no rects baseline") };
+    let no_rects = unsafe { export_bytes(&png, &[], 90, "no rects baseline") };
     let with_rect = unsafe {
-        export_and_free(
+        export_bytes(
             &png,
             &[FfiRectElement {
                 x: 0.0,
@@ -186,11 +186,24 @@ fn export_image_with_rects_changes_output() {
             "with green outline rect",
         )
     };
-    // A visible rectangle must change at least one byte of the JPEG output.
-    // (Comparing lengths is a weaker proxy — we use it only as an additional sanity check.)
-    let _ = no_rects;
-    let _ = with_rect;
-    // The real assertion is that neither call panicked (export_and_free asserts non-null).
+    assert_ne!(
+        no_rects, with_rect,
+        "visible rect should perturb the JPEG bytes"
+    );
+}
+
+unsafe fn export_bytes(img: &[u8], rects: &[FfiRectElement], quality: u8, ctx: &str) -> Vec<u8> {
+    let buf = frigate::export_image(
+        img.as_ptr(),
+        img.len(),
+        rects.as_ptr(),
+        rects.len(),
+        quality,
+    );
+    assert!(!buf.data.is_null(), "{ctx}: returned null (panic)");
+    let bytes = std::slice::from_raw_parts(buf.data, buf.length).to_vec();
+    frigate::free_bytes(buf.data, buf.length);
+    bytes
 }
 
 #[test]
