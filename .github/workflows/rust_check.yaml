@@ -49,7 +49,7 @@ jobs:
       - name: 📥 Install cargo-make and tools
         uses: taiki-e/install-action@v2.75.28
         with:
-          tool: cargo-make,nextest,cargo-deny,cargo-audit,cargo-semver-checks,cargo-udeps,cargo-llvm-lines,cargo-bloat,cargo-miri
+          tool: cargo-make,nextest,cargo-deny,cargo-audit,cargo-semver-checks,cargo-udeps,cargo-llvm-lines,cargo-bloat
 
       - name: 📥 Install cargo-llvm-cov
         if: matrix.runner == 'ubuntu-latest'
