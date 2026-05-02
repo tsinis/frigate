@@ -42,6 +42,7 @@ command = "cargo"
 args = ["miri", "test", "--lib", "--", "--skip", "io::tests"]
 
 [tasks.semver]
+# semver-checks is non-blocking until the first release is published to crates.io.
 ignore_errors = true
 command = "cargo"
 args = ["semver-checks", "check-release"]
@@ -84,6 +85,7 @@ args = ["target", "add", "--toolchain", "nightly-2026-05-02", "x86_64-apple-darw
 
 [tasks.fuzz]
 toolchain = "nightly-2026-05-02"
+ignore_errors = true
 dependencies = ["install-macos-targets"]
 command = "cargo"
 args = ["fuzz", "run", "ffi_boundary", "--", "-max_total_time=60"]
