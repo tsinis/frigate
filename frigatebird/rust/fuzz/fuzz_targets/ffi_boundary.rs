@@ -1,22 +1,27 @@
 #![no_main]
 
+use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use std::ptr::NonNull;
 
-fuzz_target!(|data: &[u8]| {
-    // We fuzz the image export boundary with raw bytes
-    if data.len() < 10 { return; }
-    
-    let quality = data[0];
-    let img_bytes = &data[1..];
-    
-    let buf = frigate::export_image(
-        NonNull::new(img_bytes.as_ptr() as *mut u8),
-        img_bytes.len(),
-        None,
-        0,
-        quality
-    );
-    
-    frigate::free_bytes(NonNull::new(buf.data), buf.length);
+#[derive(Arbitrary, Debug)]
+struct FuzzInput {
+    quality: u8,
+    rects: Vec<frigate::FfiRectElement>,
+    img_bytes: Vec<u8>,
+}
+
+fuzz_target!(|input: FuzzInput| {
+    let buf = unsafe {
+        frigate::export_image(
+            input.img_bytes.as_ptr(),
+            input.img_bytes.len(),
+            input.rects.as_ptr(),
+            input.rects.len(),
+            input.quality,
+        )
+    };
+
+    if !buf.data.is_null() {
+        unsafe { frigate::free_bytes(buf.data, buf.length) };
+    }
 });

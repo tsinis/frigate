@@ -11,7 +11,7 @@ use image::{Rgba, RgbaImage};
 
 use frigate::{FfiArena, FfiElement, RectanglePayload, TextPayload};
 
-const TEST_FONT_BYTES: &[u8] = include_bytes!("../test_assets/RobotoMono-VariableFont_wght.ttf");
+const TEST_FONT_BYTES: &[u8] = include_bytes!("../tests/assets/RobotoMono-VariableFont_wght.ttf");
 
 /// Build a temp-file path that's unique per process **and** per call within a process.
 fn unique_tmp(name: &str) -> PathBuf {
@@ -21,7 +21,7 @@ fn unique_tmp(name: &str) -> PathBuf {
 }
 
 fn assets_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_assets")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets")
 }
 
 fn golden_path(name: &str) -> PathBuf {
@@ -163,8 +163,9 @@ fn render_image_end_to_end_writes_jpeg() {
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let result = unsafe {
-        let mut out_ffi = std::mem::MaybeUninit::uninit();
+    let mut out_res = frigate::FfiResultUnit::Ok(());
+
+    unsafe {
         frigate::draw_elements(
             Some(img_path_cs.as_ref()),
             Some(out_path_cs.as_ref()),
@@ -173,12 +174,11 @@ fn render_image_end_to_end_writes_jpeg() {
             elements.len(),
             90,
             &raw mut arena,
-            out_ffi.as_mut_ptr(),
+            &raw mut out_res,
         );
-        out_ffi.assume_init()
     };
     assert!(
-        matches!(result, frigate::FfiResultUnit::Ok(())),
+        matches!(out_res, frigate::FfiResultUnit::Ok(())),
         "draw_elements returned error"
     );
     assert!(out.exists(), "expected output file {out:?} to exist");
@@ -210,8 +210,9 @@ fn render_image_rejects_text_without_font() {
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let result = unsafe {
-        let mut out_ffi = std::mem::MaybeUninit::uninit();
+    let mut out_res = frigate::FfiResultUnit::Ok(());
+
+    unsafe {
         frigate::draw_elements(
             Some(img_path_cs.as_ref()),
             Some(out_path_cs.as_ref()),
@@ -220,11 +221,10 @@ fn render_image_rejects_text_without_font() {
             elements.len(),
             90,
             &raw mut arena,
-            out_ffi.as_mut_ptr(),
+            &raw mut out_res,
         );
-        out_ffi.assume_init()
     };
-    let frigate::FfiResultUnit::Err(e) = result else {
+    let frigate::FfiResultUnit::Err(e) = out_res else {
         panic!("expected error, got Ok");
     };
     assert_eq!(
@@ -249,8 +249,9 @@ fn render_image_rejects_null_image_path() {
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let result = unsafe {
-        let mut out_ffi = std::mem::MaybeUninit::uninit();
+    let mut out_res = frigate::FfiResultUnit::Ok(());
+
+    unsafe {
         frigate::draw_elements(
             None,
             Some(out_path_cs.as_ref()),
@@ -259,13 +260,12 @@ fn render_image_rejects_null_image_path() {
             0,
             100,
             &raw mut arena,
-            out_ffi.as_mut_ptr(),
+            &raw mut out_res,
         );
-        out_ffi.assume_init()
     };
 
     assert!(
-        matches!(result, frigate::FfiResultUnit::Err(_)),
+        matches!(out_res, frigate::FfiResultUnit::Err(_)),
         "expected error for null path"
     );
 }
@@ -287,8 +287,9 @@ fn render_image_rejects_nonexistent_source_image() {
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let result = unsafe {
-        let mut out_ffi = std::mem::MaybeUninit::uninit();
+    let mut out_res = frigate::FfiResultUnit::Ok(());
+
+    unsafe {
         frigate::draw_elements(
             Some(bad_img_cs.as_ref()),
             Some(out_path_cs.as_ref()),
@@ -297,11 +298,10 @@ fn render_image_rejects_nonexistent_source_image() {
             0,
             80,
             &raw mut arena,
-            out_ffi.as_mut_ptr(),
+            &raw mut out_res,
         );
-        out_ffi.assume_init()
     };
-    let frigate::FfiResultUnit::Err(e) = result else {
+    let frigate::FfiResultUnit::Err(e) = out_res else {
         panic!("expected error, got Ok");
     };
     assert_eq!(
@@ -328,8 +328,9 @@ fn render_image_rejects_unsupported_output_extension() {
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let result = unsafe {
-        let mut out_ffi = std::mem::MaybeUninit::uninit();
+    let mut out_res = frigate::FfiResultUnit::Ok(());
+
+    unsafe {
         frigate::draw_elements(
             Some(img_path_cs.as_ref()),
             Some(out_path_cs.as_ref()),
@@ -338,11 +339,10 @@ fn render_image_rejects_unsupported_output_extension() {
             0,
             80,
             &raw mut arena,
-            out_ffi.as_mut_ptr(),
+            &raw mut out_res,
         );
-        out_ffi.assume_init()
     };
-    let frigate::FfiResultUnit::Err(e) = result else {
+    let frigate::FfiResultUnit::Err(e) = out_res else {
         panic!("expected error, got Ok");
     };
     assert_eq!(
@@ -383,8 +383,9 @@ fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let result = unsafe {
-        let mut out_ffi = std::mem::MaybeUninit::uninit();
+    let mut out_res = frigate::FfiResultUnit::Ok(());
+
+    unsafe {
         frigate::draw_elements(
             Some(img_path_cs.as_ref()),
             Some(out_path_cs.as_ref()),
@@ -393,12 +394,11 @@ fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
             elements.len(),
             90,
             &raw mut arena,
-            out_ffi.as_mut_ptr(),
+            &raw mut out_res,
         );
-        out_ffi.assume_init()
     };
     assert!(
-        matches!(result, frigate::FfiResultUnit::Ok(())),
+        matches!(out_res, frigate::FfiResultUnit::Ok(())),
         "mixed rect+text+rect run must succeed"
     );
     assert!(out.exists());

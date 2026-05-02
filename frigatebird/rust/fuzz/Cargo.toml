@@ -9,10 +9,17 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-frigate = { path = ".." }
+frigate = { path = "..", features = ["fuzzing"] }
+arbitrary = { version = "1.4.1", features = ["derive"] }
 
 [[bin]]
 name = "ffi_boundary"
 path = "fuzz_targets/ffi_boundary.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "draw_elements"
+path = "fuzz_targets/draw_elements.rs"
 test = false
 doc = false

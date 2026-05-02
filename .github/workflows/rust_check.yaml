@@ -38,6 +38,7 @@ jobs:
           # Install stable for base tasks (fmt, audit, deny, trust)
           rustup toolchain install stable --profile minimal --component rustfmt
           # Install pinned nightly for dev checks (clippy, test, miri, asan, fuzz, etc.)
+          # Note: Keep this date in sync with frigatebird/rust/Makefile.toml [env] NIGHTLY
           rustup toolchain install nightly-2026-05-02 --profile minimal --component miri --component clippy --component rustfmt
           # Set stable as default
           rustup default stable
@@ -48,7 +49,7 @@ jobs:
       - name: 📥 Install cargo-make and tools
         uses: taiki-e/install-action@v2.75.28
         with:
-          tool: cargo-make,nextest,cargo-deny,cargo-audit,cargo-semver-checks,cargo-udeps,cargo-llvm-lines,cargo-bloat
+          tool: cargo-make,nextest,cargo-deny,cargo-audit,cargo-semver-checks,cargo-udeps,cargo-llvm-lines,cargo-bloat,cargo-miri
 
       - name: 🗃️ Cache Cargo registry
         uses: actions/cache@v5.0.5
@@ -65,7 +66,8 @@ jobs:
         run: cargo fetch
 
       - name: 🛡️ Run Optimization Strict Checks
-        # We skip miri/fuzz/mutants in check-all to stay under timeout.
+        # We skip mutants in check-all in CI to stay under timeout.
+        # miri and fuzz are now part of check-all but gated by Makefile logic.
         run: cargo make check-all
 
       - name: 📊 Bloat report

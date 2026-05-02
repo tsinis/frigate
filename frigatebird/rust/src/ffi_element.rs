@@ -6,6 +6,7 @@ use safer_ffi::prelude::*;
 /// We use `repr(C, u8)` for perfect C ABI compatibility with Dart.
 #[repr(C, u8)]
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub enum FfiElement {
     Rectangle(RectanglePayload) = 0,
     Text(TextPayload) = 1,
@@ -14,6 +15,7 @@ pub enum FfiElement {
 #[derive_ReprC]
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub struct RectanglePayload {
     pub x: f64,
     pub y: f64,
@@ -30,6 +32,7 @@ pub struct RectanglePayload {
 #[derive_ReprC]
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub struct TextPayload {
     pub x: f64,
     pub y: f64,

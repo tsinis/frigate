@@ -33,7 +33,7 @@ import 'ffi_result_unit.dart';
 /// Coordinates in [rectsPtr] are pixel-space (no normalization). Returns a Rust-allocated
 /// [ByteBuffer]; caller must check `data == nullptr` (panic) and free with [free_bytes].
 @Native<ByteBuffer Function(Pointer<Uint8>, Size, Pointer<FfiRectElement>, Size, Uint8)>()
-// TODO: We need to get rid of this method everywhere! Migrate draw_elements.
+// TODO(tsinis): We need to get rid of this method everywhere! Migrate draw_elements.
 external ByteBuffer export_image(
   Pointer<Uint8> imgPtr,
   int imgLen,

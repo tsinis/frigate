@@ -1,22 +1,25 @@
 # Nightly toolchain (pinned) is used ONLY for strict developer checks.
 # End users and release builds use stable Rust.
 
+[env]
+NIGHTLY = "nightly-2026-05-02"
+
 [tasks.fmt]
 command = "cargo"
 args = ["fmt", "--all", "--", "--check"]
 
 [tasks.clippy]
-toolchain = "nightly-2026-05-02"
+toolchain = "${NIGHTLY}"
 command = "cargo"
 args = ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
 
 [tasks.test]
-toolchain = "nightly-2026-05-02"
+toolchain = "${NIGHTLY}"
 command = "cargo"
 args = ["nextest", "run", "--all-features"]
 
 [tasks.golden]
-toolchain = "nightly-2026-05-02"
+toolchain = "${NIGHTLY}"
 command = "cargo"
 args = ["test", "--test", "rect_golden", "--test", "text_golden"]
 
@@ -25,19 +28,13 @@ command = "cargo"
 args = ["deny", "check"]
 
 [tasks.audit]
+# `cargo deny check` already covers advisories; we run audit as a second source of truth.
+# We drop the explicit --ignore list here to keep deny.toml as the single source of truth for ignores.
 command = "cargo"
-args = [
-    "audit",
-    "--ignore", "RUSTSEC-2025-0140",
-    "--ignore", "RUSTSEC-2025-0021",
-    "--ignore", "RUSTSEC-2021-0145",
-    "--ignore", "RUSTSEC-2024-0375",
-    "--ignore", "RUSTSEC-2024-0436",
-    "--ignore", "RUSTSEC-2025-0119",
-]
+args = ["audit"]
 
 [tasks.miri]
-toolchain = "nightly-2026-05-02"
+toolchain = "${NIGHTLY}"
 command = "cargo"
 args = ["miri", "test", "--lib", "--", "--skip", "io::tests"]
 
@@ -48,28 +45,28 @@ command = "cargo"
 args = ["semver-checks", "check-release"]
 
 [tasks.udeps]
-toolchain = "nightly-2026-05-02"
+toolchain = "${NIGHTLY}"
 command = "cargo"
 args = ["udeps", "--all-targets"]
 
 [tasks.mutants]
-toolchain = "nightly-2026-05-02"
+toolchain = "${NIGHTLY}"
 ignore_errors = true
 command = "cargo"
 args = ["mutants"]
 
 [tasks.hack]
-toolchain = "nightly-2026-05-02"
+toolchain = "${NIGHTLY}"
 command = "cargo"
 args = ["hack", "test", "--feature-powerset"]
 
 [tasks.llvm-lines]
-toolchain = "nightly-2026-05-02"
+toolchain = "${NIGHTLY}"
 command = "cargo"
 args = ["llvm-lines", "--release"]
 
 [tasks.expand]
-toolchain = "nightly-2026-05-02"
+toolchain = "${NIGHTLY}"
 command = "cargo"
 args = ["expand"]
 
@@ -80,30 +77,31 @@ args = ["trust"]
 [tasks.install-macos-targets]
 # Ensure target is installed for the specific pinned nightly used for fuzzing.
 # Idempotent and safe to run.
+condition = { platforms = ["macos"] }
 command = "rustup"
-args = ["target", "add", "--toolchain", "nightly-2026-05-02", "x86_64-apple-darwin"]
+args = ["target", "add", "--toolchain", "${NIGHTLY}", "x86_64-apple-darwin"]
 
 [tasks.fuzz]
-toolchain = "nightly-2026-05-02"
-ignore_errors = true
+toolchain = "${NIGHTLY}"
 dependencies = ["install-macos-targets"]
+# We rely on cargo-fuzz being installed via the GitHub Action or manually.
 command = "cargo"
 args = ["fuzz", "run", "ffi_boundary", "--", "-max_total_time=60"]
 
 [tasks.asan]
-toolchain = "nightly-2026-05-02"
+toolchain = "${NIGHTLY}"
 ignore_errors = true
 command = "cargo"
 args = ["test", "--all-features"]
 env = { RUSTFLAGS = "-Z sanitizer=address" }
 
 [tasks.call-stack]
-toolchain = "nightly-2026-05-02"
+toolchain = "${NIGHTLY}"
 command = "cargo"
 args = ["call-stack"]
 
 [tasks.bloat]
-toolchain = "nightly-2026-05-02"
+toolchain = "${NIGHTLY}"
 command = "cargo"
 args = ["bloat", "--release", "--crates"]
 
@@ -121,7 +119,6 @@ dependencies = [
     "trust",
     "asan",
     "miri",
-    "install-macos-targets",
     "fuzz",
     "bloat"
 ]

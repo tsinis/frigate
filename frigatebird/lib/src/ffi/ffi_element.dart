@@ -82,7 +82,7 @@ final class TextPayload extends Struct {
 final class FfiPayload extends Union {
   external RectanglePayload rectangle;
   external TextPayload text;
-  // TODO: We need to introduce OvalPayload and oval shape type! So,
+  // TODO(tsinis): We need to introduce OvalPayload and oval shape type! So,
   // users can draw ovals too!
 }
 

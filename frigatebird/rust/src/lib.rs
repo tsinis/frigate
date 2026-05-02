@@ -3,7 +3,6 @@
 use safer_ffi::prelude::*;
 
 use std::path::Path;
-use std::ptr::NonNull;
 use std::slice;
 
 use tiny_skia::{Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
@@ -29,6 +28,7 @@ const _: () = assert!(std::mem::size_of::<FfiResultCount>() == 8);
 #[derive_ReprC]
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub struct FfiRectElement {
     pub x: f64,
     pub y: f64,
@@ -44,18 +44,6 @@ pub struct FfiRectElement {
 
 const _: () = assert!(std::mem::size_of::<FfiRectElement>() == 48);
 
-impl From<&FfiRectElement> for RectStyle {
-    fn from(r: &FfiRectElement) -> Self {
-        Self {
-            outline_thickness: r.outline_thickness,
-            outline_color_argb: r.outline_color_argb,
-            // `export_image` is an outline-only path — fill is always transparent.
-            fill_color_argb: 0,
-            corner_radius_px: r.shape_param,
-        }
-    }
-}
-
 #[derive_ReprC]
 #[repr(C)]
 pub struct ByteBuffer {
@@ -63,10 +51,10 @@ pub struct ByteBuffer {
     pub length: usize,
 }
 
-/// Bytes-in / bytes-out export: composites [rects_count] rectangles over a PNG/JPEG image and
+/// Bytes-in / bytes-out export: composites [`rects_count`] rectangles over a PNG/JPEG image and
 /// returns the result as a JPEG byte buffer owned by Rust.
 ///
-/// Returns a [`ByteBuffer`] with `data == null` on panic (`catch_unwind` boundary).
+/// Returns a [`ByteBuffer`] with `data == null` on error or panic (`catch_unwind` boundary).
 /// Caller must free the returned buffer with [`free_bytes`].
 ///
 /// # Safety
@@ -74,51 +62,42 @@ pub struct ByteBuffer {
 /// `img_ptr` must point to `img_len` valid bytes of image data.
 /// `rects_ptr` must point to `rects_count` valid `FfiRectElement` values (or be null when
 /// `rects_count == 0`).
-#[ffi_export]
-pub fn export_image(
-    img_ptr: Option<NonNull<u8>>,
+#[expect(unsafe_code, reason = "FFI entry point")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn export_image(
+    img_ptr: *const u8,
     img_len: usize,
-    rects_ptr: Option<NonNull<FfiRectElement>>,
+    rects_ptr: *const FfiRectElement,
     rects_count: usize,
     image_quality: u8,
 ) -> ByteBuffer {
+    // Establishing the safe boundary immediately.
     let img_bytes: &[u8] = if img_len == 0 {
         &[]
     } else {
-        match img_ptr {
-            None => {
-                return ByteBuffer {
-                    data: std::ptr::null_mut(),
-                    length: 0,
-                };
-            }
-            #[expect(
-                unsafe_code,
-                reason = "FFI pointer dereference. The caller must guarantee `img_ptr` is valid for `img_len`."
-            )]
-            // SAFETY: FFI pointer dereference. The caller must guarantee `img_ptr` is valid for `img_len`.
-            Some(ptr) => unsafe { slice::from_raw_parts(ptr.as_ptr(), img_len) },
+        if img_ptr.is_null() {
+            return ByteBuffer {
+                data: std::ptr::null_mut(),
+                length: 0,
+            };
         }
+        // SAFETY: The caller must guarantee `img_ptr` is valid for `img_len`.
+        unsafe { slice::from_raw_parts(img_ptr, img_len) }
     };
-    // Handle empty case explicitly — `slice::from_raw_parts` requires non-null even for len == 0.
+
     let rects: &[FfiRectElement] = if rects_count == 0 {
         &[]
     } else {
-        match rects_ptr {
-            None => {
-                return ByteBuffer {
-                    data: std::ptr::null_mut(),
-                    length: 0,
-                };
-            }
-            #[expect(
-                unsafe_code,
-                reason = "FFI pointer dereference. The caller must guarantee `rects_ptr` is valid for `rects_count`."
-            )]
-            // SAFETY: FFI pointer dereference. The caller must guarantee `rects_ptr` is valid for `rects_count`.
-            Some(ptr) => unsafe { slice::from_raw_parts(ptr.as_ptr(), rects_count) },
+        if rects_ptr.is_null() {
+            return ByteBuffer {
+                data: std::ptr::null_mut(),
+                length: 0,
+            };
         }
+        // SAFETY: The caller must guarantee `rects_ptr` is valid for `rects_count`.
+        unsafe { slice::from_raw_parts(rects_ptr, rects_count) }
     };
+
     // Panicking across an FFI boundary is undefined behavior; errors return a null ByteBuffer.
     match std::panic::catch_unwind(|| render_jpeg_with_rects(img_bytes, rects, image_quality)) {
         Ok(Ok(bytes)) => {
@@ -126,7 +105,6 @@ pub fn export_image(
             let boxed = bytes.into_boxed_slice();
             let length = boxed.len();
             ByteBuffer {
-                #[allow(unsafe_code)]
                 // SAFETY: Manual memory management for FFI. The caller must free this with `free_bytes`.
                 data: Box::into_raw(boxed).cast::<u8>(),
                 length,
@@ -139,21 +117,17 @@ pub fn export_image(
     }
 }
 
-/// Free a Rust-allocated byte buffer (returned by [export_image]). Null-safe.
-///
-/// `isLeaf: true` — never calls back into Dart, so the Dart VM can skip the safepoint preamble.
+/// Free a Rust-allocated byte buffer (returned by [`export_image`]). Null-safe.
 ///
 /// # Safety
 ///
 /// `ptr` must have been returned by `export_image` (and not yet freed); `len` must match.
-#[ffi_export]
-pub fn free_bytes(ptr: Option<NonNull<u8>>, len: usize) {
-    if let Some(p) = ptr {
+#[expect(unsafe_code, reason = "FFI entry point")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn free_bytes(ptr: *mut u8, len: usize) {
+    if !ptr.is_null() {
         // SAFETY: ptr came from export_image → into_boxed_slice → Box::into_raw; capacity == len.
-        #[expect(unsafe_code, reason = "FFI manual memory management")]
-        unsafe {
-            drop(Vec::from_raw_parts(p.as_ptr(), len, len))
-        };
+        unsafe { drop(Vec::from_raw_parts(ptr, len, len)) };
     }
 }
 
@@ -165,7 +139,7 @@ pub fn free_bytes(ptr: Option<NonNull<u8>>, len: usize) {
 /// `ptr` must be a valid, aligned pointer to a single `FfiElement` that lives at least
 /// as long as the returned pointer is used.
 #[cfg(any(test, feature = "ffi-echo"))]
-#[allow(unsafe_code)]
+#[expect(unsafe_code, reason = "FFI entry point")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_echo_element(ptr: *const FfiElement) -> *const FfiElement {
     ptr
@@ -320,8 +294,8 @@ pub unsafe extern "C" fn draw_elements(
     }));
 
     let ffi_result = match result {
-        Ok(Ok(v)) => FfiResultUnit::Ok(v),
-        Ok(Err(e)) => FfiResultUnit::Err(e),
+        Ok(Ok(v)) => FfiResultUnit::ok(v),
+        Ok(Err(e)) => FfiResultUnit::err(e),
         Err(payload) => {
             let msg = if let Some(s) = payload.downcast_ref::<&'static str>() {
                 (*s).to_string()
@@ -331,7 +305,7 @@ pub unsafe extern "C" fn draw_elements(
                 "panic with non-string payload".to_string()
             };
             let err = write_panic_to_arena(arena_opt, &msg);
-            FfiResultUnit::Err(err)
+            FfiResultUnit::err(err)
         }
     };
     // SAFETY: FFI result write.
@@ -491,6 +465,18 @@ impl From<&RectanglePayload> for RectStyle {
             outline_color_argb: p.outline_color_argb,
             fill_color_argb: p.fill_color_argb,
             corner_radius_px: u32::from(p.corner_radius),
+        }
+    }
+}
+
+impl From<&FfiRectElement> for RectStyle {
+    fn from(r: &FfiRectElement) -> Self {
+        Self {
+            outline_thickness: r.outline_thickness,
+            outline_color_argb: r.outline_color_argb,
+            // `export_image` is an outline-only path — fill is always transparent.
+            fill_color_argb: 0,
+            corner_radius_px: r.shape_param,
         }
     }
 }

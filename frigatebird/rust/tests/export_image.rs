@@ -3,7 +3,6 @@
 #![allow(unsafe_code)]
 
 use frigate::FfiRectElement;
-use std::ptr::NonNull;
 
 /// Happy path helper for image rendering tests.
 ///
@@ -14,19 +13,15 @@ use std::ptr::NonNull;
 /// This function is unsafe because it calls Rust-side FFI entry points with raw pointers.
 unsafe fn export_and_free(png: &[u8], rects: &[FfiRectElement], quality: u8, ctx: &str) -> usize {
     // SAFETY: img and rects are valid slices for the call duration; quality is a plain u8.
-    let rects_ptr = if rects.is_empty() {
-        None
-    } else {
-        Some(NonNull::new(rects.as_ptr() as *mut _).unwrap())
+    let buf = unsafe {
+        frigate::export_image(
+            png.as_ptr(),
+            png.len(),
+            rects.as_ptr(),
+            rects.len(),
+            quality,
+        )
     };
-
-    let buf = frigate::export_image(
-        Some(NonNull::new(png.as_ptr() as *mut _).unwrap()),
-        png.len(),
-        rects_ptr,
-        rects.len(),
-        quality,
-    );
 
     assert!(
         !buf.data.is_null(),
@@ -39,7 +34,7 @@ unsafe fn export_and_free(png: &[u8], rects: &[FfiRectElement], quality: u8, ctx
 
     let len = buf.length;
     // SAFETY: buf.data was just allocated by export_image; length matches.
-    frigate::free_bytes(Some(NonNull::new(buf.data).unwrap()), len);
+    unsafe { frigate::free_bytes(buf.data, len) };
     len
 }
 
@@ -53,21 +48,15 @@ fn export_image_happy_path() {
 #[test]
 fn export_image_returns_valid_jpeg_header() {
     let png = tiny_red_png();
-    let rects_ptr = None;
-    let buf = frigate::export_image(
-        Some(NonNull::new(png.as_ptr() as *mut _).unwrap()),
-        png.len(),
-        rects_ptr,
-        0,
-        80,
-    );
+    let buf = unsafe { frigate::export_image(png.as_ptr(), png.len(), std::ptr::null(), 0, 80) };
 
     // Valid JPEGs start with SOI marker: FF D8.
     assert!(!buf.data.is_null());
+    assert!(buf.length >= 2, "buffer too short for JPEG SOI marker");
     let first_two = unsafe { std::slice::from_raw_parts(buf.data, 2) };
     assert_eq!(first_two, &[0xFF, 0xD8]);
 
-    frigate::free_bytes(Some(NonNull::new(buf.data).unwrap()), buf.length);
+    unsafe { frigate::free_bytes(buf.data, buf.length) };
 }
 
 #[test]
@@ -118,36 +107,27 @@ fn export_image_composites_rects() {
 /// Same as `export_and_free`.
 unsafe fn export_bytes(img: &[u8], rects: &[FfiRectElement], quality: u8, ctx: &str) -> Vec<u8> {
     // SAFETY: img and rects are valid slices for the call duration; quality is a plain u8.
-    let rects_ptr = if rects.is_empty() {
-        None
-    } else {
-        Some(NonNull::new(rects.as_ptr() as *mut _).unwrap())
+    let buf = unsafe {
+        frigate::export_image(
+            img.as_ptr(),
+            img.len(),
+            rects.as_ptr(),
+            rects.len(),
+            quality,
+        )
     };
-    let buf = frigate::export_image(
-        Some(NonNull::new(img.as_ptr() as *mut _).unwrap()),
-        img.len(),
-        rects_ptr,
-        rects.len(),
-        quality,
-    );
 
     assert!(!buf.data.is_null(), "context: {ctx}");
     let bytes = unsafe { std::slice::from_raw_parts(buf.data, buf.length) }.to_vec();
 
-    frigate::free_bytes(Some(NonNull::new(buf.data).unwrap()), buf.length);
+    unsafe { frigate::free_bytes(buf.data, buf.length) };
     bytes
 }
 
 #[test]
 fn export_image_survives_corrupt_input() {
-    let rects_ptr = None;
-    let buf = frigate::export_image(
-        Some(NonNull::new(b"not an image".as_ptr() as *mut _).unwrap()),
-        12,
-        rects_ptr,
-        0,
-        80,
-    );
+    let buf =
+        unsafe { frigate::export_image(b"not an image".as_ptr(), 12, std::ptr::null(), 0, 80) };
 
     // Failed decode should return a null/zero buffer, not panic.
     assert!(buf.data.is_null());
@@ -227,26 +207,19 @@ fn export_image_1x1_source() {
 #[test]
 fn free_bytes_handles_null() {
     // Should be a silent no-op, not a panic.
-    frigate::free_bytes(None, 0);
+    unsafe { frigate::free_bytes(std::ptr::null_mut(), 0) };
 }
 
 #[test]
 fn export_and_free_round_trip() {
     let png = tiny_red_png();
-    let rects_ptr = None;
 
     // Allocate
-    let buf = frigate::export_image(
-        Some(NonNull::new(png.as_ptr() as *mut _).unwrap()),
-        png.len(),
-        rects_ptr,
-        0,
-        80,
-    );
+    let buf = unsafe { frigate::export_image(png.as_ptr(), png.len(), std::ptr::null(), 0, 80) };
     assert!(!buf.data.is_null());
 
     // Free
-    frigate::free_bytes(Some(NonNull::new(buf.data).unwrap()), buf.length);
+    unsafe { frigate::free_bytes(buf.data, buf.length) };
 
     // If we reached here without a Miri failure/segfault, the pointer passed to drop()
     // reconstructed the original Box/Vec correctly.

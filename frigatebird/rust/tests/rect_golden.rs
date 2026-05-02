@@ -9,7 +9,7 @@ use image::RgbaImage;
 use frigate::{FfiElement, RectanglePayload};
 
 fn assets_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_assets")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets")
 }
 
 fn golden_path(name: &str) -> PathBuf {
@@ -21,6 +21,9 @@ fn golden_path(name: &str) -> PathBuf {
 
 fn base_image() -> RgbaImage {
     static CACHE: std::sync::OnceLock<RgbaImage> = std::sync::OnceLock::new();
+    // Cache the base image to avoid re-decoding it for every test case.
+    // Cloning an RgbaImage is a shallow reference-count bump in some libraries,
+    // but in `image` crate it's a full pixel copy — still faster than JPEG decode.
     CACHE
         .get_or_init(|| {
             let path = assets_dir().join("paint.jpg");
@@ -106,6 +109,8 @@ fn render_rects(rects: &[FfiElement]) -> RgbaImage {
 
 fn assert_golden(actual: &RgbaImage, path: &Path) {
     let base = base_image();
+    // Guard against tests that accidentally render nothing — the golden would "pass"
+    // but the test would be a silent no-op.
     assert_ne!(
         actual.as_raw(),
         base.as_raw(),
@@ -211,6 +216,7 @@ fn golden_rect_rounded_pill_radius_at_clamp() {
     let (w, h) = (base.width() as f64, base.height() as f64);
     let rect_w = 0.60 * w;
     let rect_h = 0.20 * h;
+    // corner radius = half of minimum dimension (pill shape)
     let radius = (rect_w.min(rect_h) / 2.0) as u16;
     let rect = make_rect_full(
         0.20 * w,
@@ -240,7 +246,7 @@ fn golden_rect_rounded_radius_clamped_to_min_side() {
         4,
         0xFF_FF_00_00,
         0xFF_FF_FF_00,
-        u16::MAX,
+        u16::MAX, // exceeds bounds -> will be clamped to min(w, h)/2
     );
     let img = render_rects(&[rect]);
     assert_golden(&img, &golden_path("rect_rounded_clamped.png"));
