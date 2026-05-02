@@ -39,8 +39,6 @@ jobs:
           rustup toolchain install stable --profile minimal --component rustfmt
           # Install pinned nightly for dev checks (clippy, test, miri, asan, fuzz, etc.)
           rustup toolchain install nightly-2026-05-02 --profile minimal --component miri --component clippy --component rustfmt
-          # Link nightly-2026-05-02 to 'nightly' so `cargo make` can use `toolchain = "nightly"`
-          rustup toolchain link nightly nightly-2026-05-02
           # Set stable as default
           rustup default stable
 

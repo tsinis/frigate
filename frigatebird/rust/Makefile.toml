@@ -6,17 +6,17 @@ command = "cargo"
 args = ["fmt", "--all", "--", "--check"]
 
 [tasks.clippy]
-toolchain = "nightly"
+toolchain = "nightly-2026-05-02"
 command = "cargo"
 args = ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
 
 [tasks.test]
-toolchain = "nightly"
+toolchain = "nightly-2026-05-02"
 command = "cargo"
 args = ["nextest", "run", "--all-features"]
 
 [tasks.golden]
-toolchain = "nightly"
+toolchain = "nightly-2026-05-02"
 command = "cargo"
 args = ["test", "--test", "rect_golden", "--test", "text_golden"]
 
@@ -37,7 +37,7 @@ args = [
 ]
 
 [tasks.miri]
-toolchain = "nightly"
+toolchain = "nightly-2026-05-02"
 command = "cargo"
 args = ["miri", "test", "--lib", "--", "--skip", "io::tests"]
 
@@ -47,28 +47,28 @@ command = "cargo"
 args = ["semver-checks", "check-release"]
 
 [tasks.udeps]
-toolchain = "nightly"
+toolchain = "nightly-2026-05-02"
 command = "cargo"
 args = ["udeps", "--all-targets"]
 
 [tasks.mutants]
-toolchain = "nightly"
+toolchain = "nightly-2026-05-02"
 ignore_errors = true
 command = "cargo"
 args = ["mutants"]
 
 [tasks.hack]
-toolchain = "nightly"
+toolchain = "nightly-2026-05-02"
 command = "cargo"
 args = ["hack", "test", "--feature-powerset"]
 
 [tasks.llvm-lines]
-toolchain = "nightly"
+toolchain = "nightly-2026-05-02"
 command = "cargo"
 args = ["llvm-lines", "--release"]
 
 [tasks.expand]
-toolchain = "nightly"
+toolchain = "nightly-2026-05-02"
 command = "cargo"
 args = ["expand"]
 
@@ -77,26 +77,26 @@ command = "cargo"
 args = ["trust"]
 
 [tasks.fuzz]
-toolchain = "nightly"
+toolchain = "nightly-2026-05-02"
 ignore_errors = true
 command = "cargo"
 args = ["fuzz", "run", "ffi_boundary", "--", "-max_total_time=60"]
 
 [tasks.asan]
-toolchain = "nightly"
+toolchain = "nightly-2026-05-02"
 ignore_errors = true
 command = "cargo"
 args = ["test", "--all-features"]
 env = { RUSTFLAGS = "-Z sanitizer=address" }
 
 [tasks.call-stack]
-toolchain = "nightly"
+toolchain = "nightly-2026-05-02"
 ignore_errors = true
 command = "cargo"
 args = ["call-stack"]
 
 [tasks.bloat]
-toolchain = "nightly"
+toolchain = "nightly-2026-05-02"
 ignore_errors = true
 command = "cargo"
 args = ["bloat", "--release", "--crates"]
