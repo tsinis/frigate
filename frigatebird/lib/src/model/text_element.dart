@@ -6,7 +6,7 @@ final class TextElement extends DrawElement {
     required this.text,
     required super.x,
     required super.y,
-    super.blur,
+    super.blur, // TODO: No [blur] for the text!
     super.fillColor,
     super.rotation,
     this.fontId = 0,
@@ -18,8 +18,8 @@ final class TextElement extends DrawElement {
   final String text;
   final int fontId;
 
-  // The getter name 'fontSize' matches the public API; the backing field is 'height',
-  // inherited from DrawElement which reuses height for font size in text elements.
+  // The getter name `fontSize` matches the public API; the backing field is `height`,
+  // inherited from [DrawElement] which reuses height for font size in text elements.
   // ignore: match-getter-setter-field-names
   double get fontSize => height;
 

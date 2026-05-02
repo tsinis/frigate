@@ -13,8 +13,8 @@ import 'dart:ffi';
 // ignore_for_file: enum-constants-ordering
 
 /// Error codes returned from Rust. Order **must** match `FfiErrorCode` in the Rust crate.
-// TODO(tsinis): Should be attached to sealed class directly instead of being
-// a separate enum?
+// TODO: Should be handled without enum needed in sealed class directly,
+//  instead of being a separate enum. Aligns with main refactor - returning int.
 enum FfiErrorCode {
   /// No error (Rust `Ok = 0`). Renamed from `ok` — minimum identifier length is 3 characters.
   success,

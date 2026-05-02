@@ -44,7 +44,6 @@ final class FfiResultUnitStruct extends Struct {
   // No explicit _pad here: Rust's implicit padding between the discriminant and the payload
   // union is handled by Dart's automatic C-layout rules. Adding an explicit byte would
   // over-extend the struct to 8 bytes, reading 2 bytes of stack garbage on every call.
-
   FfiResultUnit toDomain(Pointer<Uint8> errorBuf, int errorCap) {
     if (tag == 0) return const OkUnit();
     final error = payload.err;

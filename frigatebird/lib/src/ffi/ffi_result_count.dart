@@ -39,7 +39,6 @@ final class FfiResultCountStruct extends Struct {
   // No explicit _pad here: the 3 padding bytes between the discriminant and the payload union
   // are inserted automatically by Dart's C-layout rules (same as Rust's implicit padding).
   // Adding @Array(3) _pad here would push the struct to 12 bytes — 4 beyond Rust's 8.
-
   external FfiResultCountPayload payload;
 
   FfiResultCount toDomain(Pointer<Uint8> errorBuf, int errorCap) {

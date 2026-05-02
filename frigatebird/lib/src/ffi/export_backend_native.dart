@@ -28,6 +28,7 @@ final class ExportBackendNative {
     _image = NativeImage.fromBytes(bytes, height: height, width: width);
   }
 
+  // TODO: This should be completely changed, renamed to merge() and it should merge foreground (bytes) to background (file/path), no rects involved.
   Future<Uint8List> export({
     required List<RectElement> rects,
     int imageQuality = DrawConstants.defaultImageQuality,

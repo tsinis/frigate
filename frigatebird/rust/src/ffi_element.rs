@@ -1,5 +1,9 @@
 //! Tagged-union element struct passed across the FFI boundary.
 
+// TODO: We need better structure our code here, every shape/element should have dedicated file (similar to dart side) - we will have more shapes in the future - current approach is not scalable.
+
+// TODO: We need to introduce well documented trait(s) for elements (x, y, width, height, etc.) for shared behavior so we can DRY on Rust side while rendering instead of dumb match arms everywhere!
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct RectanglePayload {
@@ -23,7 +27,7 @@ pub struct TextPayload {
     pub height: f64,
     pub rotation_deg: i32,
     pub fill_color_argb: u32,
-    pub blur: u8,
+    pub blur: u8, // TODO: no blur for text, move to pad fof needed!
     pub _pad: [u8; 3],
     pub font_id: u32,
     pub text_offset: u32,
@@ -35,6 +39,7 @@ pub struct TextPayload {
 pub enum FfiElement {
     Rectangle(RectanglePayload) = 0,
     Text(TextPayload) = 1,
+    // TODO: Also oval shape here.
 }
 
 // Layout assertions to freeze the wire contract.
