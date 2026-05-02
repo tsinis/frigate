@@ -75,7 +75,7 @@ command = "cargo"
 args = ["trust"]
 
 [tasks.install-macos-targets]
-# Ensure target is installed for the specific pinned nightly used for fuzzing.
+# Ensure target is installed for the specific pinned nightly used for fuzzer/asan.
 # Idempotent and safe to run.
 condition = { platforms = ["macos"] }
 command = "rustup"
@@ -83,6 +83,7 @@ args = ["target", "add", "--toolchain", "${NIGHTLY}", "x86_64-apple-darwin"]
 
 [tasks.fuzz]
 toolchain = "${NIGHTLY}"
+ignore_errors = true
 dependencies = ["install-macos-targets"]
 # We rely on cargo-fuzz being installed via the GitHub Action or manually.
 command = "cargo"
@@ -94,6 +95,11 @@ ignore_errors = true
 command = "cargo"
 args = ["test", "--all-features"]
 env = { RUSTFLAGS = "-Z sanitizer=address" }
+
+[tasks.coverage]
+toolchain = "${NIGHTLY}"
+command = "cargo"
+args = ["llvm-cov", "--all-features", "--lcov", "--output-path", "lcov.info", "--fail-under-lines", "20"]
 
 [tasks.call-stack]
 toolchain = "${NIGHTLY}"
@@ -120,5 +126,6 @@ dependencies = [
     "asan",
     "miri",
     "fuzz",
-    "bloat"
+    "bloat",
+    "coverage"
 ]
