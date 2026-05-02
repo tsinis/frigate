@@ -2,6 +2,7 @@
 name = "frigate"
 version = "0.0.1"
 edition = "2024"
+license = "Apache-2.0"
 
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
@@ -13,7 +14,13 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 ffi-echo = []
 
 [dependencies]
+# We use 0.2.0-rc1 because it has significantly better ReprC support (especially for enums
+# with payloads) and improved header generation. We accept the extra transitive dependencies
+# (syn, etc.) as they are only used at compile time for the DSL.
+safer-ffi = { version = "0.2.0-rc1", features = ["headers"] }
+
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
+bytemuck = { version = "1.25.0", features = ["derive"] }
 ab_glyph = "0.2.32"
 # Drop tiny-skia's `png-format` feature — we use `image` for PNG/JPEG decode and encode, so
 # pulling tiny-skia's parallel PNG stack would just bloat the binary. Keep `simd` for the
@@ -23,3 +30,24 @@ tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "
 [profile.release]
 lto = "thin"
 strip = "debuginfo"
+
+[lints.rust]
+warnings = "deny"
+unsafe_code = "warn"
+
+[lints.clippy]
+all = "deny"
+# Selected strict lints
+doc_markdown = "deny"
+ptr_as_ptr = "deny"
+borrow_as_ptr = "deny"
+unnested_or_patterns = "deny"
+cast_ptr_alignment = "deny"
+not_unsafe_ptr_arg_deref = "deny"
+
+[dev-dependencies]
+cargo-deny = "0.19.4"
+cargo-semver-checks = "0.47.0"
+
+[package.metadata.cargo-udeps.ignore]
+development = ["cargo-deny", "cargo-semver-checks"]

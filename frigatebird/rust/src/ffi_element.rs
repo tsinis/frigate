@@ -1,9 +1,17 @@
-//! Tagged-union element struct passed across the FFI boundary.
+use safer_ffi::prelude::*;
 
-// TODO: We need better structure our code here, every shape/element should have dedicated file (similar to dart side) - we will have more shapes in the future - current approach is not scalable.
+/// Tagged-union element struct passed across the FFI boundary.
+///
+/// NOTE: `safer_ffi` 0.2.0-rc1 does not yet support `derive_ReprC` for enums with payloads.
+/// We use `repr(C, u8)` for perfect C ABI compatibility with Dart.
+#[repr(C, u8)]
+#[derive(Debug, Clone, Copy)]
+pub enum FfiElement {
+    Rectangle(RectanglePayload) = 0,
+    Text(TextPayload) = 1,
+}
 
-// TODO: We need to introduce well documented trait(s) for elements (x, y, width, height, etc.) for shared behavior so we can DRY on Rust side while rendering instead of dumb match arms everywhere!
-
+#[derive_ReprC]
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct RectanglePayload {
@@ -19,6 +27,7 @@ pub struct RectanglePayload {
     pub corner_radius: u16,
 }
 
+#[derive_ReprC]
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct TextPayload {
@@ -27,23 +36,14 @@ pub struct TextPayload {
     pub height: f64,
     pub rotation_deg: i32,
     pub fill_color_argb: u32,
-    pub blur: u8, // TODO: no blur for text, move to pad fof needed!
+    pub blur: u8,
     pub _pad: [u8; 3],
     pub font_id: u32,
     pub text_offset: u32,
     pub text_len: u32,
 }
 
-#[repr(C, u8)]
-#[derive(Debug, Clone, Copy)]
-pub enum FfiElement {
-    Rectangle(RectanglePayload) = 0,
-    Text(TextPayload) = 1,
-    // TODO: Also oval shape here.
-}
-
 // Layout assertions to freeze the wire contract.
-// We assert size and alignment.
 // Dart side MUST match these exactly using Struct + Union + padding.
 const _: () = assert!(std::mem::size_of::<RectanglePayload>() == 48);
 const _: () = assert!(std::mem::size_of::<TextPayload>() == 48);

@@ -1,0 +1,15 @@
+[package]
+name = "frigate-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[dependencies]
+libfuzzer-sys = "0.4"
+frigate = { path = ".." }
+
+[[bin]]
+name = "ffi_boundary"
+path = "fuzz_targets/ffi_boundary.rs"
+test = false
+doc = false

@@ -1,10 +1,10 @@
 [
   {
     "label": "Preflight Check: Rust",
-    "command": "bash",
+    "command": "cargo make check-all",
     "args": [
-      "-lc",
-      "set -euo pipefail; cd $ZED_WORKTREE_ROOT/frigatebird/rust; cargo fetch; cargo fmt --all -- --check; cargo clippy --all-targets --all-features -- -D warnings; cargo build --all-features; cargo test --all-features"
+      "--manifest-path",
+      "frigatebird/rust/Cargo.toml"
     ],
     "cwd": "$ZED_WORKTREE_ROOT/",
     "use_new_terminal": true,
@@ -12,6 +12,24 @@
       "preflight",
       "rust"
     ]
+  },
+  {
+    "label": "Rust: FFI Fuzzing",
+    "command": "cargo +nightly fuzz run ffi_boundary -- -max_total_time=60",
+    "cwd": "$ZED_WORKTREE_ROOT/frigatebird/rust",
+    "use_new_terminal": true
+  },
+  {
+    "label": "Rust: AddressSanitizer",
+    "command": "RUSTFLAGS='-Z sanitizer=address' cargo +nightly test",
+    "cwd": "$ZED_WORKTREE_ROOT/frigatebird/rust",
+    "use_new_terminal": true
+  },
+  {
+    "label": "Rust: safer_ffi Migration Check",
+    "command": "cargo +nightly expand --lib",
+    "cwd": "$ZED_WORKTREE_ROOT/frigatebird/rust",
+    "use_new_terminal": true
   },
   {
     "label": "Preflight Check: Dart/Flutter",
@@ -33,7 +51,7 @@
     "command": "bash",
     "args": [
       "-lc",
-      "set -euo pipefail; echo '=== Rust ===' && cd $ZED_WORKTREE_ROOT/frigatebird/rust && cargo fetch && cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo build --all-features && cargo test --all-features && echo '✓ Rust checks passed' && echo '=== Dart/Flutter ===' && cd $ZED_WORKTREE_ROOT/frigatebird && dart format --set-exit-if-changed . && dart analyze && dart test && cd $ZED_WORKTREE_ROOT/frigatedraw && dart format --set-exit-if-changed . && flutter analyze && flutter test && dcm analyze . && echo '✓ Dart/Flutter checks passed'"
+      "set -euo pipefail; echo '=== Rust ===' && cd $ZED_WORKTREE_ROOT/frigatebird/rust && cargo fetch && cargo make check-all && echo '✓ Rust checks passed' && echo '=== Dart/Flutter ===' && cd $ZED_WORKTREE_ROOT/frigatebird && dart format --set-exit-if-changed . && dart analyze && dart test && cd $ZED_WORKTREE_ROOT/frigatedraw && dart format --set-exit-if-changed . && flutter analyze && flutter test && dcm analyze . && echo '✓ Dart/Flutter checks passed'"
     ],
     "cwd": "$ZED_WORKTREE_ROOT/",
     "use_new_terminal": true,

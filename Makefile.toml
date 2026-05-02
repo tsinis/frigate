@@ -1,0 +1,31 @@
+# Full strict check pipeline
+[tasks.fmt]
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+[tasks.clippy]
+command = "cargo"
+args = ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
+
+[tasks.dylint]
+command = "cargo"
+args = ["dylint", "--all", "--", "-D", "warnings"]
+
+[tasks.metrics]
+command = "rust-code-analysis-cli"
+args = ["-m", "-p", "src", "--output-format", "json", "--language", "rust"]
+
+[tasks.test]
+command = "cargo"
+args = ["nextest", "run", "--all-features"]
+
+[tasks.golden]
+command = "cargo"
+args = ["test", "--test", "golden", "--", "--ignored"]
+
+[tasks.audit]
+command = "cargo"
+args = ["audit"]
+
+[tasks.check-all]
+dependencies = ["fmt", "clippy", "dylint", "metrics", "test", "golden", "audit"]

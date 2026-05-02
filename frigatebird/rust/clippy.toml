@@ -1,0 +1,3 @@
+# FFI + zero-copy specific
+too-many-arguments-threshold = 8
+cognitive-complexity-threshold = 30

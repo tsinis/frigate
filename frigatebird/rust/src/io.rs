@@ -57,7 +57,7 @@ pub fn write_image(path: &Path, img: &RgbaImage, image_quality: u8) -> Result<()
 
     match ext.as_deref() {
         Some("png") => img.save(path).map_err(|_| IoError::Write),
-        Some("jpg") | Some("jpeg") => {
+        Some("jpg" | "jpeg") => {
             // JPEG has no alpha channel — `into_rgb8` composites onto opaque black implicitly.
             // We clone the RGBA buffer first because the conversion consumes it; that's one
             // extra allocation per export but keeps the signature `&RgbaImage` (re-usable).

@@ -51,3 +51,13 @@ rustup toolchain install 1.94.1
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios --toolchain 1.94.1-aarch64-apple-darwin
 rm -rf frigatebird/rust/target
 ```
+
+## Strict FFI Tooling
+
+The Rust backend in `frigatebird/rust` follows a "Maximum Strictness" philosophy for FFI safety and performance:
+
+- **`safer_ffi` Migration** — The FFI boundary uses `safer_ffi` to eliminate manual `unsafe` blocks while maintaining perfect C ABI compatibility with Dart.
+- **Miri Safety Audit** — All Rust code is verified for Undefined Behavior (UB) using `cargo miri`.
+- **Comprehensive Linting** — Strict Clippy groups (`all`, `pedantic`, `cargo`) and targeted FFI lints are enforced.
+- **Advanced Auditing** — Includes `cargo-deny` (license/security), `cargo-audit` (vulnerabilities), `cargo-mutants` (test quality), and `cargo-llvm-lines` (binary size optimization).
+- **Fuzzing & ASan** — FFI entry points are stress-tested with `cargo-fuzz` and monitored via AddressSanitizer.
