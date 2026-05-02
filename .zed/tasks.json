@@ -2,10 +2,6 @@
   {
     "label": "Preflight Check: Rust",
     "command": "cargo make check-all",
-    "args": [
-      "--manifest-path",
-      "frigatebird/rust/Cargo.toml"
-    ],
     "cwd": "$ZED_WORKTREE_ROOT/",
     "use_new_terminal": true,
     "tags": [

@@ -21,7 +21,7 @@ jobs:
   rust:
     name: 🦀 Rust Check (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: frigatebird/rust
@@ -33,17 +33,28 @@ jobs:
       - name: 📚 Git checkout
         uses: actions/checkout@v6.0.2
 
-      - name: 🦀 Rust version
-        run: rustc --version && cargo --version
-
       - name: 🛠️ Install Rust components
         run: |
+          rustup toolchain install nightly --component miri
           rustup component add rustfmt clippy
 
       - name: 📥 Install cargo-make and tools
         uses: taiki-e/install-action@v2.75.28
         with:
-          tool: cargo-make,nextest,cargo-deny,cargo-audit,cargo-semver-checks,cargo-udeps,cargo-llvm-lines,cargo-bloat
+          tool: >
+            cargo-make,
+            nextest,
+            cargo-deny,
+            cargo-audit,
+            cargo-semver-checks,
+            cargo-udeps,
+            cargo-hack,
+            cargo-llvm-lines,
+            cargo-expand,
+            cargo-trust,
+            cargo-fuzz,
+            cargo-call-stack,
+            cargo-bloat
 
       - name: 🗃️ Cache Cargo registry
         uses: actions/cache@v5.0.5
@@ -59,10 +70,5 @@ jobs:
       - name: 📦 Check Cargo dependencies
         run: cargo fetch
 
-      - name: 🛡️ Run Optimization Strict Checks
-        # We skip miri/mutants in check-all to stay under timeout.
+      - name: 🛡️ Run All Strict Checks
         run: cargo make check-all
-
-      - name: 📊 Bloat report
-        if: ${{ matrix.runner == 'ubuntu-latest' }}
-        run: cargo make bloat

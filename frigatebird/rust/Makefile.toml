@@ -77,7 +77,7 @@ args = ["trust"]
 toolchain = "nightly"
 ignore_errors = true
 command = "cargo"
-args = ["fuzz", "run", "ffi_boundary", "--", "-max_total_time=5"]
+args = ["fuzz", "run", "ffi_boundary", "--", "-max_total_time=60"]
 
 [tasks.asan]
 toolchain = "nightly"

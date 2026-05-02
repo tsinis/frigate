@@ -240,7 +240,7 @@ fn golden_rect_rounded_radius_clamped_to_min_side() {
         4,
         0xFF_FF_00_00,
         0xFF_FF_FF_00,
-        99_999_u32.min(u16::MAX as u32) as u16,
+        u16::MAX,
     );
     let img = render_rects(&[rect]);
     assert_golden(&img, &golden_path("rect_rounded_clamped.png"));

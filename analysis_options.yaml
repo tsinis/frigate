@@ -190,7 +190,7 @@ dart_code_metrics:
     - avoid-continue: false # Just a matter of style.
     - avoid-default-tostring: false # Doesn't make sense here.
     - avoid-deprecated-usage: false # Using default deprecated_member_use_from_same_package.
-    - avoid-dot-shorthands: false # Not we enabled them below.
+    - avoid-dot-shorthands: false # Now we enabled them below.
     - avoid-inferrable-type-arguments: false # Against prefer-explicit-type-arguments.
     - avoid-throw: false # Breaking change + we have maybe* methods.
     - max-imports: false # Sadly not very suitable for the packages.

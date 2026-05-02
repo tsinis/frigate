@@ -202,8 +202,8 @@ pub unsafe extern "C" fn draw_elements(
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let inner: Result<_, FfiError> = (|| {
-            let img_p = c_str_to_str(image_path, arena_opt.as_deref_mut())?;
-            let out_p = c_str_to_str(output_path, arena_opt.as_deref_mut())?;
+            let img_p = c_str_to_str(image_path, arena_opt.as_deref_mut(), "image path")?;
+            let out_p = c_str_to_str(output_path, arena_opt.as_deref_mut(), "output path")?;
 
             let elements: &[FfiElement] = if elements_count == 0 {
                 &[]
@@ -230,17 +230,7 @@ pub unsafe extern "C" fn draw_elements(
             let needs_font = elements.iter().any(|e| matches!(e, FfiElement::Text(_)));
             let font_bytes_holder;
             let font: Option<ab_glyph::FontRef<'_>> = if needs_font {
-                let f_path = c_str_to_str(font_path, arena_opt.as_deref_mut()).map_err(|e| {
-                    if e.code == FfiErrorCode::InvalidArg as u8 {
-                        write_error_to_arena(
-                            arena_opt.as_deref_mut(),
-                            FfiErrorCode::InvalidArg,
-                            "Missing font path",
-                        )
-                    } else {
-                        e
-                    }
-                })?;
+                let f_path = c_str_to_str(font_path, arena_opt.as_deref_mut(), "font path")?;
 
                 font_bytes_holder = io::read_font(Path::new(f_path)).map_err(|_| {
                     write_error_to_arena(
@@ -345,10 +335,15 @@ pub unsafe extern "C" fn draw_elements(
 
 fn c_str_to_str<'a>(
     ptr: Option<char_p::Ref<'a>>,
-    _arena: Option<&mut FfiArena>,
+    arena: Option<&mut FfiArena>,
+    field_name: &str,
 ) -> Result<&'a str, FfiError> {
     match ptr {
-        None => Err(FfiError::new(FfiErrorCode::InvalidArg)),
+        None => Err(write_error_to_arena(
+            arena,
+            FfiErrorCode::InvalidArg,
+            &format!("Missing {field_name}"),
+        )),
         Some(p) => Ok(p.to_str()),
     }
 }

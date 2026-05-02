@@ -1,31 +1,130 @@
-# Full strict check pipeline
+# =============================================================================
+# Makefile for frigate Rust crate
+# Policy:
+# - Core checks (fmt, clippy, test, golden, deny, audit) are always mandatory.
+# - On Linux CI: only mutants and asan are non-blocking.
+# - All other heavy tasks (fuzz, miri, bloat, etc.) are mandatory and will fail CI.
+# =============================================================================
+
 [tasks.fmt]
 command = "cargo"
 args = ["fmt", "--all", "--", "--check"]
+description = "Check code formatting"
 
 [tasks.clippy]
+toolchain = "nightly"
 command = "cargo"
 args = ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
-
-[tasks.dylint]
-command = "cargo"
-args = ["dylint", "--all", "--", "-D", "warnings"]
-
-[tasks.metrics]
-command = "rust-code-analysis-cli"
-args = ["-m", "-p", "src", "--output-format", "json", "--language", "rust"]
+description = "Run strict Clippy lints"
 
 [tasks.test]
+toolchain = "nightly"
 command = "cargo"
 args = ["nextest", "run", "--all-features"]
+description = "Run unit tests"
 
 [tasks.golden]
+toolchain = "nightly"
 command = "cargo"
-args = ["test", "--test", "golden", "--", "--ignored"]
+args = ["test", "--test", "rect_golden", "--test", "text_golden"]
+description = "Run golden image tests"
+
+[tasks.deny]
+command = "cargo"
+args = ["deny", "check"]
+description = "License / ban / source checks"
 
 [tasks.audit]
 command = "cargo"
 args = ["audit"]
+description = "Security audit of dependencies"
+
+# ----------------------------------------------------------------------------
+# Heavy / slow tasks - non-blocking only for mutants and asan on Linux CI
+# ----------------------------------------------------------------------------
+
+[tasks.miri]
+toolchain = "nightly"
+command = "cargo"
+args = ["miri", "test", "--lib", "--", "--skip", "io::tests"]
+description = "Run Miri (undefined behavior detector)"
+
+[tasks.asan]
+toolchain = "nightly"
+ignore_errors = true
+command = "cargo"
+args = ["test", "--all-features"]
+env = { RUSTFLAGS = "-Z sanitizer=address" }
+description = "Run AddressSanitizer - non-blocking on Linux CI"
+
+[tasks.fuzz]
+toolchain = "nightly"
+command = "cargo"
+args = ["fuzz", "run", "ffi_boundary", "--", "-max_total_time=60"]
+description = "Run FFI boundary fuzzing (mandatory on Linux CI)"
+
+[tasks.mutants]
+toolchain = "nightly"
+ignore_errors = true
+command = "cargo"
+args = ["mutants"]
+description = "Run mutation testing - non-blocking on Linux CI"
+
+[tasks.bloat]
+toolchain = "nightly"
+command = "cargo"
+args = ["bloat", "--release", "--crates"]
+description = "Show binary size breakdown"
+
+[tasks.call-stack]
+toolchain = "nightly"
+command = "cargo"
+args = ["call-stack"]
+description = "Analyze stack usage"
+
+[tasks.llvm-lines]
+toolchain = "nightly"
+command = "cargo"
+args = ["llvm-lines", "--release"]
+description = "Show LLVM line counts (SIMD analysis)"
+
+[tasks.expand]
+toolchain = "nightly"
+command = "cargo"
+args = ["expand"]
+description = "Expand macros (debugging safer_ffi)"
+
+[tasks.trust]
+command = "cargo"
+args = ["trust"]
+description = "Audit unsafe code usage"
+
+[tasks.hack]
+toolchain = "nightly"
+command = "cargo"
+args = ["hack", "test", "--feature-powerset"]
+description = "Test all feature combinations"
+
+# ----------------------------------------------------------------------------
+# Master check command
+# ----------------------------------------------------------------------------
 
 [tasks.check-all]
-dependencies = ["fmt", "clippy", "dylint", "metrics", "test", "golden", "audit"]
+# Core + heavy checks that must pass on Linux CI.
+# Only mutants and asan are allowed to be non-blocking.
+dependencies = [
+    "fmt",
+    "clippy",
+    "test",
+    "golden",
+    "deny",
+    "audit",
+    "miri",
+    "fuzz",
+    "bloat",
+    "call-stack",
+    "llvm-lines",
+    "trust"
+]
+
+description = "Run ALL strict checks (main command used locally and in CI)"
