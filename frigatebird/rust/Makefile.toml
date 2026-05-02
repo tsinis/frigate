@@ -76,9 +76,16 @@ args = ["expand"]
 command = "cargo"
 args = ["trust"]
 
+[tasks.install-macos-targets]
+# Ensure target is installed for the specific pinned nightly used for fuzzing.
+# Idempotent and safe to run.
+command = "rustup"
+args = ["target", "add", "--toolchain", "nightly-2026-05-02", "x86_64-apple-darwin"]
+
 [tasks.fuzz]
 toolchain = "nightly-2026-05-02"
 ignore_errors = true
+dependencies = ["install-macos-targets"]
 command = "cargo"
 args = ["fuzz", "run", "ffi_boundary", "--", "-max_total_time=60"]
 
@@ -116,6 +123,7 @@ dependencies = [
     "llvm-lines",
     "trust",
     "asan",
+    "install-macos-targets",
     "fuzz",
     "bloat"
 ]
