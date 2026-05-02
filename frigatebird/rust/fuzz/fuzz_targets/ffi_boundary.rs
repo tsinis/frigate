@@ -18,7 +18,5 @@ fuzz_target!(|data: &[u8]| {
         quality
     );
     
-    if !buf.data.is_null() {
-        frigate::free_bytes(NonNull::new(buf.data), buf.length);
-    }
+    frigate::free_bytes(NonNull::new(buf.data), buf.length);
 });

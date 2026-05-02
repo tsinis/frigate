@@ -105,7 +105,12 @@ pub fn export_image(
         &[]
     } else {
         match rects_ptr {
-            None => &[],
+            None => {
+                return ByteBuffer {
+                    data: std::ptr::null_mut(),
+                    length: 0,
+                };
+            }
             #[expect(
                 unsafe_code,
                 reason = "FFI pointer dereference. The caller must guarantee `rects_ptr` is valid for `rects_count`."

@@ -1,3 +1,6 @@
+# Nightly toolchain is used ONLY for strict developer checks (Miri, ASan, Fuzzing, etc.).
+# End users should use the stable toolchain for building and running.
+
 [tasks.fmt]
 command = "cargo"
 args = ["fmt", "--all", "--", "--check"]

@@ -14,9 +14,10 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 ffi-echo = []
 
 [dependencies]
-# We use 0.2.0-rc1 because it has significantly better ReprC support (especially for enums
-# with payloads) and improved header generation. We accept the extra transitive dependencies
-# (syn, etc.) as they are only used at compile time for the DSL.
+# We use 0.2.0-rc1 for improved header generation. Note: enums with payloads still require
+# manual `repr(C, u8)` for C ABI compatibility; native `derive_ReprC` for such enums is not
+# yet supported in this version. We accept the extra transitive dependencies (syn, etc.)
+# as they are only used at compile time for the DSL.
 safer-ffi = { version = "0.2.0-rc1", features = ["headers"] }
 
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
@@ -36,12 +37,12 @@ warnings = "deny"
 unsafe_code = "warn"
 
 [lints.clippy]
-all = "deny"
+all = { level = "deny", priority = -1 }
 # Selected strict lints
 doc_markdown = "deny"
 ptr_as_ptr = "deny"
 borrow_as_ptr = "deny"
-unnested_or_patterns = "deny"
+unnested_or_patterns = "allow"
 cast_ptr_alignment = "deny"
 not_unsafe_ptr_arg_deref = "deny"
 

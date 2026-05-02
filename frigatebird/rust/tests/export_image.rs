@@ -63,6 +63,7 @@ fn export_image_returns_valid_jpeg_header() {
     );
 
     // Valid JPEGs start with SOI marker: FF D8.
+    assert!(!buf.data.is_null());
     let first_two = unsafe { std::slice::from_raw_parts(buf.data, 2) };
     assert_eq!(first_two, &[0xFF, 0xD8]);
 
