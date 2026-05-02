@@ -1,5 +1,5 @@
-# Nightly toolchain is used ONLY for strict developer checks (Miri, ASan, Fuzzing, etc.).
-# End users should use the stable toolchain for building and running.
+# Nightly toolchain (pinned) is used ONLY for strict developer checks.
+# End users and release builds use stable Rust.
 
 [tasks.fmt]
 command = "cargo"
@@ -84,7 +84,6 @@ args = ["target", "add", "--toolchain", "nightly-2026-05-02", "x86_64-apple-darw
 
 [tasks.fuzz]
 toolchain = "nightly-2026-05-02"
-ignore_errors = true
 dependencies = ["install-macos-targets"]
 command = "cargo"
 args = ["fuzz", "run", "ffi_boundary", "--", "-max_total_time=60"]
@@ -98,19 +97,15 @@ env = { RUSTFLAGS = "-Z sanitizer=address" }
 
 [tasks.call-stack]
 toolchain = "nightly-2026-05-02"
-ignore_errors = true
 command = "cargo"
 args = ["call-stack"]
 
 [tasks.bloat]
 toolchain = "nightly-2026-05-02"
-ignore_errors = true
 command = "cargo"
 args = ["bloat", "--release", "--crates"]
 
 [tasks.check-all]
-# We skip very long running tasks (miri, mutants) for now to speed up development.
-# These will be re-enabled or moved to a separate CI job later.
 dependencies = [
     "fmt",
     "clippy",
@@ -123,6 +118,7 @@ dependencies = [
     "llvm-lines",
     "trust",
     "asan",
+    "miri",
     "install-macos-targets",
     "fuzz",
     "bloat"
