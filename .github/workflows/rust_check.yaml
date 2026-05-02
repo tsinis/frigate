@@ -35,7 +35,9 @@ jobs:
 
       - name: 🛠️ Install Rust components
         run: |
-          rustup toolchain install nightly --component miri
+          # Install nightly with all components we need
+          rustup toolchain install nightly --component miri clippy rustfmt
+          # Also make sure stable has the basic components
           rustup component add rustfmt clippy
 
       - name: 📥 Install cargo-make and tools
