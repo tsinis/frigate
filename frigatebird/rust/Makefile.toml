@@ -83,11 +83,10 @@ args = ["target", "add", "--toolchain", "${NIGHTLY}", "x86_64-apple-darwin"]
 
 [tasks.fuzz]
 toolchain = "${NIGHTLY}"
-# ignore_errors = true on macOS (linker/target issues), false on Linux CI
 ignore_errors = true
 dependencies = ["install-macos-targets"]
 command = "cargo"
-args = ["fuzz", "run", "ffi_boundary", "--", "-max_total_time=60"]
+args = ["fuzz", "run", "ffi_boundary", "--target", "x86_64-unknown-linux-gnu", "--", "-max_total_time=60"]
 
 [tasks.asan]
 toolchain = "${NIGHTLY}"
