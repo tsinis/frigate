@@ -1,8 +1,6 @@
 //! Golden image tests for text rendering + smoke / disaster-path tests for the unified
 //! `render_image` FFI.
 
-#![allow(unsafe_code)]
-
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -165,6 +163,7 @@ fn render_image_end_to_end_writes_jpeg() {
     };
     let mut out_res = frigate::FfiResultUnit::Ok(());
 
+    #[expect(unsafe_code, reason = "FFI call")]
     unsafe {
         frigate::draw_elements(
             Some(img_path_cs.as_ref()),
@@ -212,6 +211,7 @@ fn render_image_rejects_text_without_font() {
     };
     let mut out_res = frigate::FfiResultUnit::Ok(());
 
+    #[expect(unsafe_code, reason = "FFI call")]
     unsafe {
         frigate::draw_elements(
             Some(img_path_cs.as_ref()),
@@ -251,6 +251,7 @@ fn render_image_rejects_null_image_path() {
     };
     let mut out_res = frigate::FfiResultUnit::Ok(());
 
+    #[expect(unsafe_code, reason = "FFI call")]
     unsafe {
         frigate::draw_elements(
             None,
@@ -289,6 +290,7 @@ fn render_image_rejects_nonexistent_source_image() {
     };
     let mut out_res = frigate::FfiResultUnit::Ok(());
 
+    #[expect(unsafe_code, reason = "FFI call")]
     unsafe {
         frigate::draw_elements(
             Some(bad_img_cs.as_ref()),
@@ -330,6 +332,7 @@ fn render_image_rejects_unsupported_output_extension() {
     };
     let mut out_res = frigate::FfiResultUnit::Ok(());
 
+    #[expect(unsafe_code, reason = "FFI call")]
     unsafe {
         frigate::draw_elements(
             Some(img_path_cs.as_ref()),
@@ -385,6 +388,7 @@ fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
     };
     let mut out_res = frigate::FfiResultUnit::Ok(());
 
+    #[expect(unsafe_code, reason = "FFI call")]
     unsafe {
         frigate::draw_elements(
             Some(img_path_cs.as_ref()),

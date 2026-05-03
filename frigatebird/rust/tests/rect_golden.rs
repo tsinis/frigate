@@ -1,7 +1,5 @@
 //! Golden image tests for rectangle rendering.
 
-#![allow(unsafe_code)]
-
 use std::path::{Path, PathBuf};
 
 use image::RgbaImage;

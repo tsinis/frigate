@@ -3,6 +3,7 @@
 use safer_ffi::prelude::*;
 
 use std::path::Path;
+use std::ptr::NonNull;
 use std::slice;
 
 use tiny_skia::{Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
@@ -62,40 +63,42 @@ pub struct ByteBuffer {
 /// `img_ptr` must point to `img_len` valid bytes of image data.
 /// `rects_ptr` must point to `rects_count` valid `FfiRectElement` values (or be null when
 /// `rects_count == 0`).
-#[expect(unsafe_code, reason = "FFI entry point")]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn export_image(
-    img_ptr: *const u8,
+#[ffi_export]
+pub fn export_image(
+    img_ptr: Option<NonNull<u8>>,
     img_len: usize,
-    rects_ptr: *const FfiRectElement,
+    rects_ptr: Option<NonNull<FfiRectElement>>,
     rects_count: usize,
     image_quality: u8,
 ) -> ByteBuffer {
-    // Establishing the safe boundary immediately.
     let img_bytes: &[u8] = if img_len == 0 {
         &[]
     } else {
-        if img_ptr.is_null() {
-            return ByteBuffer {
-                data: std::ptr::null_mut(),
-                length: 0,
-            };
+        match img_ptr {
+            None => {
+                return ByteBuffer {
+                    data: std::ptr::null_mut(),
+                    length: 0,
+                };
+            }
+            #[expect(unsafe_code, reason = "FFI pointer dereference")]
+            Some(ptr) => unsafe { slice::from_raw_parts(ptr.as_ptr(), img_len) },
         }
-        // SAFETY: The caller must guarantee `img_ptr` is valid for `img_len`.
-        unsafe { slice::from_raw_parts(img_ptr, img_len) }
     };
 
     let rects: &[FfiRectElement] = if rects_count == 0 {
         &[]
     } else {
-        if rects_ptr.is_null() {
-            return ByteBuffer {
-                data: std::ptr::null_mut(),
-                length: 0,
-            };
+        match rects_ptr {
+            None => {
+                return ByteBuffer {
+                    data: std::ptr::null_mut(),
+                    length: 0,
+                };
+            }
+            #[expect(unsafe_code, reason = "FFI pointer dereference")]
+            Some(ptr) => unsafe { slice::from_raw_parts(ptr.as_ptr(), rects_count) },
         }
-        // SAFETY: The caller must guarantee `rects_ptr` is valid for `rects_count`.
-        unsafe { slice::from_raw_parts(rects_ptr, rects_count) }
     };
 
     // Panicking across an FFI boundary is undefined behavior; errors return a null ByteBuffer.
@@ -105,7 +108,6 @@ pub unsafe extern "C" fn export_image(
             let boxed = bytes.into_boxed_slice();
             let length = boxed.len();
             ByteBuffer {
-                // SAFETY: Manual memory management for FFI. The caller must free this with `free_bytes`.
                 data: Box::into_raw(boxed).cast::<u8>(),
                 length,
             }
@@ -122,12 +124,14 @@ pub unsafe extern "C" fn export_image(
 /// # Safety
 ///
 /// `ptr` must have been returned by `export_image` (and not yet freed); `len` must match.
-#[expect(unsafe_code, reason = "FFI entry point")]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn free_bytes(ptr: *mut u8, len: usize) {
-    if !ptr.is_null() {
+#[ffi_export]
+pub fn free_bytes(ptr: Option<NonNull<u8>>, len: usize) {
+    if let Some(p) = ptr {
         // SAFETY: ptr came from export_image → into_boxed_slice → Box::into_raw; capacity == len.
-        unsafe { drop(Vec::from_raw_parts(ptr, len, len)) };
+        #[expect(unsafe_code, reason = "FFI entry point")]
+        unsafe {
+            drop(Vec::from_raw_parts(p.as_ptr(), len, len))
+        };
     }
 }
 

@@ -11,6 +11,8 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 frigate = { path = "..", features = ["fuzzing"] }
 arbitrary = { version = "1.4.1", features = ["derive"] }
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
+safer-ffi = { version = "0.2.0-rc1" }
 
 [[bin]]
 name = "ffi_boundary"
