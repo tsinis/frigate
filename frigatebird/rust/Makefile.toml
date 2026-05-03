@@ -96,11 +96,11 @@ args = ["fuzz", "run", "ffi_boundary", "--", "-max_total_time=60"]
 [tasks.asan]
 toolchain = "${NIGHTLY}"
 ignore_errors = true
-command = "cargo"
-args = ["test", "--all-features"]
-env = { RUSTFLAGS = "-Z sanitizer=address" }
+script = [
+    "RUSTFLAGS='-Z sanitizer=address' cargo test --all-features"
+]
 
-[tasks.coverage-llvm]
+[tasks.llvm-cov]
 toolchain = "${NIGHTLY}"
 command = "cargo"
 args = ["llvm-cov", "--all-features", "--lcov", "--output-path", "lcov.info", "--fail-under-lines", "20"]
@@ -132,5 +132,5 @@ dependencies = [
     "miri",
     "fuzz",
     "bloat",
-    "coverage-llvm"
+    "llvm-cov"
 ]
