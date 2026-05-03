@@ -1,7 +1,9 @@
 #![deny(improper_ctypes_definitions, improper_ctypes)]
 
-use std::ffi::{CStr, c_char};
+use safer_ffi::prelude::*;
+
 use std::path::Path;
+use std::ptr::NonNull;
 use std::slice;
 
 use tiny_skia::{Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
@@ -24,7 +26,10 @@ ffi_result!(FfiResultCount, u32);
 const _: () = assert!(std::mem::size_of::<FfiResultUnit>() == 6);
 const _: () = assert!(std::mem::size_of::<FfiResultCount>() == 8);
 
+#[derive_ReprC]
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub struct FfiRectElement {
     pub x: f64,
     pub y: f64,
@@ -40,48 +45,62 @@ pub struct FfiRectElement {
 
 const _: () = assert!(std::mem::size_of::<FfiRectElement>() == 48);
 
+#[derive_ReprC]
 #[repr(C)]
 pub struct ByteBuffer {
     pub data: *mut u8,
     pub length: usize,
 }
 
-/// Bytes-in / bytes-out export: composites [rects_count] rectangles over a PNG/JPEG image and
+/// Bytes-in / bytes-out export: composites [`rects_count`] rectangles over a PNG/JPEG image and
 /// returns the result as a JPEG byte buffer owned by Rust.
 ///
-/// Returns a [ByteBuffer] with `data == null` on panic (catch_unwind boundary).
-/// Caller must free the returned buffer with [free_bytes].
+/// Returns a [`ByteBuffer`] with `data == null` on error or panic (`catch_unwind` boundary).
+/// Caller must free the returned buffer with [`free_bytes`].
 ///
 /// # Safety
 ///
 /// `img_ptr` must point to `img_len` valid bytes of image data.
 /// `rects_ptr` must point to `rects_count` valid `FfiRectElement` values (or be null when
 /// `rects_count == 0`).
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn export_image(
-    img_ptr: *const u8,
+#[ffi_export]
+pub fn export_image(
+    img_ptr: Option<NonNull<u8>>,
     img_len: usize,
-    rects_ptr: *const FfiRectElement,
+    rects_ptr: Option<NonNull<FfiRectElement>>,
     rects_count: usize,
     image_quality: u8,
 ) -> ByteBuffer {
     let img_bytes: &[u8] = if img_len == 0 {
         &[]
     } else {
-        if img_ptr.is_null() {
-            return ByteBuffer {
-                data: std::ptr::null_mut(),
-                length: 0,
-            };
+        match img_ptr {
+            None => {
+                return ByteBuffer {
+                    data: std::ptr::null_mut(),
+                    length: 0,
+                };
+            }
+            #[expect(unsafe_code, reason = "FFI pointer dereference")]
+            Some(ptr) => unsafe { slice::from_raw_parts(ptr.as_ptr(), img_len) },
         }
-        unsafe { slice::from_raw_parts(img_ptr, img_len) }
     };
-    // Handle empty case explicitly — `slice::from_raw_parts` requires non-null even for len == 0.
+
     let rects: &[FfiRectElement] = if rects_count == 0 {
         &[]
     } else {
-        unsafe { slice::from_raw_parts(rects_ptr, rects_count) }
+        match rects_ptr {
+            None => {
+                return ByteBuffer {
+                    data: std::ptr::null_mut(),
+                    length: 0,
+                };
+            }
+            #[expect(unsafe_code, reason = "FFI pointer dereference")]
+            Some(ptr) => unsafe { slice::from_raw_parts(ptr.as_ptr(), rects_count) },
+        }
     };
+
     // Panicking across an FFI boundary is undefined behavior; errors return a null ByteBuffer.
     match std::panic::catch_unwind(|| render_jpeg_with_rects(img_bytes, rects, image_quality)) {
         Ok(Ok(bytes)) => {
@@ -89,7 +108,7 @@ pub unsafe extern "C" fn export_image(
             let boxed = bytes.into_boxed_slice();
             let length = boxed.len();
             ByteBuffer {
-                data: Box::into_raw(boxed) as *mut u8,
+                data: Box::into_raw(boxed).cast::<u8>(),
                 length,
             }
         }
@@ -100,23 +119,23 @@ pub unsafe extern "C" fn export_image(
     }
 }
 
-/// Free a Rust-allocated byte buffer (returned by [export_image]). Null-safe.
-///
-/// `isLeaf: true` — never calls back into Dart, so the Dart VM can skip the safepoint preamble.
+/// Free a Rust-allocated byte buffer (returned by [`export_image`]). Null-safe.
 ///
 /// # Safety
 ///
 /// `ptr` must have been returned by `export_image` (and not yet freed); `len` must match.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn free_bytes(ptr: *mut u8, len: usize) {
-    if ptr.is_null() {
-        return;
+#[ffi_export]
+pub fn free_bytes(ptr: Option<NonNull<u8>>, len: usize) {
+    if let Some(p) = ptr {
+        // SAFETY: ptr came from export_image → into_boxed_slice → Box::into_raw; capacity == len.
+        #[expect(unsafe_code, reason = "FFI entry point")]
+        unsafe {
+            drop(Vec::from_raw_parts(p.as_ptr(), len, len))
+        };
     }
-    // SAFETY: ptr came from export_image → into_boxed_slice → Box::into_raw; capacity == len.
-    unsafe { drop(Vec::from_raw_parts(ptr, len, len)) };
 }
 
-/// Echo an FfiElement pointer back unchanged. Only compiled in debug builds — its only purpose
+/// Echo an `FfiElement` pointer back unchanged. Only compiled in debug builds — its only purpose
 /// is layout round-trip tests. The Rust symbol must not be present in release `.dylib`s.
 ///
 /// # Safety
@@ -124,26 +143,34 @@ pub unsafe extern "C" fn free_bytes(ptr: *mut u8, len: usize) {
 /// `ptr` must be a valid, aligned pointer to a single `FfiElement` that lives at least
 /// as long as the returned pointer is used.
 #[cfg(any(test, feature = "ffi-echo"))]
+#[expect(unsafe_code, reason = "FFI entry point")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_echo_element(ptr: *const FfiElement) -> *const FfiElement {
     ptr
 }
 
-/// Unified render call: reads the image from `image_path_ptr`, composites all `FfiElement`s
-/// (rectangles, text, future shapes), writes the result to `output_path_ptr`.
+/// Unified render call: reads the image from `image_path`, composites all `FfiElement`s
+/// (rectangles, text, future shapes), writes the result to `output_path`.
 ///
 /// Returns `void`; result is written to `*out`. Using an out-pointer avoids struct-return ABI
-/// differences between SysV x86-64, Win64, AArch64 AAPCS and ARMv7 for the 6-byte result type.
+/// differences between `SysV` x86-64, Win64, `AArch64` AAPCS and `ARMv7` for the 6-byte result type.
 ///
 /// # Safety
 ///
-/// All pointer arguments must be valid for the duration of the call. `arena` and `out` must
-/// be non-null. `elements_ptr` may be null only when `elements_count == 0`.
+/// All pointer arguments must be valid for the duration of the call.
+///
+/// This function is marked `unsafe extern "C"` instead of `#[ffi_export]` because `FfiElement`
+/// is a `repr(C, u8)` enum with payloads, which `safer_ffi 0.2.0-rc1` does not yet support
+/// for header generation.
+#[expect(
+    unsafe_code,
+    reason = "FFI entry point with payload enum limitation in safer_ffi"
+)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn draw_elements(
-    image_path_ptr: *const c_char,
-    output_path_ptr: *const c_char,
-    font_path_ptr: *const c_char,
+    image_path: Option<char_p::Ref<'_>>,
+    output_path: Option<char_p::Ref<'_>>,
+    font_path: Option<char_p::Ref<'_>>,
     elements_ptr: *const FfiElement,
     elements_count: usize,
     image_quality: u8,
@@ -153,13 +180,13 @@ pub unsafe extern "C" fn draw_elements(
     if out.is_null() {
         return;
     }
+    // Convert pointers to safer types for internal use.
+    let mut arena_opt = unsafe { arena.as_mut() };
+
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let inner: Result<_, FfiError> = (|| {
-            if arena.is_null() {
-                return Err(FfiError::new(FfiErrorCode::InvalidArg));
-            }
-            let image_path = unsafe { c_str_to_str(image_path_ptr, arena)? };
-            let output_path = unsafe { c_str_to_str(output_path_ptr, arena)? };
+            let img_p = c_str_to_str(image_path, arena_opt.as_deref_mut(), "image path")?;
+            let out_p = c_str_to_str(output_path, arena_opt.as_deref_mut(), "output path")?;
 
             let elements: &[FfiElement] = if elements_count == 0 {
                 &[]
@@ -167,50 +194,54 @@ pub unsafe extern "C" fn draw_elements(
                 if elements_ptr.is_null() {
                     return Err(FfiError::new(FfiErrorCode::InvalidArg));
                 }
+                // SAFETY: FFI pointer dereference.
                 unsafe { slice::from_raw_parts(elements_ptr, elements_count) }
             };
 
-            let arena_ref = unsafe { &*arena };
-            // SAFETY: arena is non-null (checked above). Copy text buffer scalars into local
-            // variables so `arena_ref` can be dropped before any `write_error_to_arena` call
-            // creates `&mut *arena` — having both alive simultaneously would violate Rust's
-            // aliasing rules.
-            let (text_buf_ptr, text_buf_len) = (arena_ref.text_buf, arena_ref.text_len);
-            let _ = arena_ref;
-            let text_buffer: &[u8] = if text_buf_len == 0 {
-                &[]
-            } else {
-                if text_buf_ptr.is_null() {
-                    return Err(FfiError::new(FfiErrorCode::InvalidArg));
+            let text_buffer: &[u8] = match arena_opt.as_deref() {
+                None => &[],
+                Some(a) if a.text_len == 0 => &[],
+                Some(a) => {
+                    if a.text_buf.is_null() {
+                        return Err(FfiError::new(FfiErrorCode::InvalidArg));
+                    }
+                    // SAFETY: FFI pointer dereference.
+                    unsafe { slice::from_raw_parts(a.text_buf, a.text_len) }
                 }
-                unsafe { slice::from_raw_parts(text_buf_ptr, text_buf_len) }
             };
 
             let needs_font = elements.iter().any(|e| matches!(e, FfiElement::Text(_)));
             let font_bytes_holder;
             let font: Option<ab_glyph::FontRef<'_>> = if needs_font {
-                if font_path_ptr.is_null() {
-                    // SAFETY: arena is non-null (checked above).
-                    return Err(unsafe {
-                        write_error_to_arena(arena, FfiErrorCode::InvalidArg, "Missing font path")
-                    });
-                }
-                let font_path = unsafe { c_str_to_str(font_path_ptr, arena)? };
-                font_bytes_holder = io::read_font(Path::new(font_path)).map_err(|_| unsafe {
-                    write_error_to_arena(arena, FfiErrorCode::Io, "Failed to read font")
+                let f_path = c_str_to_str(font_path, arena_opt.as_deref_mut(), "font path")?;
+
+                font_bytes_holder = io::read_font(Path::new(f_path)).map_err(|_| {
+                    write_error_to_arena(
+                        arena_opt.as_deref_mut(),
+                        FfiErrorCode::Io,
+                        "Failed to read font",
+                    )
                 })?;
                 Some(
-                    ab_glyph::FontRef::try_from_slice(&font_bytes_holder).map_err(|_| unsafe {
-                        write_error_to_arena(arena, FfiErrorCode::Font, "Failed to parse font")
+                    ab_glyph::FontRef::try_from_slice(&font_bytes_holder).map_err(|_| {
+                        write_error_to_arena(
+                            arena_opt.as_deref_mut(),
+                            FfiErrorCode::Font,
+                            "Failed to parse font",
+                        )
                     })?,
                 )
             } else {
                 None
             };
 
-            let img = io::read_image(Path::new(image_path))
-                .map_err(|_| unsafe {
-                    write_error_to_arena(arena, FfiErrorCode::Decode, "Failed to decode image")
+            let img = io::read_image(Path::new(img_p))
+                .map_err(|_| {
+                    write_error_to_arena(
+                        arena_opt.as_deref_mut(),
+                        FfiErrorCode::Decode,
+                        "Failed to decode image",
+                    )
                 })?
                 .into_rgba8();
 
@@ -233,19 +264,17 @@ pub unsafe extern "C" fn draw_elements(
                         );
                     }
                     FfiElement::Text(p) => {
-                        let text_slice = element_text(p, text_buffer).map_err(|e| unsafe {
-                            match e {
-                                ElementTextError::Bounds => write_error_to_arena(
-                                    arena,
-                                    FfiErrorCode::InvalidArg,
-                                    "Text element slice out of bounds",
-                                ),
-                                ElementTextError::Utf8 => write_error_to_arena(
-                                    arena,
-                                    FfiErrorCode::Utf8,
-                                    "Invalid UTF-8 in text element",
-                                ),
-                            }
+                        let text_slice = element_text(p, text_buffer).map_err(|e| match e {
+                            ElementTextError::Bounds => write_error_to_arena(
+                                arena_opt.as_deref_mut(),
+                                FfiErrorCode::InvalidArg,
+                                "Text element slice out of bounds",
+                            ),
+                            ElementTextError::Utf8 => write_error_to_arena(
+                                arena_opt.as_deref_mut(),
+                                FfiErrorCode::Utf8,
+                                "Invalid UTF-8 in text element",
+                            ),
                         })?;
                         if let Some(font_ref) = &font {
                             draw_text_element(surface.as_rgba(), font_ref, p, text_slice);
@@ -255,8 +284,12 @@ pub unsafe extern "C" fn draw_elements(
             }
 
             let img = surface.into_rgba();
-            io::write_image(Path::new(output_path), &img, image_quality).map_err(|_| unsafe {
-                write_error_to_arena(arena, FfiErrorCode::Encode, "Failed to encode image")
+            io::write_image(Path::new(out_p), &img, image_quality).map_err(|_| {
+                write_error_to_arena(
+                    arena_opt.as_deref_mut(),
+                    FfiErrorCode::Encode,
+                    "Failed to encode image",
+                )
             })?;
 
             Ok(())
@@ -275,22 +308,27 @@ pub unsafe extern "C" fn draw_elements(
             } else {
                 "panic with non-string payload".to_string()
             };
-            // SAFETY: arena was validated non-null before any code that could panic runs.
-            let err = unsafe { write_panic_to_arena(arena, &msg) };
+            let err = write_panic_to_arena(arena_opt, &msg);
             FfiResultUnit::err(err)
         }
     };
-    // SAFETY: `out` is non-null and writable for the duration of this call.
+    // SAFETY: FFI result write.
     unsafe { out.write(ffi_result) };
 }
 
-unsafe fn c_str_to_str<'a>(ptr: *const c_char, arena: *mut FfiArena) -> Result<&'a str, FfiError> {
-    if ptr.is_null() {
-        return Err(FfiError::new(FfiErrorCode::InvalidArg));
+fn c_str_to_str<'a>(
+    ptr: Option<char_p::Ref<'a>>,
+    arena: Option<&mut FfiArena>,
+    field_name: &str,
+) -> Result<&'a str, FfiError> {
+    match ptr {
+        None => Err(write_error_to_arena(
+            arena,
+            FfiErrorCode::InvalidArg,
+            &format!("Missing {field_name}"),
+        )),
+        Some(p) => Ok(p.to_str()),
     }
-    unsafe { CStr::from_ptr(ptr) }.to_str().map_err(|_| unsafe {
-        write_error_to_arena(arena, FfiErrorCode::Utf8, "Invalid UTF-8 in path")
-    })
 }
 
 #[derive(Debug)]
@@ -430,7 +468,7 @@ impl From<&RectanglePayload> for RectStyle {
             outline_thickness: p.outline_thickness,
             outline_color_argb: p.outline_color_argb,
             fill_color_argb: p.fill_color_argb,
-            corner_radius_px: p.corner_radius as u32,
+            corner_radius_px: u32::from(p.corner_radius),
         }
     }
 }
@@ -479,7 +517,7 @@ fn draw_rect_on_pixmap(
 
     if style.outline_thickness > 0 && argb_alpha(style.outline_color_argb) > 0 {
         let max_stroke = rect.width().min(rect.height());
-        let stroke_width = (style.outline_thickness as f32).min(max_stroke);
+        let stroke_width = f32::from(style.outline_thickness).min(max_stroke);
         if stroke_width > 0.0 {
             let mut paint = Paint::default();
             paint.set_color(argb_to_tiny_color(style.outline_color_argb));
@@ -714,18 +752,19 @@ mod draw_elements_tests {
             error_buf: error_buf.as_mut_ptr(),
             error_cap: error_buf.len(),
         };
+
+        #[expect(unsafe_code, reason = "FFI pointer write test")]
         unsafe {
             draw_elements(
-                std::ptr::null(),
-                std::ptr::null(),
-                std::ptr::null(),
+                None,
+                None,
+                None,
                 std::ptr::null(),
                 0,
                 90,
-                &mut arena,
-                std::ptr::null_mut(), // out = null → must return immediately
+                &raw mut arena,
+                std::ptr::null_mut(),
             );
         }
-        // Reaching here without panicking confirms the null-out guard works.
     }
 }

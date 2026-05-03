@@ -2,6 +2,7 @@
 name = "frigate"
 version = "0.0.1"
 edition = "2024"
+license = "Apache-2.0"
 
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
@@ -11,15 +12,44 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 # `native_toolchain_rust` when building for `dart test` (debug profile). Never set in the
 # production build hook.
 ffi-echo = []
+# Internal feature for structured fuzzing.
+fuzzing = ["dep:arbitrary"]
 
 [dependencies]
+# We use 0.2.0-rc1 for improved header generation. Note: enums with payloads still require
+# manual `repr(C, u8)` for C ABI compatibility; native `derive_ReprC` for such enums is not
+# yet supported in this version. We accept the extra transitive dependencies (syn, etc.)
+# as they are only used at compile time for the DSL.
+safer-ffi = { version = "0.2.0-rc1", features = ["headers"] }
+
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
+bytemuck = { version = "1.25.0", features = ["derive"] }
 ab_glyph = "0.2.32"
 # Drop tiny-skia's `png-format` feature — we use `image` for PNG/JPEG decode and encode, so
 # pulling tiny-skia's parallel PNG stack would just bloat the binary. Keep `simd` for the
 # SIMD-accelerated rasterizer paths (the main perf win on x86 / aarch64).
 tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "simd"] }
 
+arbitrary = { version = "1.4.1", features = ["derive"], optional = true }
+
 [profile.release]
 lto = "thin"
 strip = "debuginfo"
+
+[lints.rust]
+warnings = "deny"
+unsafe_code = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+# Selected strict lints
+doc_markdown = "deny"
+ptr_as_ptr = "deny"
+borrow_as_ptr = "deny"
+unnested_or_patterns = "allow"
+cast_ptr_alignment = "deny"
+not_unsafe_ptr_arg_deref = "deny"
+
+[dev-dependencies]
+# CLI tools (cargo-deny, cargo-semver-checks, etc.) are installed via CI or cargo install.
+# Do not list them here to avoid polluting the dependency graph.

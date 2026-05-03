@@ -118,6 +118,7 @@ sealed class FfiMarshal {
           textBufferPtr.asTypedList(payloadTotal).setAll(0, payloadBytes.toBytes());
         } on Object {
           allocator.free(textBufferPtr);
+
           rethrow;
         }
       }
@@ -128,6 +129,7 @@ sealed class FfiMarshal {
           errorBufferPtr = allocator<Uint8>(errorCap);
         } on Object {
           if (textBufferPtr != nullptr) allocator.free(textBufferPtr);
+
           rethrow;
         }
       }
@@ -145,6 +147,7 @@ sealed class FfiMarshal {
       } on Object {
         if (textBufferPtr != nullptr) allocator.free(textBufferPtr);
         if (errorBufferPtr != nullptr) allocator.free(errorBufferPtr);
+
         rethrow;
       }
 
@@ -158,6 +161,7 @@ sealed class FfiMarshal {
       );
     } on Object {
       if (elementsPtr != nullptr) allocator.free(elementsPtr);
+
       rethrow;
     }
   }

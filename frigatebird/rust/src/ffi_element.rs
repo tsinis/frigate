@@ -1,7 +1,21 @@
-//! Tagged-union element struct passed across the FFI boundary.
+use safer_ffi::prelude::*;
 
+/// Tagged-union element struct passed across the FFI boundary.
+///
+/// NOTE: `safer_ffi` 0.2.0-rc1 does not yet support `derive_ReprC` for enums with payloads.
+/// We use `repr(C, u8)` for perfect C ABI compatibility with Dart.
+#[repr(C, u8)]
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
+pub enum FfiElement {
+    Rectangle(RectanglePayload) = 0,
+    Text(TextPayload) = 1,
+}
+
+#[derive_ReprC]
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub struct RectanglePayload {
     pub x: f64,
     pub y: f64,
@@ -15,8 +29,10 @@ pub struct RectanglePayload {
     pub corner_radius: u16,
 }
 
+#[derive_ReprC]
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub struct TextPayload {
     pub x: f64,
     pub y: f64,
@@ -30,15 +46,7 @@ pub struct TextPayload {
     pub text_len: u32,
 }
 
-#[repr(C, u8)]
-#[derive(Debug, Clone, Copy)]
-pub enum FfiElement {
-    Rectangle(RectanglePayload) = 0,
-    Text(TextPayload) = 1,
-}
-
 // Layout assertions to freeze the wire contract.
-// We assert size and alignment.
 // Dart side MUST match these exactly using Struct + Union + padding.
 const _: () = assert!(std::mem::size_of::<RectanglePayload>() == 48);
 const _: () = assert!(std::mem::size_of::<TextPayload>() == 48);

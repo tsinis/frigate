@@ -1,17 +1,5 @@
 //! Golden image tests for text rendering + smoke / disaster-path tests for the unified
 //! `render_image` FFI.
-//!
-//! Goldens compare the *RGBA buffer* (lossless, deterministic). JPEG is non-deterministic across
-//! `image` crate minor versions, so encoding is exercised by the FFI smoke test only — never
-//! pixel-matched.
-//!
-//! Variable-font caveat: `ab_glyph` uses the default axis instance (wght=400) for the bundled
-//! `RobotoMono-VariableFont_wght.ttf`. A future `ab_glyph` update may shift rasterization — when
-//! that happens the goldens fail loudly and we regenerate intentionally.
-//!
-//! First-run workflow:
-//!   1. `cargo test --test text_golden` — panics for each missing golden with the new file path.
-//!   2. Inspect the generated PNGs in `tests/golden/`, then commit.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -21,12 +9,9 @@ use image::{Rgba, RgbaImage};
 
 use frigate::{FfiArena, FfiElement, RectanglePayload, TextPayload};
 
-const TEST_FONT_BYTES: &[u8] = include_bytes!("../../test/assets/RobotoMono-VariableFont_wght.ttf");
+const TEST_FONT_BYTES: &[u8] = include_bytes!("../tests/assets/RobotoMono-VariableFont_wght.ttf");
 
-/// Build a temp-file path that's unique per process **and** per call within a process. Stops
-/// concurrent `cargo test` runs (CI + local dev, or two CI matrix entries on the same node)
-/// from racing on the same on-disk filename, and prevents in-binary parallel tests from
-/// stomping on each other if two ever picked the same logical name.
+/// Build a temp-file path that's unique per process **and** per call within a process.
 fn unique_tmp(name: &str) -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -34,10 +19,7 @@ fn unique_tmp(name: &str) -> PathBuf {
 }
 
 fn assets_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("test")
-        .join("assets")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets")
 }
 
 fn golden_path(name: &str) -> PathBuf {
@@ -47,7 +29,6 @@ fn golden_path(name: &str) -> PathBuf {
         .join(name)
 }
 
-/// See `rect_golden::base_image` for the rationale — same caching pattern.
 fn base_image() -> RgbaImage {
     static CACHE: std::sync::OnceLock<RgbaImage> = std::sync::OnceLock::new();
     CACHE
@@ -154,19 +135,18 @@ fn golden_translucent_text() {
 
 #[test]
 fn render_image_end_to_end_writes_jpeg() {
-    use std::ffi::CString;
+    use safer_ffi::char_p;
 
     let out = unique_tmp("smoke.jpg");
 
-    let img_path = CString::new(assets_dir().join("paint.jpg").to_str().unwrap()).unwrap();
-    let font_path = CString::new(
+    let img_path_cs = char_p::new(assets_dir().join("paint.jpg").to_str().unwrap());
+    let font_path_cs = char_p::new(
         assets_dir()
             .join("RobotoMono-VariableFont_wght.ttf")
             .to_str()
             .unwrap(),
-    )
-    .unwrap();
-    let out_path = CString::new(out.to_str().unwrap()).unwrap();
+    );
+    let out_path_cs = char_p::new(out.to_str().unwrap());
     let text_buffer = b"Frigate";
 
     let element = make_text_element(0, text_buffer.len() as u32);
@@ -181,22 +161,23 @@ fn render_image_end_to_end_writes_jpeg() {
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let result = unsafe {
-        let mut out = std::mem::MaybeUninit::uninit();
+    let mut out_res = frigate::FfiResultUnit::Ok(());
+
+    #[expect(unsafe_code, reason = "FFI call")]
+    unsafe {
         frigate::draw_elements(
-            img_path.as_ptr(),
-            out_path.as_ptr(),
-            font_path.as_ptr(),
+            Some(img_path_cs.as_ref()),
+            Some(out_path_cs.as_ref()),
+            Some(font_path_cs.as_ref()),
             elements.as_ptr(),
             elements.len(),
             90,
-            &mut arena,
-            out.as_mut_ptr(),
+            &raw mut arena,
+            &raw mut out_res,
         );
-        out.assume_init()
     };
     assert!(
-        matches!(result, frigate::FfiResultUnit::Ok(())),
+        matches!(out_res, frigate::FfiResultUnit::Ok(())),
         "draw_elements returned error"
     );
     assert!(out.exists(), "expected output file {out:?} to exist");
@@ -209,11 +190,11 @@ fn render_image_end_to_end_writes_jpeg() {
 
 #[test]
 fn render_image_rejects_text_without_font() {
-    use std::ffi::CString;
+    use safer_ffi::char_p;
 
     let out = unique_tmp("no_font.jpg");
-    let img_path = CString::new(assets_dir().join("paint.jpg").to_str().unwrap()).unwrap();
-    let out_path = CString::new(out.to_str().unwrap()).unwrap();
+    let img_path_cs = char_p::new(assets_dir().join("paint.jpg").to_str().unwrap());
+    let out_path_cs = char_p::new(out.to_str().unwrap());
 
     let text_buffer = b"hi";
     let element = make_text_element(0, text_buffer.len() as u32);
@@ -228,21 +209,22 @@ fn render_image_rejects_text_without_font() {
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let result = unsafe {
-        let mut out = std::mem::MaybeUninit::uninit();
+    let mut out_res = frigate::FfiResultUnit::Ok(());
+
+    #[expect(unsafe_code, reason = "FFI call")]
+    unsafe {
         frigate::draw_elements(
-            img_path.as_ptr(),
-            out_path.as_ptr(),
-            std::ptr::null(),
+            Some(img_path_cs.as_ref()),
+            Some(out_path_cs.as_ref()),
+            None,
             elements.as_ptr(),
             elements.len(),
             90,
-            &mut arena,
-            out.as_mut_ptr(),
+            &raw mut arena,
+            &raw mut out_res,
         );
-        out.assume_init()
     };
-    let frigate::FfiResultUnit::Err(e) = result else {
+    let frigate::FfiResultUnit::Err(e) = out_res else {
         panic!("expected error, got Ok");
     };
     assert_eq!(
@@ -251,10 +233,13 @@ fn render_image_rejects_text_without_font() {
         "expected InvalidArg for missing font"
     );
 }
+
 #[test]
 fn render_image_rejects_null_image_path() {
-    let out_path = std::ffi::CString::new("dummy").unwrap();
-    let font_path = std::ffi::CString::new("dummy").unwrap();
+    use safer_ffi::char_p;
+
+    let out_path_cs = char_p::new("dummy");
+    let font_path_cs = char_p::new("dummy");
     let mut error_buf = vec![0u8; 256];
     let mut arena = FfiArena {
         text_buf: std::ptr::null(),
@@ -264,34 +249,35 @@ fn render_image_rejects_null_image_path() {
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let result = unsafe {
-        let mut out = std::mem::MaybeUninit::uninit();
+    let mut out_res = frigate::FfiResultUnit::Ok(());
+
+    #[expect(unsafe_code, reason = "FFI call")]
+    unsafe {
         frigate::draw_elements(
-            std::ptr::null(),
-            out_path.as_ptr(),
-            font_path.as_ptr(),
-            std::ptr::NonNull::<FfiElement>::dangling().as_ptr(),
+            None,
+            Some(out_path_cs.as_ref()),
+            Some(font_path_cs.as_ref()),
+            std::ptr::NonNull::<frigate::FfiElement>::dangling().as_ptr(),
             0,
             100,
-            &mut arena,
-            out.as_mut_ptr(),
+            &raw mut arena,
+            &raw mut out_res,
         );
-        out.assume_init()
     };
 
     assert!(
-        matches!(result, frigate::FfiResultUnit::Err(_)),
+        matches!(out_res, frigate::FfiResultUnit::Err(_)),
         "expected error for null path"
     );
 }
 
 #[test]
 fn render_image_rejects_nonexistent_source_image() {
-    use std::ffi::CString;
+    use safer_ffi::char_p;
 
-    let bad_img = CString::new("/definitely/not/here.jpg").unwrap();
+    let bad_img_cs = char_p::new("/definitely/not/here.jpg");
     let out = unique_tmp("bad_source.jpg");
-    let out_path = CString::new(out.to_str().unwrap()).unwrap();
+    let out_path_cs = char_p::new(out.to_str().unwrap());
 
     let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
@@ -302,21 +288,22 @@ fn render_image_rejects_nonexistent_source_image() {
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let result = unsafe {
-        let mut out = std::mem::MaybeUninit::uninit();
+    let mut out_res = frigate::FfiResultUnit::Ok(());
+
+    #[expect(unsafe_code, reason = "FFI call")]
+    unsafe {
         frigate::draw_elements(
-            bad_img.as_ptr(),
-            out_path.as_ptr(),
-            std::ptr::null(),
-            std::ptr::NonNull::<FfiElement>::dangling().as_ptr(),
+            Some(bad_img_cs.as_ref()),
+            Some(out_path_cs.as_ref()),
+            None,
+            std::ptr::NonNull::<frigate::FfiElement>::dangling().as_ptr(),
             0,
             80,
-            &mut arena,
-            out.as_mut_ptr(),
+            &raw mut arena,
+            &raw mut out_res,
         );
-        out.assume_init()
     };
-    let frigate::FfiResultUnit::Err(e) = result else {
+    let frigate::FfiResultUnit::Err(e) = out_res else {
         panic!("expected error, got Ok");
     };
     assert_eq!(
@@ -328,11 +315,11 @@ fn render_image_rejects_nonexistent_source_image() {
 
 #[test]
 fn render_image_rejects_unsupported_output_extension() {
-    use std::ffi::CString;
+    use safer_ffi::char_p;
 
-    let img_path = CString::new(assets_dir().join("paint.jpg").to_str().unwrap()).unwrap();
+    let img_path_cs = char_p::new(assets_dir().join("paint.jpg").to_str().unwrap());
     let out = unique_tmp("bad_ext.tiff");
-    let out_path = CString::new(out.to_str().unwrap()).unwrap();
+    let out_path_cs = char_p::new(out.to_str().unwrap());
 
     let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
@@ -343,21 +330,22 @@ fn render_image_rejects_unsupported_output_extension() {
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let result = unsafe {
-        let mut out = std::mem::MaybeUninit::uninit();
+    let mut out_res = frigate::FfiResultUnit::Ok(());
+
+    #[expect(unsafe_code, reason = "FFI call")]
+    unsafe {
         frigate::draw_elements(
-            img_path.as_ptr(),
-            out_path.as_ptr(),
-            std::ptr::null(),
-            std::ptr::NonNull::<FfiElement>::dangling().as_ptr(),
+            Some(img_path_cs.as_ref()),
+            Some(out_path_cs.as_ref()),
+            None,
+            std::ptr::NonNull::<frigate::FfiElement>::dangling().as_ptr(),
             0,
             80,
-            &mut arena,
-            out.as_mut_ptr(),
+            &raw mut arena,
+            &raw mut out_res,
         );
-        out.assume_init()
     };
-    let frigate::FfiResultUnit::Err(e) = result else {
+    let frigate::FfiResultUnit::Err(e) = out_res else {
         panic!("expected error, got Ok");
     };
     assert_eq!(
@@ -369,24 +357,21 @@ fn render_image_rejects_unsupported_output_extension() {
 
 #[test]
 fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
-    // Exercises the Surface state machine across element-type transitions.
-    use std::ffi::CString;
+    use safer_ffi::char_p;
 
     let out = unique_tmp("mixed.jpg");
 
-    let img_path = CString::new(assets_dir().join("paint.jpg").to_str().unwrap()).unwrap();
-    let font_path = CString::new(
+    let img_path_cs = char_p::new(assets_dir().join("paint.jpg").to_str().unwrap());
+    let font_path_cs = char_p::new(
         assets_dir()
             .join("RobotoMono-VariableFont_wght.ttf")
             .to_str()
             .unwrap(),
-    )
-    .unwrap();
-    let out_path = CString::new(out.to_str().unwrap()).unwrap();
+    );
+    let out_path_cs = char_p::new(out.to_str().unwrap());
 
     let text_buffer = b"Frigate";
     let elements = [
-        // Rounded rect — exercises the rounded-path branch through the FFI.
         make_rect_element(20.0, 20.0, 100.0, 80.0, 4, 0xFF_FF_00_00, 12),
         make_text_element(0, text_buffer.len() as u32),
         make_rect_element(60.0, 60.0, 120.0, 90.0, 3, 0xFF_00_00_FF, 0),
@@ -401,22 +386,23 @@ fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let result = unsafe {
-        let mut out = std::mem::MaybeUninit::uninit();
+    let mut out_res = frigate::FfiResultUnit::Ok(());
+
+    #[expect(unsafe_code, reason = "FFI call")]
+    unsafe {
         frigate::draw_elements(
-            img_path.as_ptr(),
-            out_path.as_ptr(),
-            font_path.as_ptr(),
+            Some(img_path_cs.as_ref()),
+            Some(out_path_cs.as_ref()),
+            Some(font_path_cs.as_ref()),
             elements.as_ptr(),
             elements.len(),
             90,
-            &mut arena,
-            out.as_mut_ptr(),
+            &raw mut arena,
+            &raw mut out_res,
         );
-        out.assume_init()
     };
     assert!(
-        matches!(result, frigate::FfiResultUnit::Ok(())),
+        matches!(out_res, frigate::FfiResultUnit::Ok(())),
         "mixed rect+text+rect run must succeed"
     );
     assert!(out.exists());
@@ -453,7 +439,6 @@ fn make_text_element(text_offset: u32, text_length: u32) -> FfiElement {
     FfiElement::Text(TextPayload {
         x: 50.0,
         y: 250.0,
-        // `height` doubles as font em-box size for text elements.
         height: 40.0,
         rotation_deg: 0,
         fill_color_argb: 0xFFFF0000,

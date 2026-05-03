@@ -13,6 +13,7 @@ demultiplying
 ffi
 freeable
 imageproc
+libfuzzer
 libms
 lossily
 misrender

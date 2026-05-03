@@ -8,7 +8,7 @@
 use image::{Rgba, RgbaImage};
 use tiny_skia::{ColorU8, Pixmap};
 
-/// Build a Pixmap from an RgbaImage, premultiplying alpha as we go.
+/// Build a Pixmap from an `RgbaImage`, premultiplying alpha as we go.
 ///
 /// Panics if the image dimensions are zero — `Pixmap::new` rejects 0×N or N×0 buffers, and
 /// the calling pipeline already guarantees a valid decoded image.
@@ -22,7 +22,7 @@ pub fn to_pixmap(img: &RgbaImage) -> Pixmap {
     pixmap
 }
 
-/// Build an RgbaImage from a Pixmap, unpremultiplying alpha.
+/// Build an `RgbaImage` from a Pixmap, unpremultiplying alpha.
 pub fn from_pixmap(pixmap: &Pixmap) -> RgbaImage {
     let (w, h) = (pixmap.width(), pixmap.height());
     let mut out = RgbaImage::new(w, h);

@@ -240,7 +240,7 @@ mod tests {
     // Bundled test font. `ab_glyph` picks the default axis instance (wght=400) for variable
     // fonts — if a future ab_glyph update shifts rasterization the goldens will fail loudly and
     // we regenerate intentionally.
-    const FONT_BYTES: &[u8] = include_bytes!("../../test/assets/RobotoMono-VariableFont_wght.ttf");
+    const FONT_BYTES: &[u8] = include_bytes!("../tests/assets/RobotoMono-VariableFont_wght.ttf");
 
     fn black_image(w: u32, h: u32) -> RgbaImage {
         RgbaImage::from_pixel(w, h, Rgba([0, 0, 0, 255]))

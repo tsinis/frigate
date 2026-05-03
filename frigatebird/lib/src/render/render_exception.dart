@@ -18,8 +18,7 @@ final class RenderException implements Exception {
 
   @override
   String toString() {
-    // Empty string is the correct sentinel for "no detail from Rust".
-    // ignore: no-empty-string
+    // ignore: no-empty-string, correct sentinel for "no detail from Rust".
     final detail = message.isEmpty ? '' : ': $message';
 
     return 'RenderException(${code.description}$detail)';
