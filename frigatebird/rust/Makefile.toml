@@ -47,7 +47,6 @@ command = "cargo"
 args = ["miri", "test", "--lib", "--", "--skip", "io::tests"]
 
 [tasks.semver]
-# semver-checks is non-blocking until the first release is published to crates.io.
 ignore_errors = true
 command = "cargo"
 args = ["semver-checks", "check-release"]
@@ -83,8 +82,6 @@ command = "cargo"
 args = ["trust"]
 
 [tasks.install-macos-targets]
-# Ensure target is installed for the specific pinned nightly used for fuzzer/asan.
-# Idempotent and safe to run.
 condition = { platforms = ["macos"] }
 command = "rustup"
 args = ["target", "add", "--toolchain", "${NIGHTLY}", "x86_64-apple-darwin"]
@@ -103,7 +100,7 @@ command = "cargo"
 args = ["test", "--all-features"]
 env = { RUSTFLAGS = "-Z sanitizer=address" }
 
-[tasks.coverage]
+[tasks.coverage-llvm]
 toolchain = "${NIGHTLY}"
 command = "cargo"
 args = ["llvm-cov", "--all-features", "--lcov", "--output-path", "lcov.info", "--fail-under-lines", "20"]
@@ -135,5 +132,5 @@ dependencies = [
     "miri",
     "fuzz",
     "bloat",
-    "coverage"
+    "coverage-llvm"
 ]
