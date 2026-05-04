@@ -26,7 +26,7 @@ class DrawPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     for (final element in elements) {
-      // ignore: prefer-correct-switch-length, it's TODO!
+      // ignore: prefer-correct-switch-length, it's TODO! Where is Oval???
       switch (element) {
         case RectElement():
           // TODO(tsinis): render fill color too.

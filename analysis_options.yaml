@@ -524,7 +524,7 @@ linter:
     unnecessary_final: false # Conflicts with: prefer_final_locals.
     unnecessary_library_name: false # To prevent breaking changes for those who use this libs.
     lines_longer_than_80_chars: false # Conflicts with: formatter: page_width: 100.
-    public_member_api_docs: false # TODO! After beta.
+    public_member_api_docs: false # TODO(tsinis) After beta.
     prefer_double_quotes: false
     prefer_single_quotes: true # Conflicts with: prefer_double_quotes.
 

@@ -202,7 +202,7 @@ class _DrawEditorState extends State<DrawEditor> {
             fit: .fill,
             height: widget.imageHeight,
             image: widget.image,
-            semanticLabel: 'Background Image', // TODO!
+            semanticLabel: 'Background Image', // TODO.
             width: widget.imageWidth,
           ),
         ),

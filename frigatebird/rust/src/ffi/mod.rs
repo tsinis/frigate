@@ -12,7 +12,7 @@ use std::ptr;
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FfiErrorCode {
-    Ok = 0,
+    Success = 0,
     Panic = 1,
     InvalidArg = 2,
     Io = 3,
@@ -24,6 +24,10 @@ pub enum FfiErrorCode {
 }
 
 /// A multi-buffer arena for passing variable-length data across FFI.
+///
+/// Layout: 3 raw pointers + 3 `usize` = 48 bytes on 64-bit targets.
+/// Matches Dart `FfiArena` (3 × `Pointer` + 3 × `Size`). No `error_len` here — message length
+/// is returned in `FfiError.message_len` so the Dart layout stays in sync.
 #[derive_ReprC]
 #[repr(C)]
 pub struct FfiArena {
@@ -51,6 +55,15 @@ pub struct FfiError {
     pub _pad: u8,
     pub message_len: u16,
 }
+
+// Result type for FFI operations returning no payload on success.
+// repr(C, u8) layout: discriminant(u8) + implicit_pad(1) + payload_union(FfiError=4) = 6 bytes.
+// Not #[derive_ReprC] — safer_ffi 0.2.0-rc1 doesn't support derive_ReprC for payload enums.
+// The ffi_result! macro generates the repr(C, u8) layout and helper constructors directly.
+crate::ffi_result!(FfiResultUnit, u8);
+
+const _: () = assert!(std::mem::size_of::<FfiResultUnit>() == 6);
+const _: () = assert!(std::mem::align_of::<FfiResultUnit>() == 2);
 
 const _: () = assert!(std::mem::size_of::<FfiError>() == 4);
 

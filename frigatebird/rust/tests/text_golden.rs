@@ -1,22 +1,16 @@
-//! Golden image tests for text rendering + smoke / disaster-path tests for the unified
-//! `render_image` FFI.
+//! Golden image tests for text rendering.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use ab_glyph::FontRef;
 use image::{Rgba, RgbaImage};
 
-use frigate::{FfiArena, FfiElement, RectanglePayload, TextPayload};
+use std::ffi::CString;
+use std::mem::MaybeUninit;
 
-const TEST_FONT_BYTES: &[u8] = include_bytes!("../tests/assets/RobotoMono-VariableFont_wght.ttf");
+use frigate::{FfiArena, FfiErrorCode, FfiResultUnit, TextPayload};
 
-/// Build a temp-file path that's unique per process **and** per call within a process.
-fn unique_tmp(name: &str) -> PathBuf {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("frigate_{}_{n}_{name}", std::process::id()))
-}
+const TEST_FONT_BYTES: &[u8] = include_bytes!("assets/RobotoMono-VariableFont_wght.ttf");
 
 fn assets_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets")
@@ -30,22 +24,17 @@ fn golden_path(name: &str) -> PathBuf {
 }
 
 fn base_image() -> RgbaImage {
-    static CACHE: std::sync::OnceLock<RgbaImage> = std::sync::OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            let path = assets_dir().join("paint.jpg");
-            image::open(&path)
-                .unwrap_or_else(|_| panic!("failed to decode {path:?}"))
-                .into_rgba8()
-        })
-        .clone()
+    let path = assets_dir().join("paint.jpg");
+    image::open(&path)
+        .unwrap_or_else(|_| panic!("failed to decode {path:?}"))
+        .into_rgba8()
 }
 
 fn render_case(
     text: &str,
     x: f32,
     y: f32,
-    font_px: f32,
+    height: f32,
     rot_rad: f32,
     color: Rgba<u8>,
 ) -> RgbaImage {
@@ -55,7 +44,7 @@ fn render_case(
         text,
         x,
         y,
-        font_size_px: font_px,
+        font_size_px: height,
         rotation_rad: rot_rad,
         color,
     };
@@ -65,182 +54,171 @@ fn render_case(
 
 fn assert_golden(actual: &RgbaImage, path: &Path) {
     if !path.exists() {
-        actual
-            .save(path)
-            .unwrap_or_else(|e| panic!("failed to write new golden to {path:?}: {e}"));
-        panic!(
-            "Golden did not exist; wrote new golden to {path:?}. Inspect visually, commit it, then re-run."
-        );
+        actual.save(path).unwrap();
+        panic!("Golden did not exist; wrote new golden to {path:?}.");
     }
-    let expected = image::open(path)
-        .unwrap_or_else(|_| panic!("failed to decode golden {path:?}"))
-        .into_rgba8();
-    assert_eq!(
-        actual.dimensions(),
-        expected.dimensions(),
-        "golden dimension mismatch at {path:?}"
-    );
+    let expected = image::open(path).unwrap().into_rgba8();
+    assert_eq!(actual.dimensions(), expected.dimensions());
     for (x, y, px) in actual.enumerate_pixels() {
-        let ex = expected.get_pixel(x, y);
-        if px != ex {
-            panic!(
-                "pixel mismatch at ({x}, {y}) in {path:?}: got {:?}, expected {:?}",
-                px.0, ex.0
-            );
-        }
+        assert_eq!(px, expected.get_pixel(x, y), "mismatch at ({x}, {y})");
     }
 }
 
 #[test]
 fn golden_basic_text() {
-    let base = base_image();
     let img = render_case(
-        "Frigate",
-        0.10 * base.width() as f32,
-        0.50 * base.height() as f32,
-        0.08 * base.height() as f32,
+        "Frigate Bird",
+        50.0,
+        100.0,
+        48.0,
         0.0,
-        Rgba([255, 0, 0, 255]),
+        Rgba([255, 255, 255, 255]),
     );
     assert_golden(&img, &golden_path("text_basic.png"));
 }
 
 #[test]
 fn golden_rotated_text() {
-    let base = base_image();
     let img = render_case(
-        "Frigate",
-        0.10 * base.width() as f32,
-        0.50 * base.height() as f32,
-        0.08 * base.height() as f32,
-        30.0_f32.to_radians(),
-        Rgba([0, 255, 0, 255]),
+        "Rotated 45°",
+        150.0,
+        150.0,
+        32.0,
+        (45.0f32).to_radians(),
+        Rgba([255, 255, 0, 255]),
     );
     assert_golden(&img, &golden_path("text_rotated.png"));
 }
 
 #[test]
 fn golden_translucent_text() {
-    let base = base_image();
     let img = render_case(
-        "Frigate",
-        0.10 * base.width() as f32,
-        0.50 * base.height() as f32,
-        0.08 * base.height() as f32,
+        "Translucent",
+        20.0,
+        200.0,
+        64.0,
         0.0,
-        Rgba([0, 0, 255, 128]),
+        Rgba([0, 255, 255, 128]),
     );
     assert_golden(&img, &golden_path("text_translucent.png"));
 }
 
+/// Call `draw_elements` and return a numeric error code (0 = success).
+///
+/// Centralises the `MaybeUninit` dance so each test stays concise.
+#[expect(unsafe_code, reason = "FFI call")]
+fn call_draw(
+    image_path: *const std::ffi::c_char,
+    output_path: *const std::ffi::c_char,
+    font_path: *const std::ffi::c_char,
+    elements: &[frigate::FfiElement],
+    arena: &mut FfiArena,
+    quality: u8,
+) -> u8 {
+    let mut out = MaybeUninit::<FfiResultUnit>::uninit();
+    unsafe {
+        frigate::draw_elements(
+            image_path,
+            output_path,
+            font_path,
+            if elements.is_empty() {
+                std::ptr::null()
+            } else {
+                elements.as_ptr()
+            },
+            elements.len(),
+            quality,
+            arena as *mut FfiArena,
+            out.as_mut_ptr(),
+        );
+        match out.assume_init() {
+            FfiResultUnit::Ok(_) => FfiErrorCode::Success as u8,
+            FfiResultUnit::Err(e) => e.code,
+        }
+    }
+}
+
 #[test]
 fn render_image_end_to_end_writes_jpeg() {
-    use safer_ffi::char_p;
+    let img_path = assets_dir().join("paint.jpg");
+    let out = std::env::temp_dir().join("test_out.jpg");
+    let font_path = assets_dir().join("RobotoMono-VariableFont_wght.ttf");
 
-    let out = unique_tmp("smoke.jpg");
+    let img_cs = CString::new(img_path.to_str().unwrap()).unwrap();
+    let out_cs = CString::new(out.to_str().unwrap()).unwrap();
+    let font_cs = CString::new(font_path.to_str().unwrap()).unwrap();
 
-    let img_path_cs = char_p::new(assets_dir().join("paint.jpg").to_str().unwrap());
-    let font_path_cs = char_p::new(
-        assets_dir()
-            .join("RobotoMono-VariableFont_wght.ttf")
-            .to_str()
-            .unwrap(),
-    );
-    let out_path_cs = char_p::new(out.to_str().unwrap());
-    let text_buffer = b"Frigate";
-
-    let element = make_text_element(0, text_buffer.len() as u32);
-    let elements = [element];
-
+    let text = "FFI Test";
+    let elements = [frigate::FfiElement::Text(TextPayload::new(
+        10.0, 10.0, 24.0, 0xFFFF0000, 0, 0, 8,
+    ))];
     let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
-        text_buf: text_buffer.as_ptr(),
-        text_len: text_buffer.len(),
+        text_buf: text.as_ptr(),
+        text_len: text.len(),
         image_buf: std::ptr::null(),
         image_len: 0,
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let mut out_res = frigate::FfiResultUnit::Ok(());
 
-    #[expect(unsafe_code, reason = "FFI call")]
-    unsafe {
-        frigate::draw_elements(
-            Some(img_path_cs.as_ref()),
-            Some(out_path_cs.as_ref()),
-            Some(font_path_cs.as_ref()),
-            elements.as_ptr(),
-            elements.len(),
-            90,
-            &raw mut arena,
-            &raw mut out_res,
-        );
-    };
-    assert!(
-        matches!(out_res, frigate::FfiResultUnit::Ok(())),
-        "draw_elements returned error"
+    let code = call_draw(
+        img_cs.as_ptr(),
+        out_cs.as_ptr(),
+        font_cs.as_ptr(),
+        &elements,
+        &mut arena,
+        90,
     );
+    assert_eq!(code, FfiErrorCode::Success as u8);
     assert!(out.exists(), "expected output file {out:?} to exist");
 
     let decoded = image::open(&out).expect("output should decode as a valid image");
-    assert!(decoded.width() > 0 && decoded.height() > 0);
-
-    std::fs::remove_file(&out).ok();
+    assert!(
+        decoded.width() > 0 && decoded.height() > 0,
+        "output must be a non-empty image"
+    );
 }
 
 #[test]
 fn render_image_rejects_text_without_font() {
-    use safer_ffi::char_p;
+    let img_path = assets_dir().join("paint.jpg");
+    let out = std::env::temp_dir().join("test_out_nofont.jpg");
 
-    let out = unique_tmp("no_font.jpg");
-    let img_path_cs = char_p::new(assets_dir().join("paint.jpg").to_str().unwrap());
-    let out_path_cs = char_p::new(out.to_str().unwrap());
+    let img_cs = CString::new(img_path.to_str().unwrap()).unwrap();
+    let out_cs = CString::new(out.to_str().unwrap()).unwrap();
 
-    let text_buffer = b"hi";
-    let element = make_text_element(0, text_buffer.len() as u32);
-    let elements = [element];
-
+    let text = "No Font";
+    let elements = [frigate::FfiElement::Text(TextPayload::new(
+        10.0, 10.0, 24.0, 0xFFFF0000, 0, 0, 7,
+    ))];
     let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
-        text_buf: text_buffer.as_ptr(),
-        text_len: text_buffer.len(),
+        text_buf: text.as_ptr(),
+        text_len: text.len(),
         image_buf: std::ptr::null(),
         image_len: 0,
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let mut out_res = frigate::FfiResultUnit::Ok(());
 
-    #[expect(unsafe_code, reason = "FFI call")]
-    unsafe {
-        frigate::draw_elements(
-            Some(img_path_cs.as_ref()),
-            Some(out_path_cs.as_ref()),
-            None,
-            elements.as_ptr(),
-            elements.len(),
-            90,
-            &raw mut arena,
-            &raw mut out_res,
-        );
-    };
-    let frigate::FfiResultUnit::Err(e) = out_res else {
-        panic!("expected error, got Ok");
-    };
-    assert_eq!(
-        e.code,
-        frigate::FfiErrorCode::InvalidArg as u8,
-        "expected InvalidArg for missing font"
+    let code = call_draw(
+        img_cs.as_ptr(),
+        out_cs.as_ptr(),
+        std::ptr::null(),
+        &elements,
+        &mut arena,
+        90,
     );
+    assert_eq!(code, FfiErrorCode::InvalidArg as u8);
 }
 
 #[test]
 fn render_image_rejects_null_image_path() {
-    use safer_ffi::char_p;
+    let out = std::env::temp_dir().join("test_out_null.jpg");
+    let out_cs = CString::new(out.to_str().unwrap()).unwrap();
 
-    let out_path_cs = char_p::new("dummy");
-    let font_path_cs = char_p::new("dummy");
-    let mut error_buf = vec![0u8; 256];
+    let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
         text_buf: std::ptr::null(),
         text_len: 0,
@@ -249,35 +227,23 @@ fn render_image_rejects_null_image_path() {
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let mut out_res = frigate::FfiResultUnit::Ok(());
 
-    #[expect(unsafe_code, reason = "FFI call")]
-    unsafe {
-        frigate::draw_elements(
-            None,
-            Some(out_path_cs.as_ref()),
-            Some(font_path_cs.as_ref()),
-            std::ptr::NonNull::<frigate::FfiElement>::dangling().as_ptr(),
-            0,
-            100,
-            &raw mut arena,
-            &raw mut out_res,
-        );
-    };
-
-    assert!(
-        matches!(out_res, frigate::FfiResultUnit::Err(_)),
-        "expected error for null path"
+    let code = call_draw(
+        std::ptr::null(),
+        out_cs.as_ptr(),
+        std::ptr::null(),
+        &[],
+        &mut arena,
+        100,
     );
+    assert_eq!(code, FfiErrorCode::InvalidArg as u8);
 }
 
 #[test]
 fn render_image_rejects_nonexistent_source_image() {
-    use safer_ffi::char_p;
-
-    let bad_img_cs = char_p::new("/definitely/not/here.jpg");
-    let out = unique_tmp("bad_source.jpg");
-    let out_path_cs = char_p::new(out.to_str().unwrap());
+    let out = std::env::temp_dir().join("test_out_missing.jpg");
+    let out_cs = CString::new(out.to_str().unwrap()).unwrap();
+    let bad_img_cs = CString::new("/tmp/definitely_not_here_12345.jpg").unwrap();
 
     let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
@@ -288,38 +254,25 @@ fn render_image_rejects_nonexistent_source_image() {
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let mut out_res = frigate::FfiResultUnit::Ok(());
 
-    #[expect(unsafe_code, reason = "FFI call")]
-    unsafe {
-        frigate::draw_elements(
-            Some(bad_img_cs.as_ref()),
-            Some(out_path_cs.as_ref()),
-            None,
-            std::ptr::NonNull::<frigate::FfiElement>::dangling().as_ptr(),
-            0,
-            80,
-            &raw mut arena,
-            &raw mut out_res,
-        );
-    };
-    let frigate::FfiResultUnit::Err(e) = out_res else {
-        panic!("expected error, got Ok");
-    };
-    assert_eq!(
-        e.code,
-        frigate::FfiErrorCode::Decode as u8,
-        "expected Decode error for missing image"
+    let code = call_draw(
+        bad_img_cs.as_ptr(),
+        out_cs.as_ptr(),
+        std::ptr::null(),
+        &[],
+        &mut arena,
+        80,
     );
+    assert_eq!(code, FfiErrorCode::Decode as u8);
 }
 
 #[test]
 fn render_image_rejects_unsupported_output_extension() {
-    use safer_ffi::char_p;
+    let img_path = assets_dir().join("paint.jpg");
+    let out = std::env::temp_dir().join("test_out.tiff");
 
-    let img_path_cs = char_p::new(assets_dir().join("paint.jpg").to_str().unwrap());
-    let out = unique_tmp("bad_ext.tiff");
-    let out_path_cs = char_p::new(out.to_str().unwrap());
+    let img_cs = CString::new(img_path.to_str().unwrap()).unwrap();
+    let out_cs = CString::new(out.to_str().unwrap()).unwrap();
 
     let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
@@ -330,122 +283,65 @@ fn render_image_rejects_unsupported_output_extension() {
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let mut out_res = frigate::FfiResultUnit::Ok(());
 
-    #[expect(unsafe_code, reason = "FFI call")]
-    unsafe {
-        frigate::draw_elements(
-            Some(img_path_cs.as_ref()),
-            Some(out_path_cs.as_ref()),
-            None,
-            std::ptr::NonNull::<frigate::FfiElement>::dangling().as_ptr(),
-            0,
-            80,
-            &raw mut arena,
-            &raw mut out_res,
-        );
-    };
-    let frigate::FfiResultUnit::Err(e) = out_res else {
-        panic!("expected error, got Ok");
-    };
-    assert_eq!(
-        e.code,
-        frigate::FfiErrorCode::Encode as u8,
-        "expected Encode error for bad extension"
+    let code = call_draw(
+        img_cs.as_ptr(),
+        out_cs.as_ptr(),
+        std::ptr::null(),
+        &[],
+        &mut arena,
+        80,
     );
+    assert_eq!(code, FfiErrorCode::Encode as u8);
 }
 
 #[test]
 fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
-    use safer_ffi::char_p;
+    let img_path = assets_dir().join("paint.jpg");
+    let out = std::env::temp_dir().join("test_out_mixed.jpg");
+    let font_path = assets_dir().join("RobotoMono-VariableFont_wght.ttf");
 
-    let out = unique_tmp("mixed.jpg");
+    let img_cs = CString::new(img_path.to_str().unwrap()).unwrap();
+    let out_cs = CString::new(out.to_str().unwrap()).unwrap();
+    let font_cs = CString::new(font_path.to_str().unwrap()).unwrap();
 
-    let img_path_cs = char_p::new(assets_dir().join("paint.jpg").to_str().unwrap());
-    let font_path_cs = char_p::new(
-        assets_dir()
-            .join("RobotoMono-VariableFont_wght.ttf")
-            .to_str()
-            .unwrap(),
-    );
-    let out_path_cs = char_p::new(out.to_str().unwrap());
-
-    let text_buffer = b"Frigate";
+    let text = "Mixed";
     let elements = [
-        make_rect_element(20.0, 20.0, 100.0, 80.0, 4, 0xFF_FF_00_00, 12),
-        make_text_element(0, text_buffer.len() as u32),
-        make_rect_element(60.0, 60.0, 120.0, 90.0, 3, 0xFF_00_00_FF, 0),
+        frigate::FfiElement::Rectangle(frigate::RectanglePayload::new(
+            0.0, 0.0, 100.0, 100.0, 0xFFFF0000,
+        )),
+        frigate::FfiElement::Text(TextPayload::new(10.0, 10.0, 24.0, 0xFF00FF00, 0, 0, 5)),
+        frigate::FfiElement::Rectangle(frigate::RectanglePayload::new(
+            50.0, 50.0, 100.0, 100.0, 0xFF0000FF,
+        )),
     ];
-
     let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
-        text_buf: text_buffer.as_ptr(),
-        text_len: text_buffer.len(),
+        text_buf: text.as_ptr(),
+        text_len: text.len(),
         image_buf: std::ptr::null(),
         image_len: 0,
         error_buf: error_buf.as_mut_ptr(),
         error_cap: error_buf.len(),
     };
-    let mut out_res = frigate::FfiResultUnit::Ok(());
 
-    #[expect(unsafe_code, reason = "FFI call")]
-    unsafe {
-        frigate::draw_elements(
-            Some(img_path_cs.as_ref()),
-            Some(out_path_cs.as_ref()),
-            Some(font_path_cs.as_ref()),
-            elements.as_ptr(),
-            elements.len(),
-            90,
-            &raw mut arena,
-            &raw mut out_res,
-        );
-    };
-    assert!(
-        matches!(out_res, frigate::FfiResultUnit::Ok(())),
+    let code = call_draw(
+        img_cs.as_ptr(),
+        out_cs.as_ptr(),
+        font_cs.as_ptr(),
+        &elements,
+        &mut arena,
+        90,
+    );
+    assert_eq!(
+        code,
+        FfiErrorCode::Success as u8,
         "mixed rect+text+rect run must succeed"
     );
     assert!(out.exists());
-    let decoded = image::open(&out).expect("output should decode");
-    assert!(decoded.width() > 0 && decoded.height() > 0);
-
-    std::fs::remove_file(&out).ok();
-}
-
-fn make_rect_element(
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-    outline_thickness: u8,
-    outline_color_argb: u32,
-    corner_radius: u16,
-) -> FfiElement {
-    FfiElement::Rectangle(RectanglePayload {
-        x,
-        y,
-        width,
-        height,
-        rotation_deg: 0,
-        fill_color_argb: 0,
-        outline_color_argb,
-        outline_thickness,
-        blur: 0,
-        corner_radius,
-    })
-}
-
-fn make_text_element(text_offset: u32, text_length: u32) -> FfiElement {
-    FfiElement::Text(TextPayload {
-        x: 50.0,
-        y: 250.0,
-        height: 40.0,
-        rotation_deg: 0,
-        fill_color_argb: 0xFFFF0000,
-        blur: 0,
-        _pad: [0; 3],
-        font_id: 0,
-        text_offset,
-        text_len: text_length,
-    })
+    let decoded = image::open(&out).expect("mixed output should decode");
+    assert!(
+        decoded.width() > 0 && decoded.height() > 0,
+        "output must be a non-empty image"
+    );
 }
