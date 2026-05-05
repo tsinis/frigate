@@ -12,6 +12,31 @@ pub enum FfiElement {
     Oval(OvalPayload) = 2,
 }
 
+pub trait Shape {
+    fn x(&self) -> f64;
+    fn y(&self) -> f64;
+    fn width(&self) -> f64;
+    fn height(&self) -> f64;
+    fn rotation(&self) -> i32;
+    fn fill_color_argb(&self) -> u32;
+    fn blur(&self) -> u8;
+}
+
+pub trait ShapeBuilder: Sized {
+    fn set_rotation(&mut self, deg: i32);
+    fn set_blur(&mut self, blur: u8);
+
+    fn with_rotation(mut self, deg: i32) -> Self {
+        self.set_rotation(deg);
+        self
+    }
+
+    fn with_blur(mut self, blur: u8) -> Self {
+        self.set_blur(blur);
+        self
+    }
+}
+
 #[derive_ReprC]
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -56,7 +81,6 @@ impl RectanglePayload {
     }
 }
 
-/*
 impl Shape for RectanglePayload {
     fn x(&self) -> f64 {
         self.x
@@ -82,16 +106,13 @@ impl Shape for RectanglePayload {
 }
 
 impl ShapeBuilder for RectanglePayload {
-    fn with_rotation(mut self, deg: i32) -> Self {
+    fn set_rotation(&mut self, deg: i32) {
         self.rotation_deg = deg;
-        self
     }
-    fn with_blur(mut self, blur: u8) -> Self {
+    fn set_blur(&mut self, blur: u8) {
         self.blur = blur;
-        self
     }
 }
-*/
 
 #[derive_ReprC]
 #[repr(C)]
@@ -132,7 +153,6 @@ impl OvalPayload {
     }
 }
 
-/*
 impl Shape for OvalPayload {
     fn x(&self) -> f64 {
         self.x
@@ -158,16 +178,13 @@ impl Shape for OvalPayload {
 }
 
 impl ShapeBuilder for OvalPayload {
-    fn with_rotation(mut self, deg: i32) -> Self {
+    fn set_rotation(&mut self, deg: i32) {
         self.rotation_deg = deg;
-        self
     }
-    fn with_blur(mut self, blur: u8) -> Self {
+    fn set_blur(&mut self, blur: u8) {
         self.blur = blur;
-        self
     }
 }
-*/
 
 #[derive_ReprC]
 #[repr(C)]
@@ -210,7 +227,6 @@ impl TextPayload {
     }
 }
 
-/*
 impl Shape for TextPayload {
     fn x(&self) -> f64 {
         self.x
@@ -236,16 +252,13 @@ impl Shape for TextPayload {
 }
 
 impl ShapeBuilder for TextPayload {
-    fn with_rotation(mut self, deg: i32) -> Self {
+    fn set_rotation(&mut self, deg: i32) {
         self.rotation_deg = deg;
-        self
     }
-    fn with_blur(mut self, blur: u8) -> Self {
+    fn set_blur(&mut self, blur: u8) {
         self.blur = blur;
-        self
     }
 }
-*/
 
 // Layout assertions to freeze the wire contract.
 // Dart side MUST match these exactly using Struct + Union + padding.

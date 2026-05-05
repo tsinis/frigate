@@ -1,14 +1,13 @@
 //! Golden image tests for text rendering.
 
+#![allow(unsafe_code)]
+
 use std::path::{Path, PathBuf};
 
 use ab_glyph::FontRef;
 use image::{Rgba, RgbaImage};
 
-use std::ffi::CString;
-use std::mem::MaybeUninit;
-
-use frigate::{FfiArena, FfiErrorCode, FfiResultUnit, TextPayload};
+use frigate::{FfiArena, FfiErrorCode, TextPayload};
 
 const TEST_FONT_BYTES: &[u8] = include_bytes!("assets/RobotoMono-VariableFont_wght.ttf");
 
@@ -105,22 +104,20 @@ fn golden_translucent_text() {
 
 /// Call `draw_elements` and return a numeric error code (0 = success).
 ///
-/// Centralises the `MaybeUninit` dance so each test stays concise.
-#[expect(unsafe_code, reason = "FFI call")]
+/// Centralises the FFI call so each test stays concise.
 fn call_draw(
-    image_path: *const std::ffi::c_char,
-    output_path: *const std::ffi::c_char,
-    font_path: *const std::ffi::c_char,
+    image_path: Option<&safer_ffi::char_p::char_p_boxed>,
+    output_path: Option<&safer_ffi::char_p::char_p_boxed>,
+    font_path: Option<&safer_ffi::char_p::char_p_boxed>,
     elements: &[frigate::FfiElement],
     arena: &mut FfiArena,
     quality: u8,
 ) -> u8 {
-    let mut out = MaybeUninit::<FfiResultUnit>::uninit();
     unsafe {
         frigate::draw_elements(
-            image_path,
-            output_path,
-            font_path,
+            image_path.map(|p| p.as_ref()),
+            output_path.map(|p| p.as_ref()),
+            font_path.map(|p| p.as_ref()),
             if elements.is_empty() {
                 std::ptr::null()
             } else {
@@ -129,12 +126,7 @@ fn call_draw(
             elements.len(),
             quality,
             arena as *mut FfiArena,
-            out.as_mut_ptr(),
-        );
-        match out.assume_init() {
-            FfiResultUnit::Ok(_) => FfiErrorCode::Success as u8,
-            FfiResultUnit::Err(e) => e.code,
-        }
+        )
     }
 }
 
@@ -144,9 +136,9 @@ fn render_image_end_to_end_writes_jpeg() {
     let out = std::env::temp_dir().join("test_out.jpg");
     let font_path = assets_dir().join("RobotoMono-VariableFont_wght.ttf");
 
-    let img_cs = CString::new(img_path.to_str().unwrap()).unwrap();
-    let out_cs = CString::new(out.to_str().unwrap()).unwrap();
-    let font_cs = CString::new(font_path.to_str().unwrap()).unwrap();
+    let img_cs = safer_ffi::char_p::new(img_path.to_str().unwrap());
+    let out_cs = safer_ffi::char_p::new(out.to_str().unwrap());
+    let font_cs = safer_ffi::char_p::new(font_path.to_str().unwrap());
 
     let text = "FFI Test";
     let elements = [frigate::FfiElement::Text(TextPayload::new(
@@ -163,13 +155,17 @@ fn render_image_end_to_end_writes_jpeg() {
     };
 
     let code = call_draw(
-        img_cs.as_ptr(),
-        out_cs.as_ptr(),
-        font_cs.as_ptr(),
+        Some(&img_cs),
+        Some(&out_cs),
+        Some(&font_cs),
         &elements,
         &mut arena,
         90,
     );
+    if code != FfiErrorCode::Success as u8 {
+        let msg = unsafe { std::ffi::CStr::from_ptr(arena.error_buf as *const _) };
+        panic!("FFI call failed with code {code}: {:?}", msg);
+    }
     assert_eq!(code, FfiErrorCode::Success as u8);
     assert!(out.exists(), "expected output file {out:?} to exist");
 
@@ -185,8 +181,8 @@ fn render_image_rejects_text_without_font() {
     let img_path = assets_dir().join("paint.jpg");
     let out = std::env::temp_dir().join("test_out_nofont.jpg");
 
-    let img_cs = CString::new(img_path.to_str().unwrap()).unwrap();
-    let out_cs = CString::new(out.to_str().unwrap()).unwrap();
+    let img_cs = safer_ffi::char_p::new(img_path.to_str().unwrap());
+    let out_cs = safer_ffi::char_p::new(out.to_str().unwrap());
 
     let text = "No Font";
     let elements = [frigate::FfiElement::Text(TextPayload::new(
@@ -203,9 +199,9 @@ fn render_image_rejects_text_without_font() {
     };
 
     let code = call_draw(
-        img_cs.as_ptr(),
-        out_cs.as_ptr(),
-        std::ptr::null(),
+        Some(&img_cs),
+        Some(&out_cs),
+        None,
         &elements,
         &mut arena,
         90,
@@ -216,7 +212,7 @@ fn render_image_rejects_text_without_font() {
 #[test]
 fn render_image_rejects_null_image_path() {
     let out = std::env::temp_dir().join("test_out_null.jpg");
-    let out_cs = CString::new(out.to_str().unwrap()).unwrap();
+    let out_cs = safer_ffi::char_p::new(out.to_str().unwrap());
 
     let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
@@ -228,22 +224,15 @@ fn render_image_rejects_null_image_path() {
         error_cap: error_buf.len(),
     };
 
-    let code = call_draw(
-        std::ptr::null(),
-        out_cs.as_ptr(),
-        std::ptr::null(),
-        &[],
-        &mut arena,
-        100,
-    );
+    let code = call_draw(None, Some(&out_cs), None, &[], &mut arena, 100);
     assert_eq!(code, FfiErrorCode::InvalidArg as u8);
 }
 
 #[test]
 fn render_image_rejects_nonexistent_source_image() {
     let out = std::env::temp_dir().join("test_out_missing.jpg");
-    let out_cs = CString::new(out.to_str().unwrap()).unwrap();
-    let bad_img_cs = CString::new("/tmp/definitely_not_here_12345.jpg").unwrap();
+    let out_cs = safer_ffi::char_p::new(out.to_str().unwrap());
+    let bad_img_cs = safer_ffi::char_p::new("/tmp/definitely_not_here_12345.jpg");
 
     let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
@@ -255,14 +244,7 @@ fn render_image_rejects_nonexistent_source_image() {
         error_cap: error_buf.len(),
     };
 
-    let code = call_draw(
-        bad_img_cs.as_ptr(),
-        out_cs.as_ptr(),
-        std::ptr::null(),
-        &[],
-        &mut arena,
-        80,
-    );
+    let code = call_draw(Some(&bad_img_cs), Some(&out_cs), None, &[], &mut arena, 80);
     assert_eq!(code, FfiErrorCode::Decode as u8);
 }
 
@@ -271,8 +253,8 @@ fn render_image_rejects_unsupported_output_extension() {
     let img_path = assets_dir().join("paint.jpg");
     let out = std::env::temp_dir().join("test_out.tiff");
 
-    let img_cs = CString::new(img_path.to_str().unwrap()).unwrap();
-    let out_cs = CString::new(out.to_str().unwrap()).unwrap();
+    let img_cs = safer_ffi::char_p::new(img_path.to_str().unwrap());
+    let out_cs = safer_ffi::char_p::new(out.to_str().unwrap());
 
     let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
@@ -284,14 +266,11 @@ fn render_image_rejects_unsupported_output_extension() {
         error_cap: error_buf.len(),
     };
 
-    let code = call_draw(
-        img_cs.as_ptr(),
-        out_cs.as_ptr(),
-        std::ptr::null(),
-        &[],
-        &mut arena,
-        80,
-    );
+    let code = call_draw(Some(&img_cs), Some(&out_cs), None, &[], &mut arena, 80);
+    if code != FfiErrorCode::Encode as u8 {
+        let msg = unsafe { std::ffi::CStr::from_ptr(arena.error_buf as *const _) };
+        panic!("FFI call failed with code {code} (wanted 5): {:?}", msg);
+    }
     assert_eq!(code, FfiErrorCode::Encode as u8);
 }
 
@@ -301,9 +280,9 @@ fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
     let out = std::env::temp_dir().join("test_out_mixed.jpg");
     let font_path = assets_dir().join("RobotoMono-VariableFont_wght.ttf");
 
-    let img_cs = CString::new(img_path.to_str().unwrap()).unwrap();
-    let out_cs = CString::new(out.to_str().unwrap()).unwrap();
-    let font_cs = CString::new(font_path.to_str().unwrap()).unwrap();
+    let img_cs = safer_ffi::char_p::new(img_path.to_str().unwrap());
+    let out_cs = safer_ffi::char_p::new(out.to_str().unwrap());
+    let font_cs = safer_ffi::char_p::new(font_path.to_str().unwrap());
 
     let text = "Mixed";
     let elements = [
@@ -326,13 +305,17 @@ fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
     };
 
     let code = call_draw(
-        img_cs.as_ptr(),
-        out_cs.as_ptr(),
-        font_cs.as_ptr(),
+        Some(&img_cs),
+        Some(&out_cs),
+        Some(&font_cs),
         &elements,
         &mut arena,
         90,
     );
+    if code != FfiErrorCode::Success as u8 {
+        let msg = unsafe { std::ffi::CStr::from_ptr(arena.error_buf as *const _) };
+        panic!("FFI call failed with code {code}: {:?}", msg);
+    }
     assert_eq!(
         code,
         FfiErrorCode::Success as u8,
