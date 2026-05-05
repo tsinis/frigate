@@ -11,6 +11,8 @@
 
 import 'dart:ffi';
 
+import 'ffi_abi.dart';
+
 /// Payload for a rectangle element.
 final class RectanglePayload extends Struct {
   @Double()
@@ -108,14 +110,14 @@ final class OvalPayload extends Struct {
   external int blur;
 
   /// Explicit padding to keep the struct size 48 bytes, matching Rust `_pad: [u8; 2]`.
-  @Uint16()
-  external int _pad;
+  @Array(2)
+  external Array<Uint8> _pad;
 }
 
 /// Union of all possible element payloads.
 final class FfiPayload extends Union {
   /// Size anchor: forces the union to be 48 bytes to match Rust payloads.
-  @Array(48)
+  @Array(FfiAbi.payloadBytes)
   external Array<Uint8> _raw;
 
   external RectanglePayload rectangle;

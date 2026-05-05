@@ -2,8 +2,6 @@
 import 'dart:convert' show utf8;
 import 'dart:ffi';
 
-import 'package:ffi/ffi.dart';
-
 import 'ffi_error.dart';
 
 String decodeFfiMessage(FfiError error, Pointer<Uint8> errorBuf, int errorCap) {
@@ -18,8 +16,11 @@ String decodeFfiMessage(FfiError error, Pointer<Uint8> errorBuf, int errorCap) {
 String decodeFfiMessageFromBuffer(Pointer<Uint8> errorBuf, int errorCap) {
   if (errorBuf == nullptr || errorCap == 0) return '';
 
-  // Pointer<Uint8> cast to Pointer<Utf8> allows using toDartString() which reads until \0.
-  return errorBuf.cast<Utf8>().toDartString();
+  final bytes = errorBuf.asTypedList(errorCap);
+  final nullIndex = bytes.indexOf(0);
+  final len = nullIndex == -1 ? errorCap : nullIndex;
+
+  return utf8.decode(bytes.sublist(0, len));
 }
 
 FfiErrorCode mapFfiErrorCode(int code) => FfiErrorCode.fromCode(code);

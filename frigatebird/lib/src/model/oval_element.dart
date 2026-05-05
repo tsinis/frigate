@@ -11,11 +11,16 @@ final class OvalElement extends DrawElement {
     super.rotation,
     super.fillColor = FfiColor.transparent,
     this.outlineColor = FfiColor.black,
-    this.outlineThickness = 2,
+    int outlineThickness = 2,
   }) : assert(
          outlineThickness >= 0 && outlineThickness <= 255,
          'outlineThickness must be in 0..255',
-       );
+       ),
+       outlineThickness = outlineThickness < 0
+           ? 0
+           : outlineThickness > 255
+           ? 255
+           : outlineThickness;
 
   final FfiColor outlineColor;
   final int outlineThickness;

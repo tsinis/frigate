@@ -53,6 +53,9 @@ sealed class RenderImage {
     FfiAbi.assertArena();
     FfiAbi.assertError();
     FfiAbi.assertPayload();
+    if (backgroundPath.isEmpty) {
+      throw const RenderException(.invalidArg, 'backgroundPath cannot be empty');
+    }
     assert(
       !elements.any((e) => e is TextElement) || fontPath != null,
       'fontPath must be supplied when elements contains a TextElement',
@@ -92,7 +95,7 @@ sealed class RenderImage {
       backgroundCStr = backgroundPath.toNativeUtf8();
       outputCStr = outputPath?.toNativeUtf8() ?? nullptr;
       fontCStr = fontPath?.toNativeUtf8() ?? nullptr;
-      handle = FfiMarshal.encodeElements(elements, malloc);
+      handle = FfiMarshal.encodeElements(elements, calloc);
 
       final arenaRef = handle.arenaPtr.ref;
 
@@ -113,9 +116,9 @@ sealed class RenderImage {
         throw RenderException(domainResult.code, domainResult.message);
       }
     } finally {
-      if (backgroundCStr != nullptr) malloc.free(backgroundCStr);
-      if (outputCStr != nullptr) malloc.free(outputCStr);
-      if (fontCStr != nullptr) malloc.free(fontCStr);
+      if (backgroundCStr != nullptr) calloc.free(backgroundCStr);
+      if (outputCStr != nullptr) calloc.free(outputCStr);
+      if (fontCStr != nullptr) calloc.free(fontCStr);
       handle?.free();
     }
   }

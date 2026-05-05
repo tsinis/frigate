@@ -29,6 +29,10 @@ sealed class FfiAbi {
   /// 8-byte alignment padding).
   static const rectElementBytes = 48;
 
+  /// Expected size in bytes for the element payload union in C.
+  // ignore: avoid-duplicate-constant-values, it is conceptually distinct from rectElementBytes.
+  static const payloadBytes = 48;
+
   /// Error buffer capacity allocated by `FfiMarshal.encodeElements` for Rust to write
   /// diagnostic messages into. Single source of truth — Rust docs reference this value too.
   static const errorCapBytes = 256;
@@ -60,7 +64,7 @@ sealed class FfiAbi {
   }
 
   /// Assert the union of payloads matches the target wire size.
-  static void assertPayload({int expectedSize = 48}) {
+  static void assertPayload({int expectedSize = payloadBytes}) {
     final actualSize = sizeOf<FfiPayload>();
     assert(
       actualSize == expectedSize,

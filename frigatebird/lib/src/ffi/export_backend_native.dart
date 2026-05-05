@@ -56,15 +56,19 @@ final class ExportBackendNative {
     Pointer<ByteBuffer> outPtr = nullptr;
     FfiArenaHandle? arenaHandle;
 
+    if (backgroundPath.isEmpty) {
+      throw StateError('Rust merge failed: backgroundPath cannot be empty');
+    }
+
     try {
       bgCStr = backgroundPath.toNativeUtf8();
       assert(bgCStr != nullptr, 'Failed to convert backgroundPath to C string');
       final fgLen = foregroundPng.length;
-      fgPtr = malloc<Uint8>(fgLen);
+      fgPtr = calloc<Uint8>(fgLen);
       fgPtr.asTypedList(fgLen).setAll(0, foregroundPng);
-      outPtr = malloc<ByteBuffer>();
+      outPtr = calloc<ByteBuffer>();
       // We need an arena for potential error messages.
-      arenaHandle = FfiMarshal.encodeElements([], malloc);
+      arenaHandle = FfiMarshal.encodeElements([], calloc);
 
       final arenaRef = arenaHandle.arenaPtr.ref;
 
@@ -103,9 +107,9 @@ final class ExportBackendNative {
 
       return output;
     } finally {
-      if (bgCStr != nullptr) malloc.free(bgCStr);
-      if (fgPtr != nullptr) malloc.free(fgPtr);
-      if (outPtr != nullptr) malloc.free(outPtr);
+      if (bgCStr != nullptr) calloc.free(bgCStr);
+      if (fgPtr != nullptr) calloc.free(fgPtr);
+      if (outPtr != nullptr) calloc.free(outPtr);
       arenaHandle?.free();
     }
   }

@@ -90,6 +90,12 @@ sealed class FfiMarshal {
               ..cornerRadius = item.cornerRadius.clamp(0, 65535);
 
           case OvalElement():
+            assert(
+              item.outlineThickness >= 0 && item.outlineThickness <= 255,
+              'outlineThickness must be in 0..255',
+            );
+            assert(item.blur >= 0 && item.blur <= 255, 'blur must be in 0..255');
+
             (ref..tag = FfiElementType.oval.value).payload.oval
               ..x = item.x
               ..y = item.y
