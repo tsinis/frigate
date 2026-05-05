@@ -178,7 +178,7 @@ class DrawPainter extends CustomPainter {
   static bool _isPointInEllipse(Offset point, Rect rect) {
     final axisA = rect.width / 2;
     final axisB = rect.height / 2;
-    if (axisA == 0 || axisB == 0) return false;
+    if (axisA <= 0 || axisB <= 0) return false;
 
     final diffX = point.dx - rect.center.dx;
     final diffY = point.dy - rect.center.dy;

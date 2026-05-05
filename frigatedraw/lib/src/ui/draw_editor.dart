@@ -44,36 +44,39 @@ class _DrawEditorState extends State<DrawEditor> {
   /// becomes impossible to grab again because the 8 handles start overlapping each other.
   static const _minRectSize = 10.0;
 
-  static T _resizedShape<T extends DrawElement>({
+  static DrawElement _resizedShape({
     required Offset delta,
     required HandlePosition handle,
-    required T shape,
+    required DrawElement shape,
   }) {
-    final T(:height, :width, :x, :y) = shape;
+    final DrawElement(:height, :width, :x, :y) = shape;
 
-    // A copyWith returns DrawElement but T is a specific subtype. TODO(tsinis)?
-    // ignore: avoid-type-casts
-    return shape.copyWith(
-          height: switch (handle) {
-            .topLeft || .topCenter || .topRight => max(height - delta.dy, _minRectSize),
-            .bottomLeft || .bottomCenter || .bottomRight => max(height + delta.dy, _minRectSize),
-            .centerLeft || .centerRight => height,
-          },
-          width: switch (handle) {
-            .topLeft || .centerLeft || .bottomLeft => max(width - delta.dx, _minRectSize),
-            .topRight || .centerRight || .bottomRight => max(width + delta.dx, _minRectSize),
-            .topCenter || .bottomCenter => width,
-          },
-          x: switch (handle) {
-            .topLeft || .centerLeft || .bottomLeft => x + delta.dx,
-            .topCenter || .topRight || .centerRight || .bottomCenter || .bottomRight => x,
-          },
-          y: switch (handle) {
-            .topLeft || .topCenter || .topRight => y + delta.dy,
-            .centerLeft || .centerRight || .bottomLeft || .bottomCenter || .bottomRight => y,
-          },
-        )
-        as T;
+    final newHeight = switch (handle) {
+      .topLeft || .topCenter || .topRight => max(height - delta.dy, _minRectSize),
+      .bottomLeft || .bottomCenter || .bottomRight => max(height + delta.dy, _minRectSize),
+      .centerLeft || .centerRight => height,
+    };
+
+    final newWidth = switch (handle) {
+      .topLeft || .centerLeft || .bottomLeft => max(width - delta.dx, _minRectSize),
+      .topRight || .centerRight || .bottomRight => max(width + delta.dx, _minRectSize),
+      .topCenter || .bottomCenter => width,
+    };
+
+    final appliedHeightDelta = newHeight - height;
+    final appliedWidthDelta = newWidth - width;
+
+    final newX = switch (handle) {
+      .topLeft || .centerLeft || .bottomLeft => x - appliedWidthDelta,
+      .topCenter || .topRight || .centerRight || .bottomCenter || .bottomRight => x,
+    };
+
+    final newY = switch (handle) {
+      .topLeft || .topCenter || .topRight => y - appliedHeightDelta,
+      .centerLeft || .centerRight || .bottomLeft || .bottomCenter || .bottomRight => y,
+    };
+
+    return shape.copyWith(height: newHeight, width: newWidth, x: newX, y: newY);
   }
 
   final _transformController = TransformationController();

@@ -28,7 +28,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
       final documents = getApplicationDocumentsDirectory();
 
       return _ExportDestination(
-        directory: documents,
+        directory: Directory('${documents.path}/Frigatedraw'),
         successMessage: 'Stored in Files app under Frigatedraw',
       );
     }
@@ -40,7 +40,10 @@ class _DrawingScreenState extends State<DrawingScreen> {
         ? 'Stored in app-specific downloads'
         : 'Stored in Downloads';
 
-    return _ExportDestination(directory: downloads, successMessage: successMessage);
+    return _ExportDestination(
+      directory: Directory('${downloads.path}/Frigatedraw'),
+      successMessage: successMessage,
+    );
   }
 
   static Future<File> _copyAssetToDisk(String assetKey, String destPath) async {
@@ -163,7 +166,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
       final destination = _exportDestination;
       if (destination == null) {
         if (!mounted) return;
-        _showSnackBar('Downloads directory not available on this platform');
+        _showSnackBar('Export directory not available');
 
         return;
       }

@@ -178,6 +178,12 @@ void main() => group(DrawPainter, () {
         isTrue,
         reason: 'top midpoint sits on the oval outline',
       );
+
+      expect(
+        DrawPainter.isPointOnShape(const Offset(50, 30), element: oval),
+        isFalse,
+        reason: 'bounding-box corner is not on the oval outline',
+      );
     });
 
     test('is false in the interior of a shape', () {
