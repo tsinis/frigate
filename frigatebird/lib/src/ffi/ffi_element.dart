@@ -78,12 +78,49 @@ final class TextPayload extends Struct {
   external int textLen;
 }
 
+/// Payload for an oval element.
+final class OvalPayload extends Struct {
+  @Double()
+  external double x;
+
+  @Double()
+  external double y;
+
+  @Double()
+  external double width;
+
+  @Double()
+  external double height;
+
+  @Int32()
+  external int rotationDeg;
+
+  @Uint32()
+  external int fillColorArgb;
+
+  @Uint32()
+  external int outlineColorArgb;
+
+  @Uint8()
+  external int outlineThickness;
+
+  @Uint8()
+  external int blur;
+
+  /// Explicit padding to keep the struct size 48 bytes, matching Rust `_pad: [u8; 2]`.
+  @Uint16()
+  external int _pad;
+}
+
 /// Union of all possible element payloads.
 final class FfiPayload extends Union {
+  /// Size anchor: forces the union to be 48 bytes to match Rust payloads.
+  @Array(48)
+  external Array<Uint8> _raw;
+
   external RectanglePayload rectangle;
   external TextPayload text;
-  // TODO(tsinis): We need to introduce OvalPayload and oval shape type! So,
-  // users can draw ovals too!
+  external OvalPayload oval;
 }
 
 /// Tagged-union element struct passed across the FFI boundary.

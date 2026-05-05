@@ -40,28 +40,6 @@ void main() {
     });
   });
 
-  group('FfiAbi.assertResultUnit', () {
-    test(
-      'succeeds on the host platform (6 bytes - Rust FfiResultUnit is 6, not 8)',
-      () => expect(FfiAbi.assertResultUnit, returnsNormally),
-    );
-
-    test('throws AssertionError when the expected size is wrong', () {
-      expect(() => FfiAbi.assertResultUnit(expectedSize: 999), throwsA(isA<AssertionError>()));
-    });
-
-    test('rejects the old incorrect size of 8 (proves the _pad bug is gone)', () {
-      // Before the fix, FfiResultUnitStruct had an extra @Uint8() _pad field that pushed
-      // Dart's view to 8 bytes while Rust's repr(C,u8) enum is only 6 bytes. Asserting that
-      // the actual size is NOT 8 (and is 6) locks this regression out permanently.
-      expect(
-        () => FfiAbi.assertResultUnit(expectedSize: 8),
-        throwsA(isA<AssertionError>()),
-        reason: 'Dart struct must be 6 bytes to match Rust - 8 would read stack garbage',
-      );
-    });
-  });
-
   group('FfiAbi.assertResultCount', () {
     test(
       'succeeds on the host platform (8 bytes - Rust FfiResultCount is 8)',

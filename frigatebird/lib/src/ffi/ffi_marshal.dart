@@ -65,8 +65,6 @@ sealed class FfiMarshal {
       for (final (i, item) in drawElements.indexed) {
         final ref = (elementsPtr + i).ref;
 
-        // DrawElement is sealed with exactly 2 variants — exhaustive, cannot reach minimum of 3.
-        // ignore: prefer-correct-switch-length
         switch (item) {
           case RectElement():
             assert(
@@ -90,6 +88,18 @@ sealed class FfiMarshal {
               ..outlineThickness = item.outlineThickness.clamp(0, 255)
               ..blur = item.blur.clamp(0, 255)
               ..cornerRadius = item.cornerRadius.clamp(0, 65535);
+
+          case OvalElement():
+            (ref..tag = FfiElementType.oval.value).payload.oval
+              ..x = item.x
+              ..y = item.y
+              ..width = item.width
+              ..height = item.height
+              ..rotationDeg = item.rotation
+              ..fillColorArgb = item.fillColor.argb
+              ..outlineColorArgb = item.outlineColor.argb
+              ..outlineThickness = item.outlineThickness.clamp(0, 255)
+              ..blur = item.blur.clamp(0, 255);
 
           case TextElement():
             assert(item.blur >= 0 && item.blur <= 255, 'blur must be in 0..255');
@@ -188,8 +198,6 @@ sealed class FfiMarshal {
       // `tag` is @Uint8 so it is always ≥ 0; only the upper bound matters.
       if (tag >= FfiElementType.values.length) continue;
 
-      // DrawElement is sealed with exactly 2 variants — exhaustive, cannot reach minimum of 3.
-      // ignore: prefer-correct-switch-length
       switch (FfiElementType.values[tag]) {
         case .rectangle:
           final rect = element.payload.rectangle;
@@ -205,6 +213,22 @@ sealed class FfiMarshal {
               width: rect.width,
               x: rect.x,
               y: rect.y,
+            ),
+          );
+
+        case .oval:
+          final oval = element.payload.oval;
+          result.add(
+            OvalElement(
+              blur: oval.blur,
+              fillColor: FfiColor(oval.fillColorArgb),
+              height: oval.height,
+              outlineColor: FfiColor(oval.outlineColorArgb),
+              outlineThickness: oval.outlineThickness,
+              rotation: oval.rotationDeg,
+              width: oval.width,
+              x: oval.x,
+              y: oval.y,
             ),
           );
 

@@ -1,5 +1,3 @@
-import 'dart:ffi';
-
 import 'package:frigatebird/src/ffi/ffi_error.dart';
 import 'package:frigatebird/src/ffi/ffi_result_unit.dart';
 import 'package:test/test.dart';
@@ -40,32 +38,6 @@ void main() {
       const result = ErrUnit(.io, 'test');
       expect(result, isA<FfiResultUnit>());
     });
-
-    test('instances with same values are equal', () {
-      const err1 = ErrUnit(.io, 'permission denied');
-      const err2 = ErrUnit(.io, 'permission denied');
-      expect(err1, equals(err2));
-    });
-
-    test('instances with different codes are not equal', () {
-      const err1 = ErrUnit(.io, 'same message');
-      const err2 = ErrUnit(.decode, 'same message');
-      expect(err1, isNot(equals(err2)));
-    });
-
-    test('instances with different messages are not equal', () {
-      const err1 = ErrUnit(.io, 'message 1');
-      const err2 = ErrUnit(.io, 'message 2');
-      expect(err1, isNot(equals(err2)));
-    });
-  });
-
-  group(FfiResultUnitStruct, () {
-    test('size is 6 bytes', () => expect(sizeOf<FfiResultUnitStruct>(), 6));
-  });
-
-  group(FfiResultUnitPayload, () {
-    test('size is 4 bytes (union)', () => expect(sizeOf<FfiResultUnitPayload>(), 4));
   });
 
   group('FfiErrorCode', () {

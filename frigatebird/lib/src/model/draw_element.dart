@@ -2,6 +2,7 @@ import 'ffi_color.dart';
 
 part 'rect_element.dart';
 part 'text_element.dart';
+part 'oval_element.dart';
 
 /// Base for all drawable elements.
 ///
@@ -26,5 +27,13 @@ sealed class DrawElement {
   final FfiColor fillColor;
   final int blur;
 
-  DrawElement copyWith({int? blur, FfiColor? fillColor, int? rotation, double? x, double? y});
+  DrawElement copyWith({
+    int? blur,
+    FfiColor? fillColor,
+    double? height,
+    int? rotation,
+    double? width,
+    double? x,
+    double? y,
+  });
 }
