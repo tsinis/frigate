@@ -103,10 +103,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
 
       final directory = destination.directory;
       final tempDir = await directory.create(recursive: true);
-      final backgroundFile = await _copyAssetToDisk(
-        _sampleAsset,
-        '${tempDir.path}/frigate_bg.png',
-      );
+      final backgroundFile = await _copyAssetToDisk(_sampleAsset, '${tempDir.path}/frigate_bg.png');
       final outFile = File('${tempDir.path}/frigate_export.jpg');
       final fontFile = await _copyAssetToDisk(_fontAsset, '${tempDir.path}/frigate_font.ttf');
 
@@ -225,16 +222,8 @@ class _DrawingScreenState extends State<DrawingScreen> {
     return Scaffold(
       appBar: AppBar(
         actions: [
-          IconButton(
-            icon: const Icon(Icons.undo),
-            onPressed: _controller.undo,
-            tooltip: 'Undo',
-          ),
-          IconButton(
-            icon: const Icon(Icons.redo),
-            onPressed: _controller.redo,
-            tooltip: 'Redo',
-          ),
+          IconButton(icon: const Icon(Icons.undo), onPressed: _controller.undo, tooltip: 'Undo'),
+          IconButton(icon: const Icon(Icons.redo), onPressed: _controller.redo, tooltip: 'Redo'),
           if (_isExporting)
             const Padding(
               padding: .all(12),

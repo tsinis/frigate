@@ -117,14 +117,8 @@ class DrawPainter extends CustomPainter {
   }
 
   static void _paintOval(Canvas canvas, OvalElement element) {
-    final OvalElement(
-      :height,
-      :outlineThickness,
-      :rect,
-      :uiFillColor,
-      :uiOutlineColor,
-      :width,
-    ) = element;
+    final OvalElement(:height, :outlineThickness, :rect, :uiFillColor, :uiOutlineColor, :width) =
+        element;
     if (width <= 0 || height <= 0) return;
 
     if (uiFillColor.a > 0) {
