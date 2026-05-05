@@ -112,7 +112,7 @@ fn call_draw(
     elements: &[frigate::FfiElement],
     arena: &mut FfiArena,
     quality: u8,
-) -> u8 {
+) -> i32 {
     unsafe {
         frigate::draw_elements(
             image_path.map(|p| p.as_ref()),
@@ -162,11 +162,11 @@ fn render_image_end_to_end_writes_jpeg() {
         &mut arena,
         90,
     );
-    if code != FfiErrorCode::Success as u8 {
+    if code != FfiErrorCode::Success as i32 {
         let msg = unsafe { std::ffi::CStr::from_ptr(arena.error_buf as *const _) };
         panic!("FFI call failed with code {code}: {:?}", msg);
     }
-    assert_eq!(code, FfiErrorCode::Success as u8);
+    assert_eq!(code, FfiErrorCode::Success as i32);
     assert!(out.exists(), "expected output file {out:?} to exist");
 
     let decoded = image::open(&out).expect("output should decode as a valid image");
@@ -206,7 +206,7 @@ fn render_image_rejects_text_without_font() {
         &mut arena,
         90,
     );
-    assert_eq!(code, FfiErrorCode::InvalidArg as u8);
+    assert_eq!(code, FfiErrorCode::InvalidArg as i32);
 }
 
 #[test]
@@ -225,14 +225,15 @@ fn render_image_rejects_null_image_path() {
     };
 
     let code = call_draw(None, Some(&out_cs), None, &[], &mut arena, 100);
-    assert_eq!(code, FfiErrorCode::InvalidArg as u8);
+    assert_eq!(code, FfiErrorCode::InvalidArg as i32);
 }
 
 #[test]
 fn render_image_rejects_nonexistent_source_image() {
     let out = std::env::temp_dir().join("test_out_missing.jpg");
     let out_cs = safer_ffi::char_p::new(out.to_str().unwrap());
-    let bad_img_cs = safer_ffi::char_p::new("/tmp/definitely_not_here_12345.jpg");
+    let bad_img = std::env::temp_dir().join("definitely_not_here_12345.jpg");
+    let bad_img_cs = safer_ffi::char_p::new(bad_img.to_str().unwrap());
 
     let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
@@ -245,7 +246,7 @@ fn render_image_rejects_nonexistent_source_image() {
     };
 
     let code = call_draw(Some(&bad_img_cs), Some(&out_cs), None, &[], &mut arena, 80);
-    assert_eq!(code, FfiErrorCode::Decode as u8);
+    assert_eq!(code, FfiErrorCode::Decode as i32);
 }
 
 #[test]
@@ -267,11 +268,11 @@ fn render_image_rejects_unsupported_output_extension() {
     };
 
     let code = call_draw(Some(&img_cs), Some(&out_cs), None, &[], &mut arena, 80);
-    if code != FfiErrorCode::Encode as u8 {
+    if code != FfiErrorCode::Encode as i32 {
         let msg = unsafe { std::ffi::CStr::from_ptr(arena.error_buf as *const _) };
         panic!("FFI call failed with code {code} (wanted 5): {:?}", msg);
     }
-    assert_eq!(code, FfiErrorCode::Encode as u8);
+    assert_eq!(code, FfiErrorCode::Encode as i32);
 }
 
 #[test]
@@ -312,13 +313,13 @@ fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
         &mut arena,
         90,
     );
-    if code != FfiErrorCode::Success as u8 {
+    if code != FfiErrorCode::Success as i32 {
         let msg = unsafe { std::ffi::CStr::from_ptr(arena.error_buf as *const _) };
         panic!("FFI call failed with code {code}: {:?}", msg);
     }
     assert_eq!(
         code,
-        FfiErrorCode::Success as u8,
+        FfiErrorCode::Success as i32,
         "mixed rect+text+rect run must succeed"
     );
     assert!(out.exists());
