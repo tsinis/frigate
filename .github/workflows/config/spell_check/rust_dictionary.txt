@@ -3,6 +3,8 @@
 aapcs
 aarrggbb
 argb
+cdylib
+centralises
 codepoint
 codepoints
 conv
@@ -12,12 +14,14 @@ demultiply
 demultiplying
 ffi
 freeable
+imageops
 imageproc
 libfuzzer
 libms
 lossily
 misrender
 multibyte
+nofont
 nonfinite
 pixmap
 pixmaps
@@ -30,6 +34,9 @@ rects
 roboto
 scanline
 skia
+stacksize
+stacksize
+staticlib
 uninit
 unpremul
 unpremultiplied
