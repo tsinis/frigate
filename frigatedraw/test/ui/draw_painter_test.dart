@@ -152,30 +152,47 @@ void main() => group(DrawPainter, () {
         reason: 'clamped to min(width, height) / 2 = 20 to mirror Rust auto-clamp',
       );
     });
+
+    test('uses drawOval for OvalElement', () {
+      final canvas = _RecordingCanvas();
+      const oval = OvalElement(height: 50, width: 100, x: 10, y: 20);
+      const DrawPainter([oval]).paint(canvas, const Size(200, 200));
+      expect(canvas.drawOvalCount, 1, reason: 'oval element should hit drawOval once');
+    });
   });
 
-  group('isPointOnRect', () {
-    test('is true on the outline', () {
+  group('isPointOnShape', () {
+    test('is true on the outline of a rect', () {
       expect(
-        DrawPainter.isPointOnRect(const Offset(50, 30), element: hitRect),
+        DrawPainter.isPointOnShape(const Offset(50, 30), element: hitRect),
         isTrue,
         reason: 'top-left corner sits on the outline',
       );
     });
 
-    test('is false in the interior', () {
+    test('is true on the outline of an oval', () {
+      const oval = OvalElement(height: 100, width: 200, x: 50, y: 30);
+      // Center of the top edge of the bounding box is a point on the oval.
       expect(
-        DrawPainter.isPointOnRect(const Offset(150, 80), element: hitRect),
-        isFalse,
-        reason: 'rect center is hollow',
+        DrawPainter.isPointOnShape(const Offset(150, 30), element: oval),
+        isTrue,
+        reason: 'top midpoint sits on the oval outline',
       );
     });
 
-    test('is false far outside the rect', () {
+    test('is false in the interior of a shape', () {
       expect(
-        DrawPainter.isPointOnRect(const Offset(500, 500), element: hitRect),
+        DrawPainter.isPointOnShape(const Offset(150, 80), element: hitRect),
         isFalse,
-        reason: 'well outside the rect and its hit-slop',
+        reason: 'shape center is hollow',
+      );
+    });
+
+    test('is false far outside the shape', () {
+      expect(
+        DrawPainter.isPointOnShape(const Offset(500, 500), element: hitRect),
+        isFalse,
+        reason: 'well outside the shape and its hit-slop',
       );
     });
   });
@@ -187,6 +204,7 @@ void main() => group(DrawPainter, () {
 class _RecordingCanvas implements Canvas {
   int drawRectCount = 0;
   int drawRRectCount = 0;
+  int drawOvalCount = 0;
   RRect? lastRRect;
   bool? isLastPaintAntiAlias;
 
@@ -202,6 +220,13 @@ class _RecordingCanvas implements Canvas {
   void drawRRect(RRect rrect, Paint paint) {
     drawRRectCount += 1;
     lastRRect = rrect;
+    isLastPaintAntiAlias = paint.isAntiAlias;
+  }
+
+  @override
+  // ignore: parameters-ordering, signature must match dart:ui Canvas.
+  void drawOval(Rect rect, Paint paint) {
+    drawOvalCount += 1;
     isLastPaintAntiAlias = paint.isAntiAlias;
   }
 

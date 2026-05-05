@@ -44,39 +44,36 @@ class _DrawEditorState extends State<DrawEditor> {
   /// becomes impossible to grab again because the 8 handles start overlapping each other.
   static const _minRectSize = 10.0;
 
-  static RectElement _resizedRect({
+  static T _resizedShape<T extends DrawElement>({
     required Offset delta,
     required HandlePosition handle,
-    required RectElement rect,
+    required T shape,
   }) {
-    final RectElement(:height, :width, :x, :y) = rect;
+    final T(:height, :width, :x, :y) = shape;
 
-    return switch (handle) {
-      .topLeft => rect.copyWith(
-        height: max(height - delta.dy, _minRectSize),
-        width: max(width - delta.dx, _minRectSize),
-        x: x + delta.dx,
-        y: y + delta.dy,
-      ),
-      .topCenter => rect.copyWith(height: max(height - delta.dy, _minRectSize), y: y + delta.dy),
-      .topRight => rect.copyWith(
-        height: max(height - delta.dy, _minRectSize),
-        width: max(width + delta.dx, _minRectSize),
-        y: y + delta.dy,
-      ),
-      .centerLeft => rect.copyWith(width: max(width - delta.dx, _minRectSize), x: x + delta.dx),
-      .centerRight => rect.copyWith(width: max(width + delta.dx, _minRectSize)),
-      .bottomLeft => rect.copyWith(
-        height: max(height + delta.dy, _minRectSize),
-        width: max(width - delta.dx, _minRectSize),
-        x: x + delta.dx,
-      ),
-      .bottomCenter => rect.copyWith(height: max(height + delta.dy, _minRectSize)),
-      .bottomRight => rect.copyWith(
-        height: max(height + delta.dy, _minRectSize),
-        width: max(width + delta.dx, _minRectSize),
-      ),
-    };
+    // A copyWith returns DrawElement but T is a specific subtype. TODO(tsinis)?
+    // ignore: avoid-type-casts
+    return shape.copyWith(
+          height: switch (handle) {
+            .topLeft || .topCenter || .topRight => max(height - delta.dy, _minRectSize),
+            .bottomLeft || .bottomCenter || .bottomRight => max(height + delta.dy, _minRectSize),
+            .centerLeft || .centerRight => height,
+          },
+          width: switch (handle) {
+            .topLeft || .centerLeft || .bottomLeft => max(width - delta.dx, _minRectSize),
+            .topRight || .centerRight || .bottomRight => max(width + delta.dx, _minRectSize),
+            .topCenter || .bottomCenter => width,
+          },
+          x: switch (handle) {
+            .topLeft || .centerLeft || .bottomLeft => x + delta.dx,
+            .topCenter || .topRight || .centerRight || .bottomCenter || .bottomRight => x,
+          },
+          y: switch (handle) {
+            .topLeft || .topCenter || .topRight => y + delta.dy,
+            .centerLeft || .centerRight || .bottomLeft || .bottomCenter || .bottomRight => y,
+          },
+        )
+        as T;
   }
 
   final _transformController = TransformationController();
@@ -91,8 +88,11 @@ class _DrawEditorState extends State<DrawEditor> {
     final point = _transformController.toScene(event.localPosition);
 
     final selected = _controller.selectedElement;
-    if (selected case RectElement()) {
-      final handle = DrawPainter.hitTestHandle(point, element: selected);
+    if (selected != null) {
+      final handle = switch (selected) {
+        RectElement() || OvalElement() => DrawPainter.hitTestHandle(point, element: selected),
+        TextElement() => null,
+      };
       if (handle != null) {
         _startDrag(handle: handle);
 
@@ -102,8 +102,13 @@ class _DrawEditorState extends State<DrawEditor> {
 
     final allElements = _controller.elements;
     for (int i = allElements.length - 1; i >= 0; i -= 1) {
-      if (allElements.elementAtOrNull(i) case final RectElement target) {
-        if (DrawPainter.isPointOnRect(point, element: target)) {
+      final target = allElements.elementAtOrNull(i);
+      if (target != null) {
+        final isHit = switch (target) {
+          RectElement() || OvalElement() => DrawPainter.isPointOnShape(point, element: target),
+          TextElement() => false,
+        };
+        if (isHit) {
           _controller.selectedIndex = i;
           _startDrag();
 
@@ -121,14 +126,19 @@ class _DrawEditorState extends State<DrawEditor> {
     final index = _controller.selectedIndex;
     final selected = _controller.selectedElement;
     final handle = _activeHandle;
-    if (index == null || selected is! RectElement) return;
+    if (index == null || selected == null) return;
+    final canMove = switch (selected) {
+      RectElement() || OvalElement() => true,
+      TextElement() => false,
+    };
+    if (!canMove) return;
 
     final scale = _transformController.value.getMaxScaleOnAxis();
     final delta = event.delta / scale;
 
     final updated = handle == null
         ? selected.copyWith(x: selected.x + delta.dx, y: selected.y + delta.dy)
-        : _resizedRect(delta: delta, handle: handle, rect: selected);
+        : _resizedShape(delta: delta, handle: handle, shape: selected);
 
     _controller.updateElement(updated, index);
   }

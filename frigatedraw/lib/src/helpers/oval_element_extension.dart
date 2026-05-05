@@ -2,7 +2,7 @@ import 'dart:ui' show Color;
 
 import 'package:frigatebird/frigatebird.dart';
 
-extension RectElementExtension on RectElement {
+extension OvalElementExtension on OvalElement {
   /// Converts outline color to `dart:ui` [Color] for rendering only.
   @pragma('dart2js:tryInline')
   @pragma('vm:prefer-inline')
