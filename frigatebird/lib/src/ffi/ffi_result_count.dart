@@ -5,6 +5,10 @@ import 'ffi_error.dart';
 import 'ffi_result_common.dart';
 
 /// Dart-side representation of a Rust `Result<u32, FfiError>`.
+///
+/// Reserved for future ops that return a count (e.g. number of elements rendered).
+/// No production FFI entry point uses this yet — kept alongside [FfiResultCountStruct]
+/// so both Dart and Rust wire layouts can evolve together.
 sealed class FfiResultCount {
   const FfiResultCount();
 }

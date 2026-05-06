@@ -5,91 +5,155 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../constants/draw_constants.dart';
-import '../model/draw_element.dart';
 import 'bindings.dart' as ffi;
-import 'ffi_abi.dart';
-import 'ffi_rect_element.dart';
-import 'native_image.dart';
+import 'byte_buffer.dart';
+import 'ffi_marshal.dart';
+import 'ffi_result_unit.dart';
 
-/// Zero-copy export backend using `dart:ffi` + Rust.
+/// Zero-copy merge backend using `dart:ffi` + Rust.
 ///
-/// WHY [NativeImage]: Dart GC can relocate Uint8List at any time. [NativeImage] stores bytes in
-/// malloc'd memory (stable address), so we pass `int address` to the export isolate — no copy of
-/// the source image during export.
-///
-/// Manual free: result bytes are copied to a Dart [Uint8List] and the Rust-allocated buffer is
-/// freed immediately. Simple, safe, no finalizer signature mismatch.
+/// Merges a foreground PNG (typically the drawing layer) onto a background image file.
 final class ExportBackendNative {
-  NativeImage? _image;
+  const ExportBackendNative();
 
-  void loadImage(Uint8List bytes, {required int height, required int width}) {
-    FfiAbi.assertRectElement();
-    _image?.dispose();
-    _image = NativeImage.fromBytes(bytes, height: height, width: width);
-  }
-
-  // TODO(tsinis): This should be completely changed, renamed to merge() and it should merge foreground (bytes) to background (file/path), no rects involved.
-  Future<Uint8List> export({
-    required List<RectElement> rects,
+  /// Merges [foregroundPng] onto the image at [backgroundPath] and returns the result as bytes.
+  ///
+  /// [offsetX] and [offsetY] are the top-left offset of the foreground on the background.
+  /// [outFormat]: 0 for PNG, 1 for JPEG.
+  Future<Uint8List> merge({
+    required String backgroundPath,
+    required Uint8List foregroundPng,
     int imageQuality = DrawConstants.defaultImageQuality,
+    int offsetX = 0,
+    // ignore: avoid-similar-names, offsetX and offsetY are standard pairings
+    int offsetY = 0,
+    int outFormat = 0,
   }) {
-    final image = _image;
-    if (image == null) throw StateError('Call loadImage() before export().');
-    final NativeImage(:address, :length) = image;
+    assert(
+      imageQuality >= DrawConstants.minImageQuality &&
+          imageQuality <= DrawConstants.maxImageQuality,
+      'imageQuality must be in [${DrawConstants.minImageQuality}, '
+      '${DrawConstants.maxImageQuality}], got $imageQuality',
+    );
+    assert(
+      outFormat == 0 || outFormat == 1,
+      'outFormat must be 0 (PNG) or 1 (JPEG), got $outFormat',
+    );
+    final clampedQuality = imageQuality.clamp(
+      DrawConstants.minImageQuality,
+      DrawConstants.maxImageQuality,
+    );
 
     return Isolate.run(
-      () => _doExport(
-        _ExportArgs(imageQuality: imageQuality, imgAddress: address, imgLen: length, rects: rects),
+      () => _doMerge(
+        _MergeArgs(
+          backgroundPath: backgroundPath,
+          foregroundPng: foregroundPng,
+          imageQuality: clampedQuality,
+          offsetX: offsetX,
+          offsetY: offsetY,
+          outFormat: outFormat,
+        ),
       ),
     );
   }
 
-  void dispose() {
-    _image?.dispose();
-    _image = null;
-  }
+  static Uint8List _doMerge(_MergeArgs args) {
+    final _MergeArgs(
+      :backgroundPath,
+      :foregroundPng,
+      :imageQuality,
+      :offsetX,
+      // ignore: avoid-similar-names, offsetX and offsetY are standard pairings
+      :offsetY,
+      :outFormat,
+    ) = args;
 
-  /// Runs in a background isolate via [Isolate.run].
-  ///
-  /// WHY Pointer.fromAddress: Pointer cannot cross isolate boundaries, but int can. The underlying
-  /// native memory is the same — zero copy. RectElement is @pragma('vm:deeply-immutable') —
-  /// zero-copy transfer.
-  static Uint8List _doExport(_ExportArgs args) {
-    final _ExportArgs(:imageQuality, :imgAddress, :imgLen, :rects) = args;
-    final rectsPtr = rects.toNative(malloc);
-    final imgPtr = Pointer<Uint8>.fromAddress(imgAddress);
-    final result = ffi.export_image(imgPtr, imgLen, rectsPtr, rects.length, imageQuality);
-    // Always free rects (we allocated them above). Do NOT free imgPtr — NativeImage owns it.
-    malloc.free(rectsPtr);
-    // Null data pointer means Rust panicked (catch_unwind returned Err).
-    if (result.data == nullptr) {
-      throw StateError('Rust export_image failed (panic in native render)');
+    if (backgroundPath.isEmpty) {
+      throw StateError('Rust merge failed: backgroundPath cannot be empty');
     }
-    // Copy result to Dart-managed memory, then free the Rust-allocated buffer. Manual free — safe,
-    // no finalizer signature issues. try/finally guarantees free_bytes runs even on OOM (real on
-    // mobile with large images).
-    final Uint8List output;
+
+    if (foregroundPng.isEmpty) {
+      throw StateError('Rust merge failed: Missing foreground bytes');
+    }
+
+    Pointer<Utf8> bgCStr = nullptr;
+    Pointer<Uint8> fgPtr = nullptr;
+    Pointer<ByteBuffer> outPtr = nullptr;
+    FfiArenaHandle? arenaHandle;
+
     try {
-      output = Uint8List.fromList(result.data.asTypedList(result.length));
-    } finally {
-      ffi.free_bytes(result.data, result.length);
-    }
+      bgCStr = backgroundPath.toNativeUtf8(allocator: calloc);
+      assert(bgCStr != nullptr, 'Failed to convert backgroundPath to C string');
+      final fgLen = foregroundPng.length;
+      fgPtr = calloc<Uint8>(fgLen);
+      fgPtr.asTypedList(fgLen).setAll(0, foregroundPng);
+      outPtr = calloc<ByteBuffer>();
+      // We need an arena for potential error messages.
+      arenaHandle = FfiMarshal.encodeElements([], calloc);
 
-    return output;
+      final arenaRef = arenaHandle.arenaPtr.ref;
+
+      final code = ffi.merge(
+        bgCStr,
+        fgPtr,
+        fgLen,
+        offsetX,
+        offsetY,
+        outFormat,
+        imageQuality,
+        arenaHandle.arenaPtr,
+        outPtr,
+      );
+
+      final result = FfiResultUnit.decode(code, arenaRef.errorBuf, arenaRef.errorCap);
+
+      if (result is ErrUnit) {
+        throw StateError('Rust merge failed: ${result.message}');
+      }
+
+      final out = outPtr.ref;
+      final outData = out.data;
+      final outLen = out.length;
+
+      if (outData == nullptr) {
+        throw StateError('Rust merge failed (null output buffer)');
+      }
+
+      final Uint8List output;
+      try {
+        output = Uint8List.fromList(outData.asTypedList(outLen));
+      } finally {
+        // Manually free the Rust-owned buffer via free_bytes (rather than NativeFinalizer) so
+        // we can guarantee the free happens before this isolate exits the try/finally frame.
+        ffi.free_bytes(outData, outLen);
+      }
+
+      return output;
+    } finally {
+      if (bgCStr != nullptr) calloc.free(bgCStr);
+      if (fgPtr != nullptr) calloc.free(fgPtr);
+      if (outPtr != nullptr) calloc.free(outPtr);
+      arenaHandle?.free();
+    }
   }
 }
 
-/// Arguments for `ExportBackendNative._doExport`, sent to a background isolate.
-final class _ExportArgs {
-  const _ExportArgs({
+/// Arguments for `ExportBackendNative._doMerge`, sent to a background isolate.
+final class _MergeArgs {
+  const _MergeArgs({
+    required this.backgroundPath,
+    required this.foregroundPng,
     required this.imageQuality,
-    required this.imgAddress,
-    required this.imgLen,
-    required this.rects,
+    required this.offsetX,
+    required this.offsetY,
+    required this.outFormat,
   });
 
+  final String backgroundPath;
+  final Uint8List foregroundPng;
   final int imageQuality;
-  final int imgAddress;
-  final int imgLen;
-  final List<RectElement> rects;
+  final int offsetX;
+  final int offsetY;
+  final int outFormat;
 }

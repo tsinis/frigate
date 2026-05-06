@@ -18,18 +18,10 @@ fn golden_path(name: &str) -> PathBuf {
 }
 
 fn base_image() -> RgbaImage {
-    static CACHE: std::sync::OnceLock<RgbaImage> = std::sync::OnceLock::new();
-    // Cache the base image to avoid re-decoding it for every test case.
-    // Cloning an RgbaImage is a shallow reference-count bump in some libraries,
-    // but in `image` crate it's a full pixel copy — still faster than JPEG decode.
-    CACHE
-        .get_or_init(|| {
-            let path = assets_dir().join("paint.jpg");
-            image::open(&path)
-                .unwrap_or_else(|_| panic!("failed to decode {path:?}"))
-                .into_rgba8()
-        })
-        .clone()
+    let path = assets_dir().join("paint.jpg");
+    image::open(&path)
+        .unwrap_or_else(|_| panic!("failed to decode {path:?}"))
+        .into_rgba8()
 }
 
 fn make_rect(
@@ -100,7 +92,7 @@ fn make_rect_full(
 fn render_rects(rects: &[FfiElement]) -> RgbaImage {
     let mut img = base_image();
     for r in rects {
-        frigate::draw_rect_element(&mut img, r);
+        frigate::draw_element(&mut img, r, None, &[]);
     }
     img
 }

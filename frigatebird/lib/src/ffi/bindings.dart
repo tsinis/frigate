@@ -25,24 +25,37 @@ import 'package:ffi/ffi.dart';
 import 'byte_buffer.dart';
 import 'ffi_arena.dart';
 import 'ffi_element.dart';
-import 'ffi_rect_element.dart';
-import 'ffi_result_unit.dart';
 
-/// Bytes-in / bytes-out path used by the Flutter `ExportBackend`.
+/// Bytes-in / path-in merge: composites `foreground_png` bytes over the image at `backgroundPath`
+/// and returns the result as a byte buffer owned by Rust.
 ///
-/// Coordinates in [rectsPtr] are pixel-space (no normalization). Returns a Rust-allocated
-/// [ByteBuffer]; caller must check `data == nullptr` (panic) and free with [free_bytes].
-@Native<ByteBuffer Function(Pointer<Uint8>, Size, Pointer<FfiRectElement>, Size, Uint8)>()
-// TODO(tsinis): We need to get rid of this method everywhere! Migrate draw_elements.
-external ByteBuffer export_image(
-  Pointer<Uint8> imgPtr,
-  int imgLen,
-  Pointer<FfiRectElement> rectsPtr,
-  int rectsCount,
+/// Returns a `u8` status code. Result buffer is written to `*out`.
+@Native<
+  Uint8 Function(
+    Pointer<Utf8>,
+    Pointer<Uint8>,
+    Size,
+    Int32,
+    Int32,
+    Uint8,
+    Uint8,
+    Pointer<FfiArena>,
+    Pointer<ByteBuffer>,
+  )
+>()
+external int merge(
+  Pointer<Utf8> backgroundPath,
+  Pointer<Uint8> foregroundPngPtr,
+  int foregroundPngLen,
+  int offsetX,
+  int offsetY,
+  int outFormat,
   int imageQuality,
+  Pointer<FfiArena> arena,
+  Pointer<ByteBuffer> out,
 );
 
-/// Free a Rust-allocated byte buffer (returned by [export_image]). Null-safe.
+/// Free a Rust-allocated byte buffer (returned by [merge]). Null-safe.
 ///
 /// `isLeaf: true` — never calls back into Dart, so the Dart VM can skip the safepoint preamble.
 @Native<Void Function(Pointer<Uint8>, Size)>(isLeaf: true)
@@ -56,15 +69,13 @@ external void free_bytes(Pointer<Uint8> ptr, int len);
 ///   - `arena.text_buf` / `arena.text_len` — UTF-8 text sidecar (Dart-owned, read-only by Rust).
 ///   - `arena.error_buf` / `arena.error_cap` — error message buffer (Dart-owned, Rust writes on err).
 ///
-/// Result is written to [out] rather than returned by value. Returning a 6-byte struct by value
-/// has target-specific ABI differences between SysV x86-64, Win64, AArch64 AAPCS, and ARMv7;
-/// an out-pointer sidesteps these completely.
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
 ///
 /// **Not `isLeaf: true`**: this is a CPU-heavy image-processing call. `isLeaf` would prevent the
 /// Dart VM from scheduling GC while it runs — acceptable only for O(1) functions. All real work
 /// must run via `Isolate.run` so the calling isolate stays responsive.
 @Native<
-  Void Function(
+  Uint8 Function(
     Pointer<Utf8>,
     Pointer<Utf8>,
     Pointer<Utf8>,
@@ -72,10 +83,9 @@ external void free_bytes(Pointer<Uint8> ptr, int len);
     Size,
     Uint8,
     Pointer<FfiArena>,
-    Pointer<FfiResultUnitStruct>,
   )
 >()
-external void draw_elements(
+external int draw_elements(
   Pointer<Utf8> imagePath,
   Pointer<Utf8> outputPath,
   Pointer<Utf8> fontPath,
@@ -83,5 +93,4 @@ external void draw_elements(
   int elementsCount,
   int imageQuality,
   Pointer<FfiArena> arena,
-  Pointer<FfiResultUnitStruct> out,
 );

@@ -49,7 +49,7 @@ args = ["miri", "test", "--lib", "--", "--skip", "io::tests"]
 [tasks.semver]
 ignore_errors = true
 command = "cargo"
-args = ["semver-checks", "check-release"]
+args = ["semver-checks", "check-release", "--baseline-root", "."]
 
 [tasks.udeps]
 toolchain = "${NIGHTLY}"
@@ -94,10 +94,19 @@ command = "cargo"
 args = ["fuzz", "run", "ffi_boundary", "--", "-max_total_time=60"]
 
 [tasks.asan]
-toolchain = "${NIGHTLY}"
 ignore_errors = true
 script = [
-    "RUSTFLAGS='-Z sanitizer=address' cargo test --all-features"
+    '''
+    export RUSTFLAGS="-Z sanitizer=address"
+    HOST_TRIPLE=$(rustup run ${NIGHTLY} rustc -vV | grep host | cut -d' ' -f2)
+    if [ "$(uname)" = "Darwin" ]; then
+        ASAN_DYLIB=$(rustup run ${NIGHTLY} rustc --print sysroot)/lib/rustlib/${HOST_TRIPLE}/lib/librustc-nightly_rt.asan.dylib
+        if [ -f "$ASAN_DYLIB" ]; then
+            export DYLD_INSERT_LIBRARIES="$ASAN_DYLIB"
+        fi
+    fi
+    rustup run ${NIGHTLY} cargo test --all-features --target ${HOST_TRIPLE}
+    '''
 ]
 
 [tasks.llvm-cov]

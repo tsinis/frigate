@@ -12,4 +12,15 @@ String decodeFfiMessage(FfiError error, Pointer<Uint8> errorBuf, int errorCap) {
   return utf8.decode(bytes);
 }
 
+/// Decodes a null-terminated UTF-8 message from the error buffer.
+String decodeFfiMessageFromBuffer(Pointer<Uint8> errorBuf, int errorCap) {
+  if (errorBuf == nullptr || errorCap == 0) return '';
+
+  final bytes = errorBuf.asTypedList(errorCap);
+  final nullIndex = bytes.indexOf(0);
+  final len = nullIndex == -1 ? errorCap : nullIndex;
+
+  return utf8.decode(bytes.sublist(0, len));
+}
+
 FfiErrorCode mapFfiErrorCode(int code) => FfiErrorCode.fromCode(code);

@@ -1,5 +1,3 @@
-pub mod macros;
-
 use safer_ffi::prelude::*;
 use std::ptr;
 
@@ -12,7 +10,7 @@ use std::ptr;
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FfiErrorCode {
-    Ok = 0,
+    Success = 0,
     Panic = 1,
     InvalidArg = 2,
     Io = 3,
@@ -24,11 +22,17 @@ pub enum FfiErrorCode {
 }
 
 /// A multi-buffer arena for passing variable-length data across FFI.
+///
+/// Layout: 3 raw pointers + 3 `usize` = 48 bytes on 64-bit targets.
+/// Matches Dart `FfiArena` (3 × `Pointer` + 3 × `Size`). No `error_len` here — message length
+/// is returned in `FfiError.message_len` so the Dart layout stays in sync.
 #[derive_ReprC]
 #[repr(C)]
 pub struct FfiArena {
     pub text_buf: *const u8,
     pub text_len: usize,
+    // Reserved for future in-place operations (e.g. merge with byte-stream background).
+    // Currently always null/0 — no op reads these fields yet.
     pub image_buf: *const u8,
     pub image_len: usize,
     pub error_buf: *mut u8,
@@ -97,7 +101,8 @@ pub fn write_error_to_arena(
     }
 
     let bytes = msg.as_bytes();
-    let limit = bytes.len().min(arena_ref.error_cap);
+    // Leave space for null terminator. If cap is 0, we already returned above.
+    let limit = bytes.len().min(arena_ref.error_cap - 1);
     // Guard: error_cap is stored as usize but message_len is u16. If cap ever exceeds
     // u16::MAX the cast below would silently truncate the length. Catch this in debug builds.
     debug_assert!(
@@ -118,6 +123,7 @@ pub fn write_error_to_arena(
     #[expect(unsafe_code, reason = "FFI arena write")]
     unsafe {
         ptr::copy_nonoverlapping(bytes.as_ptr(), arena_ref.error_buf, len);
+        ptr::write(arena_ref.error_buf.add(len), 0);
     }
 
     FfiError {
@@ -155,8 +161,17 @@ mod tests {
     }
 
     #[test]
+    fn write_error_cap_one_only_writes_null_terminator() {
+        let mut buf = vec![0xFFu8; 1];
+        let mut arena = make_arena(&mut buf);
+        let err = write_error_to_arena(Some(&mut arena), FfiErrorCode::Render, "hello");
+        assert_eq!(err.message_len, 0);
+        assert_eq!(buf[0], 0);
+    }
+
+    #[test]
     fn write_error_ascii_fits_exactly() {
-        let mut buf = Vec::with_capacity(5);
+        let mut buf = Vec::with_capacity(6);
         let mut arena = make_arena(&mut buf);
         let err = write_error_to_arena(Some(&mut arena), FfiErrorCode::Io, "hello");
         assert_eq!(err.message_len, 5);
@@ -190,8 +205,8 @@ mod tests {
 
     #[test]
     fn write_error_multibyte_fits_completely() {
-        // "éàü" is 6 bytes; with cap=6 all three codepoints must be written intact.
-        let mut buf = Vec::with_capacity(6);
+        // "éàü" is 6 bytes; with cap=7 all three codepoints must be written intact.
+        let mut buf = Vec::with_capacity(7);
         let mut arena = make_arena(&mut buf);
         let err = write_error_to_arena(Some(&mut arena), FfiErrorCode::Font, "éàü");
         assert_eq!(err.message_len, 6);

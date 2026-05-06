@@ -19,7 +19,7 @@ import 'render_image_args.dart';
 /// discoverable namespace (`RenderImage.` autocompletes the entry point) instead of leaking
 /// `renderImage` into every file that imports the package root.
 sealed class RenderImage {
-  /// Render [elements] onto the image at [imagePath] and write the composited result to
+  /// Render [elements] onto the image at [backgroundPath] and write the composited result to
   /// [outputPath]. Mixed element kinds (rectangles, text, …) are dispatched in Rust by the
   /// `FfiElement.elementType` discriminator.
   ///
@@ -41,10 +41,10 @@ sealed class RenderImage {
   ///
   /// Runs in a background isolate via [Isolate.run] — never blocks the calling thread.
   static Future<void> run({
+    required String backgroundPath,
     required List<DrawElement> elements,
-    required String imagePath,
-    required String outputPath, // TODO: Make nullable/optional.
     String? fontPath,
+    String? outputPath,
     int imageQuality = DrawConstants.defaultImageQuality,
   }) {
     // Fails loudly if the Dart VM struct layout has drifted from Rust `#[repr(C)]`. Debug-only,
@@ -52,7 +52,10 @@ sealed class RenderImage {
     FfiAbi.assertElement();
     FfiAbi.assertArena();
     FfiAbi.assertError();
-    FfiAbi.assertResultUnit();
+    FfiAbi.assertPayload();
+    if (backgroundPath.isEmpty) {
+      throw const RenderException(.invalidArg, 'backgroundPath cannot be empty');
+    }
     assert(
       !elements.any((e) => e is TextElement) || fontPath != null,
       'fontPath must be supplied when elements contains a TextElement',
@@ -72,9 +75,9 @@ sealed class RenderImage {
     return Isolate.run(
       () => _runWorker(
         RenderImageArgs(
+          backgroundPath: backgroundPath,
           elements: elements,
           fontPath: fontPath,
-          imagePath: imagePath,
           imageQuality: clampedQuality,
           outputPath: outputPath,
         ),
@@ -83,41 +86,39 @@ sealed class RenderImage {
   }
 
   static void _runWorker(RenderImageArgs args) {
-    final RenderImageArgs(:elements, :fontPath, :imagePath, :imageQuality, :outputPath) = args;
-    Pointer<Utf8> imageCStr = nullptr;
+    final RenderImageArgs(:backgroundPath, :elements, :fontPath, :imageQuality, :outputPath) = args;
+    Pointer<Utf8> backgroundCStr = nullptr;
     Pointer<Utf8> outputCStr = nullptr;
     Pointer<Utf8> fontCStr = nullptr;
-    Pointer<FfiResultUnitStruct> outPtr = nullptr;
     FfiArenaHandle? handle;
     try {
-      imageCStr = imagePath.toNativeUtf8();
-      outputCStr = outputPath.toNativeUtf8();
-      fontCStr = fontPath?.toNativeUtf8() ?? nullptr;
-      outPtr = malloc<FfiResultUnitStruct>();
-      handle = FfiMarshal.encodeElements(elements, malloc);
+      backgroundCStr = backgroundPath.toNativeUtf8(allocator: calloc);
+      outputCStr = outputPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
+      fontCStr = fontPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
+      handle = FfiMarshal.encodeElements(elements, calloc);
+
+      final arenaRef = handle.arenaPtr.ref;
 
       // Handle properties are not all unpacked at once because they are used sequentially, and
       // some are nullable. Destructuring them all upfront would be less readable.
-      ffi.draw_elements(
-        imageCStr,
+      final code = ffi.draw_elements(
+        backgroundCStr,
         outputCStr,
         fontCStr,
         handle.elementsPtr,
         handle.count,
         imageQuality,
         handle.arenaPtr,
-        outPtr,
       );
 
-      final domainResult = outPtr.ref.toDomain(handle.errorBufferPtr, handle.arenaPtr.ref.errorCap);
+      final domainResult = FfiResultUnit.decode(code, arenaRef.errorBuf, arenaRef.errorCap);
       if (domainResult is ErrUnit) {
         throw RenderException(domainResult.code, domainResult.message);
       }
     } finally {
-      if (imageCStr != nullptr) malloc.free(imageCStr);
-      if (outputCStr != nullptr) malloc.free(outputCStr);
-      if (fontCStr != nullptr) malloc.free(fontCStr);
-      if (outPtr != nullptr) malloc.free(outPtr);
+      if (backgroundCStr != nullptr) calloc.free(backgroundCStr);
+      if (outputCStr != nullptr) calloc.free(outputCStr);
+      if (fontCStr != nullptr) calloc.free(fontCStr);
       handle?.free();
     }
   }

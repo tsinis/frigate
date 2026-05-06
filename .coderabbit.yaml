@@ -68,11 +68,11 @@ reviews:
       instructions: >
         Review Rust code with extra care for idiomatic patterns and safety:
 
-        - All public FFI functions MUST be `#[unsafe(no_mangle)] pub unsafe extern "C"`.
-        - Prefer safe Rust in internal functions; only `unsafe` at the FFI boundary.
+        - All public FFI functions MUST use `#[ffi_export]` from `safer_ffi`.
+        - Prefer safe Rust in internal functions; only `unsafe` where strictly necessary (e.g. raw pointer deref).
         - `export_image` MUST wrap its body in `std::panic::catch_unwind` to prevent
           panics from crossing the FFI boundary (which is UB).
-        - Return `ByteBuffer { null, 0 }` on panic, never propagate errors across FFI.
+        - Return `ByteBuffer { null, 0 }` on panic (via `#[ffi_export]`), never propagate errors across FFI.
         - Use `into_boxed_slice()` + `Box::into_raw()` for returned buffers so
           capacity == len, enabling safe reconstruction in `free_bytes`.
         - Coordinates cross the FFI boundary as **pixels end-to-end** — no

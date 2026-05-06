@@ -1,7 +1,7 @@
 #![no_main]
 
 use arbitrary::Arbitrary;
-use frigate::{FfiArena, FfiElement, FfiResultUnit};
+use frigate::{FfiArena, FfiElement};
 use libfuzzer_sys::fuzz_target;
 use safer_ffi::char_p;
 use std::path::Path;
@@ -46,10 +46,8 @@ fuzz_target!(|input: FuzzInput| {
         error_cap: error_buf.len(),
     };
 
-    let mut out = FfiResultUnit::Ok(());
-
     unsafe {
-        frigate::draw_elements(
+        let _ = frigate::draw_elements(
             Some(image_path_cs.as_ref()),
             Some(output_path_cs.as_ref()),
             Some(font_path_cs.as_ref()),
@@ -57,7 +55,6 @@ fuzz_target!(|input: FuzzInput| {
             input.elements.len(),
             input.image_quality,
             &raw mut arena,
-            &raw mut out,
         );
     }
 

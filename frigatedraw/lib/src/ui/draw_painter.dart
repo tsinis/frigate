@@ -1,6 +1,8 @@
 import 'package:flutter/rendering.dart';
 
 import 'package:frigatebird/frigatebird.dart';
+import '../helpers/draw_element_extension.dart';
+import '../helpers/oval_element_extension.dart';
 import '../helpers/rect_element_extension.dart';
 
 class DrawPainter extends CustomPainter {
@@ -26,53 +28,118 @@ class DrawPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     for (final element in elements) {
-      // ignore: prefer-correct-switch-length, it's TODO!
-      switch (element) {
-        case RectElement():
-          // TODO(tsinis): render fill color too.
-          final RectElement(
-            :cornerRadius,
-            :height,
-            :outlineThickness,
-            :rect,
-            :uiOutlineColor,
-            :width,
-          ) = element;
-          // Mirror Rust's short-circuit on non-positive dims; otherwise Flutter would render
-          // a flipped rect from a negative-width Rect — a real preview-vs-export divergence.
-          if (width <= 0 || height <= 0) break;
-          final isRounded = cornerRadius > 0;
-          // AA matches the Rust contract: only on for rounded corners. Sharp axis-aligned
-          // rects render with pixel-perfect edges; rounded corners need AA so the curve
-          // doesn't look jagged.
-          final strokePaint = Paint()
-            ..color = uiOutlineColor
-            ..style = .stroke
-            ..strokeWidth = outlineThickness.toDouble()
-            ..isAntiAlias = isRounded;
-          if (isRounded) {
-            // Mirror Rust's clamp on the radius (capped at half the shortest side); width
-            // and height are positive here (guarded above) so `shortestSide` is non-negative.
-            final clamped = cornerRadius.toDouble().clamp(0.0, rect.shortestSide / 2);
-            canvas.drawRRect(RRect.fromRectAndRadius(rect, .circular(clamped)), strokePaint);
-          } else {
-            canvas.drawRect(rect, strokePaint);
-          }
-
-        case TextElement():
-          // TODO(tsinis): render TextElement in the preview painter.
-          break;
-      }
+      _paintElement(canvas, element);
     }
 
     final index = selectedIndex;
     if (index == null || index.isNegative || index >= elements.length) return;
 
     final selected = elements.elementAtOrNull(index);
-    if (selected case RectElement()) {
-      for (final handle in HandlePosition.values) {
-        _paintHandle(canvas, _handleCenter(element: selected, handle: handle));
+    if (selected != null) {
+      final hasHandles = switch (selected) {
+        RectElement() || OvalElement() => true,
+        TextElement() => false,
+      };
+      if (hasHandles) {
+        for (final handle in HandlePosition.values) {
+          _paintHandle(canvas, _handleCenter(element: selected, handle: handle));
+        }
       }
+    }
+  }
+
+  void _paintElement(Canvas canvas, DrawElement element) {
+    switch (element) {
+      case RectElement():
+        _paintRect(canvas, element);
+
+      case OvalElement():
+        _paintOval(canvas, element);
+
+      case TextElement():
+        // TODO(tsinis): render TextElement in the preview painter.
+        break;
+    }
+  }
+
+  static void _paintRect(Canvas canvas, RectElement element) {
+    final RectElement(
+      :cornerRadius,
+      :height,
+      :outlineThickness,
+      :rect,
+      :uiFillColor,
+      :uiOutlineColor,
+      :width,
+    ) = element;
+    // Mirror Rust's short-circuit on non-positive dims; otherwise Flutter would render
+    // a flipped rect from a negative-width Rect — a real preview-vs-export divergence.
+    if (width <= 0 || height <= 0) return;
+
+    final isRounded = cornerRadius > 0;
+
+    if (uiFillColor.a > 0) {
+      final fillPaint = Paint()
+        ..color = uiFillColor
+        ..style = .fill
+        ..isAntiAlias = isRounded;
+      if (isRounded) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            rect,
+            .circular(cornerRadius.toDouble().clamp(0.0, rect.shortestSide / 2)),
+          ),
+          fillPaint,
+        );
+      } else {
+        canvas.drawRect(rect, fillPaint);
+      }
+    }
+
+    if (outlineThickness > 0 && uiOutlineColor.a > 0) {
+      final strokePaint = Paint()
+        ..color = uiOutlineColor
+        ..style = .stroke
+        ..strokeWidth = outlineThickness.toDouble()
+        ..isAntiAlias = isRounded;
+      if (isRounded) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            rect,
+            .circular(cornerRadius.toDouble().clamp(0.0, rect.shortestSide / 2)),
+          ),
+          strokePaint,
+        );
+      } else {
+        canvas.drawRect(rect, strokePaint);
+      }
+    }
+  }
+
+  static void _paintOval(Canvas canvas, OvalElement element) {
+    final OvalElement(:height, :outlineThickness, :rect, :uiFillColor, :uiOutlineColor, :width) =
+        element;
+    if (width <= 0 || height <= 0) return;
+
+    if (uiFillColor.a > 0) {
+      canvas.drawOval(
+        rect,
+        Paint()
+          ..color = uiFillColor
+          ..style = .fill
+          ..isAntiAlias = true,
+      );
+    }
+
+    if (outlineThickness > 0 && uiOutlineColor.a > 0) {
+      canvas.drawOval(
+        rect,
+        Paint()
+          ..color = uiOutlineColor
+          ..style = .stroke
+          ..strokeWidth = outlineThickness.toDouble()
+          ..isAntiAlias = true,
+      );
     }
   }
 
@@ -80,7 +147,7 @@ class DrawPainter extends CustomPainter {
   bool shouldRepaint(covariant DrawPainter oldDelegate) =>
       !identical(oldDelegate.elements, elements) || oldDelegate.selectedIndex != selectedIndex;
 
-  static HandlePosition? hitTestHandle(Offset point, {required RectElement element}) {
+  static HandlePosition? hitTestHandle(Offset point, {required DrawElement element}) {
     for (final handle in HandlePosition.values) {
       final center = _handleCenter(element: element, handle: handle);
       if ((point - center).distance <= handleRadius) return handle;
@@ -89,16 +156,37 @@ class DrawPainter extends CustomPainter {
     return null;
   }
 
-  static bool isPointOnRect(Offset point, {required RectElement element}) {
+  static bool isPointOnShape(Offset point, {required DrawElement element}) {
     final rect = element.rect;
-    final half = element.outlineThickness / 2 + _hitSlop;
+    final outlineThickness = switch (element) {
+      RectElement() => element.outlineThickness.toDouble(),
+      OvalElement() => element.outlineThickness.toDouble(),
+      TextElement() => 0.0,
+    };
+
+    final half = outlineThickness / 2 + _hitSlop;
     final outer = rect.inflate(half);
     final inner = rect.deflate(half);
 
-    return outer.contains(point) && !inner.contains(point);
+    return switch (element) {
+      OvalElement() => _isPointInEllipse(point, outer) && !_isPointInEllipse(point, inner),
+      RectElement() || TextElement() => outer.contains(point) && !inner.contains(point),
+    };
   }
 
-  static Offset _handleCenter({required RectElement element, required HandlePosition handle}) {
+  /// Simple ellipse hit test: (x-h)^2/a^2 + (y-k)^2/b^2 <= 1.
+  static bool _isPointInEllipse(Offset point, Rect rect) {
+    final axisA = rect.width / 2;
+    final axisB = rect.height / 2;
+    if (axisA <= 0 || axisB <= 0) return false;
+
+    final diffX = point.dx - rect.center.dx;
+    final diffY = point.dy - rect.center.dy;
+
+    return (diffX * diffX) / (axisA * axisA) + (diffY * diffY) / (axisB * axisB) <= 1.0;
+  }
+
+  static Offset _handleCenter({required DrawElement element, required HandlePosition handle}) {
     final Rect(
       :bottomCenter,
       :bottomLeft,

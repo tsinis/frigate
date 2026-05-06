@@ -8,16 +8,16 @@ import '../model/draw_element.dart';
 /// deeply-immutable. Cost is one args-object copy per call.
 final class RenderImageArgs {
   const RenderImageArgs({
+    required this.backgroundPath,
     required this.elements,
     required this.fontPath,
-    required this.imagePath,
     required this.imageQuality,
-    required this.outputPath,
+    this.outputPath,
   });
 
+  final String backgroundPath;
   final List<DrawElement> elements;
   final String? fontPath;
-  final String imagePath;
   final int imageQuality;
-  final String outputPath;
+  final String? outputPath;
 }

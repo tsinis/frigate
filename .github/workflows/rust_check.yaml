@@ -83,3 +83,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: frigatebird/rust/lcov.info
           fail_ci_if_error: true
+          flags: rust
+          name: rust
+          override_branch: ${{ github.base_ref }}
+          verbose: true

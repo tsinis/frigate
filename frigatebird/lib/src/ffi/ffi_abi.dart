@@ -5,7 +5,6 @@ import 'ffi_element.dart';
 import 'ffi_error.dart';
 import 'ffi_rect_element.dart';
 import 'ffi_result_count.dart';
-import 'ffi_result_unit.dart';
 
 /// Runtime guards that the Dart-side `Struct` layouts for the FFI types match the wire
 /// contract baked into the Rust crate. Cheap — `sizeOf<T>()` specializes to a direct read for
@@ -30,11 +29,9 @@ sealed class FfiAbi {
   /// 8-byte alignment padding).
   static const rectElementBytes = 48;
 
-  /// Expected byte size of [FfiResultUnitStruct].
-  ///
-  /// Rust `repr(C, u8)` enum `FfiResultUnit { Ok(()) = 0, Err(FfiError) = 1 }`:
-  /// discriminant(1) + implicit_pad(1, align FfiError to 2) + payload_union(4) = **6 bytes**.
-  static const resultUnitBytes = 6;
+  /// Expected size in bytes for the element payload union in C.
+  // ignore: avoid-duplicate-constant-values, it is conceptually distinct from rectElementBytes.
+  static const payloadBytes = 48;
 
   /// Error buffer capacity allocated by `FfiMarshal.encodeElements` for Rust to write
   /// diagnostic messages into. Single source of truth — Rust docs reference this value too.
@@ -66,16 +63,17 @@ sealed class FfiAbi {
     );
   }
 
-  static void assertResultUnit({int expectedSize = resultUnitBytes}) {
-    final actualSize = sizeOf<FfiResultUnitStruct>();
+  /// Assert the union of payloads matches the target wire size.
+  static void assertPayload({int expectedSize = payloadBytes}) {
+    final actualSize = sizeOf<FfiPayload>();
     assert(
       actualSize == expectedSize,
-      'FfiResultUnitStruct ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
+      'FfiPayload ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
     );
   }
 
   /// Guard that the Dart-side [FfiResultCountStruct] layout matches Rust.
-  /// Called from `RenderImage.run` alongside the other startup layout guards.
+  /// Reserved for future ops that return a count — not called from production code yet.
   static void assertResultCount({int expectedSize = 8}) {
     final actualSize = sizeOf<FfiResultCountStruct>();
     assert(
@@ -85,7 +83,7 @@ sealed class FfiAbi {
   }
 
   /// Guard that the Dart-side Struct layout for [FfiRectElement] matches the wire contract.
-  /// Called from `ExportBackendNative.loadImage`.
+  /// Reserved — not yet called from production code; add a call here when a load/export op lands.
   static void assertRectElement({int expectedSize = rectElementBytes}) {
     final actualSize = sizeOf<FfiRectElement>();
     assert(

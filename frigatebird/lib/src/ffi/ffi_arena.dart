@@ -7,6 +7,8 @@ final class FfiArena extends Struct {
   @Size()
   external int textLen;
 
+  // Reserved for future in-place image ops (e.g. merge with byte-stream background).
+  // Always null/0 for now — no op reads these fields yet.
   external Pointer<Uint8> imageBuf;
   @Size()
   external int imageLen;

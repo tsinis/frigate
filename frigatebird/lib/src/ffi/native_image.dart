@@ -31,7 +31,7 @@ final class NativeImage {
   // ignore: avoid-non-empty-constructor-bodies, this factory constructor is the only way to create a NativeImage.
   factory NativeImage.fromBytes(Uint8List dartBytes, {required int height, required int width}) {
     final length = dartBytes.length;
-    final pointer = malloc<Uint8>(length)..asTypedList(length).setRange(0, length, dartBytes);
+    final pointer = calloc<Uint8>(length)..asTypedList(length).setRange(0, length, dartBytes);
 
     return NativeImage._(pointer, height, length, width);
   }
@@ -83,7 +83,7 @@ final class NativeImage {
   void dispose() {
     if (_isDisposed) return;
     _isDisposed = true;
-    malloc.free(_pointer);
+    calloc.free(_pointer);
   }
 
   void _throwIfDisposed() {

@@ -67,6 +67,22 @@ void main() {
     );
   });
 
+  group('OvalElement default overrides', () {
+    const oval = OvalElement(height: 1, width: 1, x: 0, y: 0);
+
+    test(
+      'fill color is transparent so the image shows through the oval',
+      () => expect(oval.fillColor.argb, FfiColor.transparent.argb),
+    );
+
+    test(
+      'outline color is black so the oval is visible without extra setup',
+      () => expect(oval.outlineColor.argb, FfiColor.black.argb),
+    );
+
+    test('outline thickness is 2 pixels', () => expect(oval.outlineThickness, 2));
+  });
+
   group('sealed class type discrimination', () {
     test('RectElement is-check returns true', () {
       const e = RectElement(height: 1, width: 1, x: 0, y: 0);
@@ -82,16 +98,18 @@ void main() {
       const elements = <DrawElement>[
         RectElement(height: 1, width: 1, x: 0, y: 0),
         TextElement(text: _emptyText, x: 0, y: 0),
+        OvalElement(height: 1, width: 1, x: 0, y: 0),
       ];
       final types = elements
           .map(
             (e) => switch (e) {
               RectElement() => 'rect',
               TextElement() => 'text',
+              OvalElement() => 'oval',
             },
           )
           .toSet();
-      expect(types, {'rect', 'text'}, reason: 'switch is exhaustive over all current subtypes');
+      expect(types, const {'rect', 'text', 'oval'}, reason: 'switch is exhaustive over all types');
     });
   });
 }
