@@ -235,7 +235,7 @@ impl Shape for TextPayload {
         self.y
     }
     fn width(&self) -> f64 {
-        0.0 // Computed at render time from font metrics; not stored in the wire struct.
+        0.0 // width is computed dynamically at render time from font metrics; not stored in the wire struct.
     }
     fn height(&self) -> f64 {
         self.height

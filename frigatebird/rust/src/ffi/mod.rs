@@ -31,7 +31,7 @@ pub enum FfiErrorCode {
 pub struct FfiArena {
     pub text_buf: *const u8,
     pub text_len: usize,
-    // Reserved for future in-place image ops (e.g. merge with byte-stream background).
+    // Reserved for future in-place operations (e.g. merge with byte-stream background).
     // Currently always null/0 — no op reads these fields yet.
     pub image_buf: *const u8,
     pub image_len: usize,

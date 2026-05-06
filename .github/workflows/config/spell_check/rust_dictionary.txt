@@ -43,5 +43,6 @@ unpremultiplied
 unpremultiply
 unpremultiplying
 unrotated
+vecs
 wght
 xywh

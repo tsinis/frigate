@@ -41,6 +41,7 @@ fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + S
 /// and returns the result as a byte buffer owned by Rust.
 ///
 /// Returns a `u8` status code (`FfiErrorCode` cast to `u8`). Result buffer is written to `*out`.
+/// (Previously returned i32; now returns u8/FfiErrorCode.)
 #[ffi_export]
 pub fn merge(
     background_path: Option<char_p::Ref<'_>>,

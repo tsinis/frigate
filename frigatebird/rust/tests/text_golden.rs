@@ -1,4 +1,5 @@
-//! Golden image tests for text rendering.
+
+// Golden image tests for text rendering.
 
 use std::path::{Path, PathBuf};
 
