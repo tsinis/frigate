@@ -116,7 +116,13 @@ class _DrawingScreenState extends State<DrawingScreen> {
       final jpegBytes = await outFile.readAsBytes();
 
       if (!mounted) return;
-      await _showExportDialog(jpegBytes);
+      final shouldSave = await _showExportDialog(jpegBytes);
+      if (shouldSave == true) {
+        final finalFile = File('${tempDir.path}/frigate_composition.jpg');
+        await finalFile.writeAsBytes(jpegBytes, flush: true);
+
+        if (mounted) _showSnackBar('Saved to ${finalFile.path}');
+      }
     } on Object catch (error) {
       if (!mounted) return;
       _showSnackBar('Failed: $error');
@@ -125,27 +131,19 @@ class _DrawingScreenState extends State<DrawingScreen> {
     }
   }
 
-  Future<void> _showExportDialog(Uint8List jpegBytes) async {
-    await showDialog<void>(
-      builder: (_) => Dialog(
-        clipBehavior: .antiAlias,
-        child: Column(
-          mainAxisSize: .min,
-          children: [
-            Image.memory(jpegBytes, semanticLabel: 'Exported Image'),
-            Padding(
-              padding: const .all(8),
-              child: TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'),
-              ),
-            ),
-          ],
-        ),
-      ),
-      context: context,
-    );
-  }
+  Future<bool?> _showExportDialog(Uint8List jpegBytes) => showDialog<bool>(
+    builder: (context) => AlertDialog(
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Close')),
+        FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Save')),
+      ],
+      clipBehavior: .antiAlias,
+      content: Image.memory(jpegBytes, semanticLabel: 'Exported Image'),
+      contentPadding: .zero,
+      title: const Text('Exported Image'),
+    ),
+    context: context,
+  );
 
   @awaitNotRequired
   Future<void> _handleRenderText() async {
@@ -244,27 +242,11 @@ class _DrawingScreenState extends State<DrawingScreen> {
         ],
         title: const Text('Frigate Draw'),
       ),
-      body: Center(
-        child: Padding(
-          padding: const .all(16),
-          child: AspectRatio(
-            aspectRatio: _imageWidth / _imageHeight,
-            child: Material(
-              clipBehavior: .antiAlias,
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: const .all(.circular(12)),
-                side: BorderSide(color: colorScheme.outlineVariant),
-              ),
-              child: DrawEditor(
-                controller: _controller,
-                image: const AssetImage(_sampleAsset),
-                imageHeight: _imageHeight.toDouble(),
-                imageWidth: _imageWidth.toDouble(),
-              ),
-            ),
-          ),
-        ),
+      body: DrawEditor(
+        controller: _controller,
+        image: const AssetImage(_sampleAsset),
+        imageHeight: _imageHeight.toDouble(),
+        imageWidth: _imageWidth.toDouble(),
       ),
       bottomNavigationBar: BottomAppBar(
         child: Row(

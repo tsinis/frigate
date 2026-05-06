@@ -35,15 +35,11 @@ class DrawPainter extends CustomPainter {
     if (index == null || index.isNegative || index >= elements.length) return;
 
     final selected = elements.elementAtOrNull(index);
-    if (selected != null) {
-      final hasHandles = switch (selected) {
-        RectElement() || OvalElement() => true,
-        TextElement() => false,
-      };
-      if (hasHandles) {
-        for (final handle in HandlePosition.values) {
-          _paintHandle(canvas, _handleCenter(element: selected, handle: handle));
-        }
+    if (selected == null) return;
+
+    if (selected is! TextElement) {
+      for (final handle in HandlePosition.values) {
+        _paintHandle(canvas, _handleCenter(element: selected, handle: handle));
       }
     }
   }

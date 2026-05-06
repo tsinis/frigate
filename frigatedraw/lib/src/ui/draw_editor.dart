@@ -196,8 +196,9 @@ class _DrawEditorState extends State<DrawEditor> {
     onPointerUp: _handlePointerUp,
     child: InteractiveViewer(
       boundaryMargin: const .all(.infinity),
+      constrained: false,
       maxScale: 5,
-      minScale: 0.9,
+      minScale: 0.5,
       panEnabled: !_isDragging,
       scaleEnabled: !_isDragging,
       transformationController: _transformController,
