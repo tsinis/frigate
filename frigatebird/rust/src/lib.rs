@@ -26,7 +26,7 @@ pub struct ByteBuffer {
     pub length: usize,
 }
 
-fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + Send>) -> i32 {
+fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + Send>) -> u8 {
     let msg = if let Some(s) = payload.downcast_ref::<&'static str>() {
         (*s).to_string()
     } else if let Some(s) = payload.downcast_ref::<String>() {
@@ -34,13 +34,13 @@ fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + S
     } else {
         "panic with non-string payload".to_string()
     };
-    write_panic_to_arena(arena, &msg).code as i32
+    write_panic_to_arena(arena, &msg).code as u8
 }
 
 /// Bytes-in / path-in merge: composites `foreground_png` bytes over the image at `background_path`
 /// and returns the result as a byte buffer owned by Rust.
 ///
-/// Returns a `i32` status code. Result buffer is written to `*out`.
+/// Returns a `u8` status code (`FfiErrorCode` cast to `u8`). Result buffer is written to `*out`.
 #[ffi_export]
 pub fn merge(
     background_path: Option<char_p::Ref<'_>>,
@@ -52,7 +52,7 @@ pub fn merge(
     image_quality: u8,
     arena: Option<&mut FfiArena>,
     out: Option<&mut ByteBuffer>,
-) -> i32 {
+) -> u8 {
     let mut arena_opt = arena;
 
     if out.is_none() {
@@ -61,7 +61,7 @@ pub fn merge(
             FfiErrorCode::InvalidArg,
             "Missing output buffer pointer",
         )
-        .code as i32;
+        .code as u8;
     }
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -140,10 +140,26 @@ pub fn merge(
                     length,
                 };
             }
-            FfiErrorCode::Success as i32
+            FfiErrorCode::Success as u8
         }
-        Ok(Err((code, msg))) => write_error_to_arena(arena_opt, code, &msg).code as i32,
-        Err(payload) => handle_panic(arena_opt, payload),
+        Ok(Err((code, msg))) => {
+            if let Some(o) = out {
+                *o = ByteBuffer {
+                    data: std::ptr::null_mut(),
+                    length: 0,
+                };
+            }
+            write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code as u8
+        }
+        Err(payload) => {
+            if let Some(o) = out {
+                *o = ByteBuffer {
+                    data: std::ptr::null_mut(),
+                    length: 0,
+                };
+            }
+            handle_panic(arena_opt, payload)
+        }
     }
 }
 
@@ -178,7 +194,7 @@ pub unsafe extern "C" fn ffi_echo_element(ptr: *const FfiElement) -> *const FfiE
 /// Unified render call: reads the image from `image_path`, composites all `FfiElement`s
 /// (rectangles, text, future shapes), writes the result to `output_path`.
 ///
-/// Returns a `i32` status code (0 for success, see `FfiErrorCode`).
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
 ///
 /// # Safety
 ///
@@ -197,7 +213,7 @@ pub unsafe extern "C" fn draw_elements(
     elements_count: usize,
     image_quality: u8,
     arena: *mut FfiArena,
-) -> i32 {
+) -> u8 {
     // SAFETY: Caller guarantees `arena` is a valid pointer to `FfiArena`.
     let arena_opt = unsafe { arena.as_mut() };
 
@@ -244,8 +260,8 @@ pub unsafe extern "C" fn draw_elements(
     }));
 
     match result {
-        Ok(Ok(())) => FfiErrorCode::Success as i32,
-        Ok(Err((code, msg))) => write_error_to_arena(arena_opt, code, &msg).code as i32,
+        Ok(Ok(())) => FfiErrorCode::Success as u8,
+        Ok(Err((code, msg))) => write_error_to_arena(arena_opt, code, &msg).code as u8,
         Err(payload) => handle_panic(arena_opt, payload),
     }
 }
@@ -434,6 +450,9 @@ impl From<&OvalPayload> for ShapeStyle {
     }
 }
 
+/// Converts an ARGB u32 to a tiny-skia Color.
+/// Returns `None` when `alpha == 0` (i.e. fully transparent), allowing rendering passes
+/// like `paints_anything()` to skip purely-transparent shapes entirely instead of returning `Color::TRANSPARENT`.
 fn ffi_color_to_skia(argb: u32) -> Option<tiny_skia::Color> {
     let a = (argb >> 24) as u8;
     if a == 0 {
@@ -637,7 +656,7 @@ mod merge_tests {
             Some(&mut out),
         );
         // It should return InvalidArg (2) because background_path is None.
-        assert_eq!(status, FfiErrorCode::InvalidArg as i32);
+        assert_eq!(status, FfiErrorCode::InvalidArg as u8);
     }
 
     #[test]
@@ -657,7 +676,7 @@ mod merge_tests {
             None,
             None, // Output buffer is missing!
         );
-        assert_eq!(status, FfiErrorCode::InvalidArg as i32);
+        assert_eq!(status, FfiErrorCode::InvalidArg as u8);
     }
 
     #[test]
@@ -689,7 +708,7 @@ mod merge_tests {
             Some(&mut arena),
             Some(&mut out),
         );
-        assert_eq!(status, FfiErrorCode::InvalidArg as i32);
+        assert_eq!(status, FfiErrorCode::InvalidArg as u8);
     }
 
     #[test]
@@ -705,7 +724,7 @@ mod merge_tests {
         };
 
         let status = merge(Some(c_str), Some(ptr), 0, 0, 0, 0, 90, None, Some(&mut out));
-        assert_eq!(status, FfiErrorCode::InvalidArg as i32);
+        assert_eq!(status, FfiErrorCode::InvalidArg as u8);
     }
 
     #[test]
@@ -732,7 +751,7 @@ mod merge_tests {
             Some(&mut out),
         );
         // "fake.jpg" does not exist so read_image fails with Decode or Io error
-        assert!(status != FfiErrorCode::Success as i32);
+        assert!(status != FfiErrorCode::Success as u8);
     }
 
     #[test]
@@ -752,7 +771,7 @@ mod merge_tests {
         let status =
             unsafe { draw_elements(None, None, None, std::ptr::null(), 0, 90, &raw mut arena) };
 
-        assert_eq!(status, FfiErrorCode::InvalidArg as i32);
+        assert_eq!(status, FfiErrorCode::InvalidArg as u8);
         let msg = unsafe { std::ffi::CStr::from_ptr(error_buf.as_ptr().cast()) };
         assert!(
             msg.to_str().unwrap().contains("Missing image path"),

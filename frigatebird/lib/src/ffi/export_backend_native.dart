@@ -25,20 +25,35 @@ final class ExportBackendNative {
     required Uint8List foregroundPng,
     int imageQuality = DrawConstants.defaultImageQuality,
     int offsetX = 0,
+    // ignore: avoid-similar-names, offsetX and offsetY are standard pairings
     int offsetY = 0,
     int outFormat = 0,
-  }) => Isolate.run(
-    () => _doMerge(
-      _MergeArgs(
-        backgroundPath: backgroundPath,
-        foregroundPng: foregroundPng,
-        imageQuality: imageQuality,
-        offsetX: offsetX,
-        offsetY: offsetY,
-        outFormat: outFormat,
+  }) {
+    assert(
+      imageQuality >= DrawConstants.minImageQuality &&
+          imageQuality <= DrawConstants.maxImageQuality,
+      'imageQuality must be in [${DrawConstants.minImageQuality}, '
+      '${DrawConstants.maxImageQuality}], got $imageQuality',
+    );
+    assert(outFormat == 0 || outFormat == 1, 'outFormat must be 0 (PNG) or 1 (JPEG), got $outFormat');
+    final clampedQuality = imageQuality.clamp(
+      DrawConstants.minImageQuality,
+      DrawConstants.maxImageQuality,
+    );
+
+    return Isolate.run(
+      () => _doMerge(
+        _MergeArgs(
+          backgroundPath: backgroundPath,
+          foregroundPng: foregroundPng,
+          imageQuality: clampedQuality,
+          offsetX: offsetX,
+          offsetY: offsetY,
+          outFormat: outFormat,
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   static Uint8List _doMerge(_MergeArgs args) {
     final _MergeArgs(
@@ -51,17 +66,21 @@ final class ExportBackendNative {
       :outFormat,
     ) = args;
 
+    if (backgroundPath.isEmpty) {
+      throw StateError('Rust merge failed: backgroundPath cannot be empty');
+    }
+
+    if (foregroundPng.isEmpty) {
+      throw StateError('Rust merge failed: Missing foreground bytes');
+    }
+
     Pointer<Utf8> bgCStr = nullptr;
     Pointer<Uint8> fgPtr = nullptr;
     Pointer<ByteBuffer> outPtr = nullptr;
     FfiArenaHandle? arenaHandle;
 
-    if (backgroundPath.isEmpty) {
-      throw StateError('Rust merge failed: backgroundPath cannot be empty');
-    }
-
     try {
-      bgCStr = backgroundPath.toNativeUtf8();
+      bgCStr = backgroundPath.toNativeUtf8(allocator: calloc);
       assert(bgCStr != nullptr, 'Failed to convert backgroundPath to C string');
       final fgLen = foregroundPng.length;
       fgPtr = calloc<Uint8>(fgLen);
@@ -102,6 +121,8 @@ final class ExportBackendNative {
       try {
         output = Uint8List.fromList(outData.asTypedList(outLen));
       } finally {
+        // Manually free the Rust-owned buffer via free_bytes (rather than NativeFinalizer) so
+        // we can guarantee the free happens before this isolate exits the try/finally frame.
         ffi.free_bytes(outData, outLen);
       }
 

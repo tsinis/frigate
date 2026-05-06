@@ -155,9 +155,21 @@ void main() => group(DrawPainter, () {
 
     test('uses drawOval for OvalElement', () {
       final canvas = _RecordingCanvas();
-      const oval = OvalElement(height: 50, width: 100, x: 10, y: 20);
+      const oval = OvalElement(
+        fillColor: .transparent,
+        height: 50,
+        outlineColor: .black,
+        width: 100,
+        x: 10,
+        y: 20,
+      );
       const DrawPainter([oval]).paint(canvas, const Size(200, 200));
-      expect(canvas.drawOvalCount, 1, reason: 'oval element should hit drawOval once');
+      expect(
+        canvas.drawOvalCount,
+        1,
+        reason: 'oval element should hit drawOval once for the outline',
+      );
+      expect(canvas.lastPaintColorAlpha, 255, reason: 'black outline has alpha 255');
     });
   });
 
@@ -213,12 +225,14 @@ class _RecordingCanvas implements Canvas {
   int drawOvalCount = 0;
   RRect? lastRRect;
   bool? isLastPaintAntiAlias;
+  int? lastPaintColorAlpha;
 
   @override
   // ignore: parameters-ordering, signature must match dart:ui Canvas.
   void drawRect(Rect rect, Paint paint) {
     drawRectCount += 1;
     isLastPaintAntiAlias = paint.isAntiAlias;
+    lastPaintColorAlpha = paint.color.alpha;
   }
 
   @override
@@ -227,6 +241,7 @@ class _RecordingCanvas implements Canvas {
     drawRRectCount += 1;
     lastRRect = rrect;
     isLastPaintAntiAlias = paint.isAntiAlias;
+    lastPaintColorAlpha = paint.color.alpha;
   }
 
   @override
@@ -234,6 +249,7 @@ class _RecordingCanvas implements Canvas {
   void drawOval(Rect rect, Paint paint) {
     drawOvalCount += 1;
     isLastPaintAntiAlias = paint.isAntiAlias;
+    lastPaintColorAlpha = paint.color.alpha;
   }
 
   /// Catch-all: every other Canvas method the painter happens to call (drawCircle for handles,

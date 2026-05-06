@@ -29,8 +29,11 @@ fuzz_target!(|input: FuzzInput| {
         length: 0,
     };
 
-    // Ignore if empty since NonNull::new requires non-null and slice.as_ptr() could theoretically be a dangling aligned pointer if len=0 but we don't want to crash libfuzzer.
-    // But as_ptr() for Vec<u8> is never null.
+    // SAFETY: `as_ptr` on a `Vec` is guaranteed to return a non-null pointer,
+    // even if the vector is empty, so `NonNull::new` is safe and will unwrap.
+    // We create a `NonNull` only to pass a read-only pointer into `frigate::merge`.
+    // The FFI boundary reconstructs a safe `&[u8]` using `slice::from_raw_parts`.
+    // It does not mutate or retain the pointer after the function returns.
     let ptr = safer_ffi::ptr::NonNull::new(input.fg_bytes.as_ptr() as *mut u8);
 
     unsafe {

@@ -1,7 +1,5 @@
 //! Golden image tests for text rendering.
 
-#![allow(unsafe_code)]
-
 use std::path::{Path, PathBuf};
 
 use ab_glyph::FontRef;
@@ -112,17 +110,14 @@ fn call_draw(
     elements: &[frigate::FfiElement],
     arena: &mut FfiArena,
     quality: u8,
-) -> i32 {
+) -> u8 {
+    #[expect(unsafe_code, reason = "FFI call to draw_elements requires raw pointer and Option<char_p::Ref>")]
     unsafe {
         frigate::draw_elements(
             image_path.map(|p| p.as_ref()),
             output_path.map(|p| p.as_ref()),
             font_path.map(|p| p.as_ref()),
-            if elements.is_empty() {
-                std::ptr::null()
-            } else {
-                elements.as_ptr()
-            },
+            elements.as_ptr(),
             elements.len(),
             quality,
             arena as *mut FfiArena,
@@ -162,11 +157,11 @@ fn render_image_end_to_end_writes_jpeg() {
         &mut arena,
         90,
     );
-    if code != FfiErrorCode::Success as i32 {
+    if code != FfiErrorCode::Success as u8 {
+        #[expect(unsafe_code, reason = "Reading arena error buffer for test diagnostics")]
         let msg = unsafe { std::ffi::CStr::from_ptr(arena.error_buf as *const _) };
         panic!("FFI call failed with code {code}: {:?}", msg);
     }
-    assert_eq!(code, FfiErrorCode::Success as i32);
     assert!(out.exists(), "expected output file {out:?} to exist");
 
     let decoded = image::open(&out).expect("output should decode as a valid image");
@@ -206,7 +201,7 @@ fn render_image_rejects_text_without_font() {
         &mut arena,
         90,
     );
-    assert_eq!(code, FfiErrorCode::InvalidArg as i32);
+    assert_eq!(code, FfiErrorCode::InvalidArg as u8);
 }
 
 #[test]
@@ -225,7 +220,7 @@ fn render_image_rejects_null_image_path() {
     };
 
     let code = call_draw(None, Some(&out_cs), None, &[], &mut arena, 100);
-    assert_eq!(code, FfiErrorCode::InvalidArg as i32);
+    assert_eq!(code, FfiErrorCode::InvalidArg as u8);
 }
 
 #[test]
@@ -246,7 +241,7 @@ fn render_image_rejects_nonexistent_source_image() {
     };
 
     let code = call_draw(Some(&bad_img_cs), Some(&out_cs), None, &[], &mut arena, 80);
-    assert_eq!(code, FfiErrorCode::Decode as i32);
+    assert_eq!(code, FfiErrorCode::Decode as u8);
 }
 
 #[test]
@@ -268,13 +263,16 @@ fn render_image_rejects_unsupported_output_extension() {
     };
 
     let code = call_draw(Some(&img_cs), Some(&out_cs), None, &[], &mut arena, 80);
-    if code != FfiErrorCode::Encode as i32 {
+    if code != FfiErrorCode::Encode as u8 {
+        #[expect(unsafe_code, reason = "Reading arena error buffer for test diagnostics")]
         let msg = unsafe { std::ffi::CStr::from_ptr(arena.error_buf as *const _) };
         panic!("FFI call failed with code {code} (wanted 5): {:?}", msg);
     }
-    assert_eq!(code, FfiErrorCode::Encode as i32);
+    assert!(
+        !out.exists(),
+        "output file should not be created for unsupported format"
+    );
 }
-
 #[test]
 fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
     let img_path = assets_dir().join("paint.jpg");
@@ -313,15 +311,11 @@ fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
         &mut arena,
         90,
     );
-    if code != FfiErrorCode::Success as i32 {
+    if code != FfiErrorCode::Success as u8 {
+        #[expect(unsafe_code, reason = "Reading arena error buffer for test diagnostics")]
         let msg = unsafe { std::ffi::CStr::from_ptr(arena.error_buf as *const _) };
         panic!("FFI call failed with code {code}: {:?}", msg);
     }
-    assert_eq!(
-        code,
-        FfiErrorCode::Success as i32,
-        "mixed rect+text+rect run must succeed"
-    );
     assert!(out.exists());
     let decoded = image::open(&out).expect("mixed output should decode");
     assert!(

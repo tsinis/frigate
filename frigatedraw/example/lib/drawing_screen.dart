@@ -178,8 +178,10 @@ class _DrawingScreenState extends State<DrawingScreen> {
         _sampleAsset,
         '${downloadDir.path}/frigate_sample.png',
       );
-      final fontFile = await _copyAssetToDisk(_fontAsset, '${downloadDir.path}/frigate_font.ttf');
+      final fontFile = await _copyAssetToDisk(_fontAsset, '${tempDir.path}/frigate_font.ttf');
 
+      // draw_elements reads the entire input before opening output, but it's
+      // safer to separate them when debugging or in case of partial fails.
       await RenderImage.run(
         backgroundPath: imageFile.path,
         elements: [
@@ -196,8 +198,8 @@ class _DrawingScreenState extends State<DrawingScreen> {
       );
 
       if (!mounted) return;
-      _showSnackBar('$successMessage: ${imageFile.path}');
-    } on RenderException catch (error) {
+      _showSnackBar('${destination.successMessage}: ${imageFile.path}');
+    } on Object catch (error) {
       if (!mounted) return;
       _showSnackBar('Render failed: $error');
     } finally {

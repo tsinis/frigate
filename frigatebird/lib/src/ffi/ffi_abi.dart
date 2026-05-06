@@ -73,7 +73,7 @@ sealed class FfiAbi {
   }
 
   /// Guard that the Dart-side [FfiResultCountStruct] layout matches Rust.
-  /// Called from `RenderImage.run` alongside the other startup layout guards.
+  /// Reserved for future ops that return a count — not called from production code yet.
   static void assertResultCount({int expectedSize = 8}) {
     final actualSize = sizeOf<FfiResultCountStruct>();
     assert(
@@ -83,7 +83,7 @@ sealed class FfiAbi {
   }
 
   /// Guard that the Dart-side Struct layout for [FfiRectElement] matches the wire contract.
-  /// Called from `ExportBackendNative.loadImage`.
+  /// Reserved — not yet called from production code; add a call here when a load/export op lands.
   static void assertRectElement({int expectedSize = rectElementBytes}) {
     final actualSize = sizeOf<FfiRectElement>();
     assert(

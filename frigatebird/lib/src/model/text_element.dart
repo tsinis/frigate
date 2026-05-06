@@ -6,7 +6,7 @@ final class TextElement extends DrawElement {
     required this.text,
     required super.x,
     required super.y,
-    super.blur, // TODO: No [blur] for the text!
+    super.blur, // `blur` is in the wire struct (TextPayload.blur) but not yet applied at render time.
     super.fillColor,
     super.rotation,
     this.fontId = 0,

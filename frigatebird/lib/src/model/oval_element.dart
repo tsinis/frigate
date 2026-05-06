@@ -7,20 +7,33 @@ final class OvalElement extends DrawElement {
     required super.width,
     required super.x,
     required super.y,
-    super.blur,
+    int blur = 0,
     super.rotation,
     super.fillColor = FfiColor.transparent,
     this.outlineColor = FfiColor.black,
     int outlineThickness = 2,
-  }) : assert(
-         outlineThickness >= 0 && outlineThickness <= 255,
-         'outlineThickness must be in 0..255',
-       ),
+  }) : blur = blur < 0
+           ? 0
+           : blur > 255
+           ? 255
+           : blur,
        outlineThickness = outlineThickness < 0
            ? 0
            : outlineThickness > 255
            ? 255
-           : outlineThickness;
+           : outlineThickness,
+       super(
+         blur: blur < 0
+             ? 0
+             : blur > 255
+             ? 255
+             : blur,
+       ),
+       assert(
+         outlineThickness >= 0 && outlineThickness <= 255,
+         'outlineThickness must be in 0..255',
+       ),
+       assert(blur >= 0 && blur <= 255, 'blur must be in 0..255');
 
   final FfiColor outlineColor;
   final int outlineThickness;

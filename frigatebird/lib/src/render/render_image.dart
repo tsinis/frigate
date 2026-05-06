@@ -92,9 +92,9 @@ sealed class RenderImage {
     Pointer<Utf8> fontCStr = nullptr;
     FfiArenaHandle? handle;
     try {
-      backgroundCStr = backgroundPath.toNativeUtf8();
-      outputCStr = outputPath?.toNativeUtf8() ?? nullptr;
-      fontCStr = fontPath?.toNativeUtf8() ?? nullptr;
+      backgroundCStr = backgroundPath.toNativeUtf8(allocator: calloc);
+      outputCStr = outputPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
+      fontCStr = fontPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
       handle = FfiMarshal.encodeElements(elements, calloc);
 
       final arenaRef = handle.arenaPtr.ref;
