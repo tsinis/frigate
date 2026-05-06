@@ -12,11 +12,11 @@ final class OvalElement extends DrawElement {
     super.fillColor = FfiColor.transparent,
     this.outlineColor = FfiColor.black,
     int outlineThickness = 2,
-  }) : blur = blur < 0
-           ? 0
-           : blur > 255
-           ? 255
-           : blur,
+  }) : assert(
+         outlineThickness >= 0 && outlineThickness <= 255,
+         'outlineThickness must be in 0..255',
+       ),
+       assert(blur >= 0 && blur <= 255, 'blur must be in 0..255'),
        outlineThickness = outlineThickness < 0
            ? 0
            : outlineThickness > 255
@@ -28,12 +28,7 @@ final class OvalElement extends DrawElement {
              : blur > 255
              ? 255
              : blur,
-       ),
-       assert(
-         outlineThickness >= 0 && outlineThickness <= 255,
-         'outlineThickness must be in 0..255',
-       ),
-       assert(blur >= 0 && blur <= 255, 'blur must be in 0..255');
+       );
 
   final FfiColor outlineColor;
   final int outlineThickness;

@@ -156,9 +156,9 @@ void main() => group(DrawPainter, () {
     test('uses drawOval for OvalElement', () {
       final canvas = _RecordingCanvas();
       const oval = OvalElement(
-        fillColor: .transparent,
+        fillColor: .black, // Explicitly > 0 alpha for fill.
         height: 50,
-        outlineColor: .black,
+        outlineColor: .transparent, // Explicitly 0 alpha for outline.
         width: 100,
         x: 10,
         y: 20,
@@ -167,9 +167,9 @@ void main() => group(DrawPainter, () {
       expect(
         canvas.drawOvalCount,
         1,
-        reason: 'oval element should hit drawOval once for the outline',
+        reason: 'oval element should hit drawOval once for the fill (outline is transparent)',
       );
-      expect(canvas.lastPaintColorAlpha, 255, reason: 'black outline has alpha 255');
+      expect(canvas.lastPaintColorAlpha, 255, reason: 'black fill has alpha 255');
     });
   });
 
@@ -232,7 +232,7 @@ class _RecordingCanvas implements Canvas {
   void drawRect(Rect rect, Paint paint) {
     drawRectCount += 1;
     isLastPaintAntiAlias = paint.isAntiAlias;
-    lastPaintColorAlpha = paint.color.alpha;
+    lastPaintColorAlpha = (paint.color.a * 255).round();
   }
 
   @override
@@ -241,7 +241,7 @@ class _RecordingCanvas implements Canvas {
     drawRRectCount += 1;
     lastRRect = rrect;
     isLastPaintAntiAlias = paint.isAntiAlias;
-    lastPaintColorAlpha = paint.color.alpha;
+    lastPaintColorAlpha = (paint.color.a * 255).round();
   }
 
   @override
@@ -249,7 +249,7 @@ class _RecordingCanvas implements Canvas {
   void drawOval(Rect rect, Paint paint) {
     drawOvalCount += 1;
     isLastPaintAntiAlias = paint.isAntiAlias;
-    lastPaintColorAlpha = paint.color.alpha;
+    lastPaintColorAlpha = (paint.color.a * 255).round();
   }
 
   /// Catch-all: every other Canvas method the painter happens to call (drawCircle for handles,

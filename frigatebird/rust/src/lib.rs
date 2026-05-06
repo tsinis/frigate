@@ -34,7 +34,7 @@ fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + S
     } else {
         "panic with non-string payload".to_string()
     };
-    write_panic_to_arena(arena, &msg).code as u8
+    write_panic_to_arena(arena, &msg).code
 }
 
 /// Bytes-in / path-in merge: composites `foreground_png` bytes over the image at `background_path`
@@ -61,7 +61,7 @@ pub fn merge(
             FfiErrorCode::InvalidArg,
             "Missing output buffer pointer",
         )
-        .code as u8;
+        .code;
     }
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -149,7 +149,7 @@ pub fn merge(
                     length: 0,
                 };
             }
-            write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code as u8
+            write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code
         }
         Err(payload) => {
             if let Some(o) = out {
@@ -261,7 +261,7 @@ pub unsafe extern "C" fn draw_elements(
 
     match result {
         Ok(Ok(())) => FfiErrorCode::Success as u8,
-        Ok(Err((code, msg))) => write_error_to_arena(arena_opt, code, &msg).code as u8,
+        Ok(Err((code, msg))) => write_error_to_arena(arena_opt, code, &msg).code,
         Err(payload) => handle_panic(arena_opt, payload),
     }
 }

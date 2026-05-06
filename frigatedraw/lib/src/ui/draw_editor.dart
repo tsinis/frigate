@@ -131,6 +131,7 @@ class _DrawEditorState extends State<DrawEditor> {
     final handle = _activeHandle;
     if (index == null || selected == null) return;
     // TODO(tsinis): Enable TextElement movement once _paintElement supports text bounds/handles.
+    // Also remember to wire up hitTestHandle/hasHandles to allow text dragging.
     final canMove = switch (selected) {
       RectElement() || OvalElement() => true,
       TextElement() => false,

@@ -36,9 +36,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
     final downloads = getDownloadsDirectory();
     if (downloads == null) return null;
 
-    final successMessage = Platform.isAndroid
-        ? 'Stored in app-specific downloads'
-        : 'Stored in Downloads';
+    const successMessage = 'Stored in Downloads/Frigatedraw';
 
     return _ExportDestination(
       directory: Directory('${downloads.path}/Frigatedraw'),
@@ -172,16 +170,16 @@ class _DrawingScreenState extends State<DrawingScreen> {
       }
 
       final directory = destination.directory;
-      final successMessage = destination.successMessage;
       final downloadDir = await directory.create(recursive: true);
       final imageFile = await _copyAssetToDisk(
         _sampleAsset,
         '${downloadDir.path}/frigate_sample.png',
       );
-      final fontFile = await _copyAssetToDisk(_fontAsset, '${tempDir.path}/frigate_font.ttf');
+      final fontFile = await _copyAssetToDisk(_fontAsset, '${downloadDir.path}/frigate_font.ttf');
 
-      // draw_elements reads the entire input before opening output, but it's
-      // safer to separate them when debugging or in case of partial fails.
+      // Write to a temporary file then rename to ensure we don't open the same
+      // file for reading and writing simultaneously in Rust.
+      final outFile = File('${imageFile.path}.out');
       await RenderImage.run(
         backgroundPath: imageFile.path,
         elements: [
@@ -194,11 +192,13 @@ class _DrawingScreenState extends State<DrawingScreen> {
           ),
         ],
         fontPath: fontFile.path,
-        outputPath: imageFile.path,
+        outputPath: outFile.path,
       );
+      // ignore: avoid-ignoring-return-values, we don't need the returned File instance
+      await outFile.rename(imageFile.path);
 
       if (!mounted) return;
-      _showSnackBar('${destination.successMessage}: ${imageFile.path}');
+      _showSnackBar(destination.successMessage);
     } on Object catch (error) {
       if (!mounted) return;
       _showSnackBar('Render failed: $error');

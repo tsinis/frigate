@@ -111,7 +111,10 @@ fn call_draw(
     arena: &mut FfiArena,
     quality: u8,
 ) -> u8 {
-    #[expect(unsafe_code, reason = "FFI call to draw_elements requires raw pointer and Option<char_p::Ref>")]
+    #[expect(
+        unsafe_code,
+        reason = "FFI call to draw_elements requires raw pointer and Option<char_p::Ref>"
+    )]
     unsafe {
         frigate::draw_elements(
             image_path.map(|p| p.as_ref()),
@@ -158,7 +161,10 @@ fn render_image_end_to_end_writes_jpeg() {
         90,
     );
     if code != FfiErrorCode::Success as u8 {
-        #[expect(unsafe_code, reason = "Reading arena error buffer for test diagnostics")]
+        #[expect(
+            unsafe_code,
+            reason = "Reading arena error buffer for test diagnostics"
+        )]
         let msg = unsafe { std::ffi::CStr::from_ptr(arena.error_buf as *const _) };
         panic!("FFI call failed with code {code}: {:?}", msg);
     }
@@ -264,7 +270,10 @@ fn render_image_rejects_unsupported_output_extension() {
 
     let code = call_draw(Some(&img_cs), Some(&out_cs), None, &[], &mut arena, 80);
     if code != FfiErrorCode::Encode as u8 {
-        #[expect(unsafe_code, reason = "Reading arena error buffer for test diagnostics")]
+        #[expect(
+            unsafe_code,
+            reason = "Reading arena error buffer for test diagnostics"
+        )]
         let msg = unsafe { std::ffi::CStr::from_ptr(arena.error_buf as *const _) };
         panic!("FFI call failed with code {code} (wanted 5): {:?}", msg);
     }
@@ -312,7 +321,10 @@ fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
         90,
     );
     if code != FfiErrorCode::Success as u8 {
-        #[expect(unsafe_code, reason = "Reading arena error buffer for test diagnostics")]
+        #[expect(
+            unsafe_code,
+            reason = "Reading arena error buffer for test diagnostics"
+        )]
         let msg = unsafe { std::ffi::CStr::from_ptr(arena.error_buf as *const _) };
         panic!("FFI call failed with code {code}: {:?}", msg);
     }

@@ -35,7 +35,10 @@ final class ExportBackendNative {
       'imageQuality must be in [${DrawConstants.minImageQuality}, '
       '${DrawConstants.maxImageQuality}], got $imageQuality',
     );
-    assert(outFormat == 0 || outFormat == 1, 'outFormat must be 0 (PNG) or 1 (JPEG), got $outFormat');
+    assert(
+      outFormat == 0 || outFormat == 1,
+      'outFormat must be 0 (PNG) or 1 (JPEG), got $outFormat',
+    );
     final clampedQuality = imageQuality.clamp(
       DrawConstants.minImageQuality,
       DrawConstants.maxImageQuality,

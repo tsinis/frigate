@@ -29,11 +29,10 @@ fuzz_target!(|input: FuzzInput| {
         length: 0,
     };
 
-    // SAFETY: `as_ptr` on a `Vec` is guaranteed to return a non-null pointer,
-    // even if the vector is empty, so `NonNull::new` is safe and will unwrap.
-    // We create a `NonNull` only to pass a read-only pointer into `frigate::merge`.
-    // The FFI boundary reconstructs a safe `&[u8]` using `slice::from_raw_parts`.
-    // It does not mutate or retain the pointer after the function returns.
+    // SAFETY: Vec::as_ptr() is non-null even for empty Vecs, so safer_ffi::ptr::NonNull::new
+    // on input.fg_bytes.as_ptr() is sound. We create this NonNull ptr only to pass it
+    // into frigate::merge, which performs slice::from_raw_parts and does not mutate or
+    // retain it. The empty-vec case is safe because the FFI boundary guards on length > 0.
     let ptr = safer_ffi::ptr::NonNull::new(input.fg_bytes.as_ptr() as *mut u8);
 
     unsafe {
