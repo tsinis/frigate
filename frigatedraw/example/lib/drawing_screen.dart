@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:frigatedraw/frigatedraw.dart';
 import 'package:meta/meta.dart';
-import 'package:path_provider_ffi/path_provider_ffi.dart';
+import 'package:path_provider_dart/path_provider_dart.dart';
 
 import 'text_annotation_dialog.dart';
 import 'text_annotation_params.dart';
@@ -36,11 +36,9 @@ class _DrawingScreenState extends State<DrawingScreen> {
     final downloads = getDownloadsDirectory();
     if (downloads == null) return null;
 
-    const successMessage = 'Stored in Downloads/Frigatedraw';
-
     return _ExportDestination(
       directory: Directory('${downloads.path}/Frigatedraw'),
-      successMessage: successMessage,
+      successMessage: 'Stored in Downloads/Frigatedraw',
     );
   }
 
