@@ -17,6 +17,8 @@ class DrawingScreen extends StatefulWidget {
   State<DrawingScreen> createState() => _DrawingScreenState();
 }
 
+enum _DrawingTool { oval, rect, rounded, text }
+
 class _DrawingScreenState extends State<DrawingScreen> {
   static const _imageWidth = 800;
   static const _imageHeight = 600;
@@ -76,14 +78,11 @@ class _DrawingScreenState extends State<DrawingScreen> {
     );
   }
 
-  void _handleSavePressed() {
-    _handleSave();
-  }
+  void _handleSavePressed() => _handleSave();
 
   @awaitNotRequired
   Future<void> _handleSave() async {
     if (_controller.elements.isEmpty) {
-      if (!mounted) return;
       _showSnackBar('No elements to export');
 
       return;
@@ -94,7 +93,6 @@ class _DrawingScreenState extends State<DrawingScreen> {
     try {
       final destination = _exportDestination;
       if (destination == null) {
-        if (!mounted) return;
         _showSnackBar('Export directory not available');
 
         return;
@@ -118,8 +116,8 @@ class _DrawingScreenState extends State<DrawingScreen> {
       if (!mounted) return;
       final shouldSave = await _showExportDialog(jpegBytes);
       if (shouldSave == true) {
-        final finalFile = File('${tempDir.path}/frigate_composition.jpg');
-        await finalFile.writeAsBytes(jpegBytes, flush: true);
+        final finalFile = File('${tempDir.path}/frigate_composition.jpg')
+          ..writeAsBytesSync(jpegBytes, flush: true);
 
         if (mounted) _showSnackBar('Saved to ${finalFile.path}');
       }
@@ -159,7 +157,6 @@ class _DrawingScreenState extends State<DrawingScreen> {
     try {
       final destination = _exportDestination;
       if (destination == null) {
-        if (!mounted) return;
         _showSnackBar('Export directory not available');
 
         return;
@@ -175,7 +172,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
 
       // Write to a temporary file then rename to ensure we don't open the same
       // file for reading and writing simultaneously in Rust.
-      final outFile = File('${imageFile.path}.out');
+      final outFile = File('${imageFile.path}.tmp.png');
       await RenderImage.run(
         backgroundPath: imageFile.path,
         elements: [
@@ -193,17 +190,16 @@ class _DrawingScreenState extends State<DrawingScreen> {
       // ignore: avoid-ignoring-return-values, we don't need the returned File instance
       await outFile.rename(imageFile.path);
 
-      if (!mounted) return;
       _showSnackBar(destination.successMessage);
-    } on Object catch (error) {
-      if (!mounted) return;
-      _showSnackBar('Render failed: $error');
+    } on Object catch (error, stackTrace) {
+      _showSnackBar('Render failed: $error, $stackTrace');
     } finally {
       if (mounted) setState(() => _isExporting = false);
     }
   }
 
   void _showSnackBar(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
@@ -216,69 +212,68 @@ class _DrawingScreenState extends State<DrawingScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Scaffold(
-      appBar: AppBar(
-        actions: [
-          IconButton(icon: const Icon(Icons.undo), onPressed: _controller.undo, tooltip: 'Undo'),
-          IconButton(icon: const Icon(Icons.redo), onPressed: _controller.redo, tooltip: 'Redo'),
-          if (_isExporting)
-            const Padding(
-              padding: .all(12),
-              child: SizedBox.square(
-                dimension: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.save),
-              onPressed: _handleSavePressed,
-              tooltip: 'Export composition',
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      actions: [
+        IconButton(icon: const Icon(Icons.undo), onPressed: _controller.undo, tooltip: 'Undo'),
+        IconButton(icon: const Icon(Icons.redo), onPressed: _controller.redo, tooltip: 'Redo'),
+        if (_isExporting)
+          const Padding(
+            padding: .all(12),
+            child: SizedBox.square(dimension: 24, child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        else
+          IconButton(
+            icon: const Icon(Icons.save),
+            onPressed: _handleSavePressed,
+            tooltip: 'Export composition',
+          ),
+      ],
+      title: const Text('Frigate Draw'),
+    ),
+    body: DrawEditor(
+      controller: _controller,
+      image: const AssetImage(_sampleAsset),
+      imageHeight: _imageHeight.toDouble(),
+      imageWidth: _imageWidth.toDouble(),
+    ),
+    bottomNavigationBar: BottomAppBar(
+      child: Center(
+        child: SegmentedButton<_DrawingTool>(
+          emptySelectionAllowed: true,
+          onSelectionChanged: (select) => switch (select.firstOrNull) {
+            .rounded => _handleAddRoundedRect(),
+            .text => _handleRenderText(),
+            .oval => _handleAddOval(),
+            _ => _handleAddRect(), // ignore: avoid-wildcard-cases-with-enums, just an example.
+          },
+          segments: const [
+            ButtonSegment(
+              icon: Icon(Icons.crop_square),
+              label: Text('Rect'),
+              value: _DrawingTool.rect,
             ),
-        ],
-        title: const Text('Frigate Draw'),
-      ),
-      body: DrawEditor(
-        controller: _controller,
-        image: const AssetImage(_sampleAsset),
-        imageHeight: _imageHeight.toDouble(),
-        imageWidth: _imageWidth.toDouble(),
-      ),
-      bottomNavigationBar: BottomAppBar(
-        child: Row(
-          mainAxisAlignment: .center,
-          spacing: 8,
-          children: [
-            FilledButton.icon(
-              icon: const Icon(Icons.crop_square),
-              label: const Text('Rect'),
-              onPressed: _handleAddRect,
+            ButtonSegment(
+              icon: Icon(Icons.rounded_corner),
+              label: Text('Rounded'),
+              value: _DrawingTool.rounded,
             ),
-            FilledButton.icon(
-              icon: const Icon(Icons.rounded_corner),
-              label: const Text('Rounded'),
-              onPressed: _handleAddRoundedRect,
+            ButtonSegment(
+              icon: Icon(Icons.circle_outlined),
+              label: Text('Oval'),
+              value: _DrawingTool.oval,
             ),
-            FilledButton.icon(
-              icon: const Icon(Icons.circle_outlined),
-              label: const Text('Oval'),
-              onPressed: _handleAddOval,
-            ),
-            FilledButton.tonalIcon(
-              icon: const Icon(Icons.text_fields),
-              label: const Text('Add Text'),
-              // ignore: avoid-passing-async-when-sync-expected, intentional tearoff
-              onPressed: _handleRenderText,
+            ButtonSegment(
+              icon: Icon(Icons.text_fields),
+              label: Text('Text'),
+              value: _DrawingTool.text,
             ),
           ],
+          selected: const {},
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
 final class _ExportDestination {

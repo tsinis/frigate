@@ -9,6 +9,7 @@ enum FfiElementType {
   rectangle(0),
   text(1),
   oval(2);
+  // TODO(tsinis): Add polygon, and find out if we can add text here too.
 
   const FfiElementType(this.value);
 
