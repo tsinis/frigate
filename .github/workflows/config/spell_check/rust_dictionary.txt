@@ -12,6 +12,7 @@ demul
 demultiplied
 demultiply
 demultiplying
+exif
 ffi
 freeable
 imageops

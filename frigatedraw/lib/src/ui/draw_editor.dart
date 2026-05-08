@@ -2,6 +2,7 @@
 // add named methods that don't get reused — the inline form keeps the hierarchy readable.
 // ignore_for_file: prefer-extracting-callbacks, prefer-extracting-function-callbacks
 
+import 'dart:io' show File;
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -10,20 +11,14 @@ import 'package:flutter/widgets.dart';
 import 'package:frigatebird/frigatebird.dart';
 import 'draw_controller.dart';
 import 'draw_painter.dart';
+import 'ffi_image_file.dart';
 
 class DrawEditor extends StatefulWidget {
-  const DrawEditor({
-    required this.controller,
-    required this.image,
-    required this.imageHeight,
-    required this.imageWidth,
-    super.key,
-  });
+  const DrawEditor(this.image, {required this.controller, super.key, this.size});
 
   final DrawController controller;
-  final ImageProvider image;
-  final double imageHeight;
-  final double imageWidth;
+  final File image;
+  final Size? size;
 
   @override
   State<DrawEditor> createState() => _DrawEditorState();
@@ -33,9 +28,9 @@ class DrawEditor extends StatefulWidget {
     super.debugFillProperties(properties);
     properties
       ..add(DiagnosticsProperty<DrawController>('controller', controller))
-      ..add(DiagnosticsProperty<ImageProvider>('image', image))
-      ..add(DoubleProperty('imageHeight', imageHeight))
-      ..add(DoubleProperty('imageWidth', imageWidth));
+      ..add(StringProperty('image', image.path))
+      ..add(DoubleProperty('size.height', size?.height))
+      ..add(DoubleProperty('size.width', size?.width));
   }
 }
 
@@ -80,8 +75,8 @@ class _DrawEditorState extends State<DrawEditor> {
   }
 
   final _transformController = TransformationController();
+  final _isDragging = ValueNotifier<bool>(false);
 
-  bool _isDragging = false;
   HandlePosition? _activeHandle;
   DrawElement? _dragSnapshot;
 
@@ -124,7 +119,7 @@ class _DrawEditorState extends State<DrawEditor> {
   }
 
   void _handlePointerMove(PointerMoveEvent event) {
-    if (!_isDragging) return;
+    if (!_isDragging.value) return;
 
     final index = _controller.selectedIndex;
     final selected = _controller.selectedElement;
@@ -149,7 +144,7 @@ class _DrawEditorState extends State<DrawEditor> {
   }
 
   void _handlePointerUp(PointerUpEvent event) {
-    if (!_isDragging) return;
+    if (!_isDragging.value) return;
     final index = _controller.selectedIndex;
     final snapshot = _dragSnapshot;
     final current = _controller.selectedElement;
@@ -164,26 +159,23 @@ class _DrawEditorState extends State<DrawEditor> {
   /// `_isDragging` stays `true` forever, pan/zoom is permanently disabled, and `_dragSnapshot`
   /// pins a stale element reference. Mid-drag mutations are kept (user already saw them) but no
   /// command is committed, so the partial drag isn't pushed onto the undo stack.
-  void _handlePointerCancel(PointerCancelEvent _) => _isDragging ? _resetDragState() : null;
+  void _handlePointerCancel(PointerCancelEvent _) => _isDragging.value ? _resetDragState() : null;
 
   void _startDrag({HandlePosition? handle}) {
-    setState(() {
-      _isDragging = true;
-      _activeHandle = handle;
-      _dragSnapshot = _controller.selectedElement;
-    });
+    _activeHandle = handle;
+    _dragSnapshot = _controller.selectedElement;
+    _isDragging.value = true;
   }
 
   void _resetDragState() {
-    setState(() {
-      _isDragging = false;
-      _activeHandle = null;
-      _dragSnapshot = null;
-    });
+    _activeHandle = null;
+    _dragSnapshot = null;
+    _isDragging.value = false;
   }
 
   @override
   void dispose() {
+    _isDragging.dispose();
     _transformController.dispose();
     super.dispose();
   }
@@ -194,34 +186,34 @@ class _DrawEditorState extends State<DrawEditor> {
     onPointerDown: _handlePointerDown,
     onPointerMove: _handlePointerMove,
     onPointerUp: _handlePointerUp,
-    child: InteractiveViewer(
-      boundaryMargin: const .all(.infinity),
-      constrained: false,
-      maxScale: 5,
-      minScale: 0.5,
-      panEnabled: !_isDragging,
-      scaleEnabled: !_isDragging,
-      transformationController: _transformController,
-      child: SizedBox(
-        height: widget.imageHeight,
-        width: widget.imageWidth,
-        child: ListenableBuilder(
+    child: ValueListenableBuilder(
+      builder: (_, isDragging, child) => InteractiveViewer(
+        boundaryMargin: const .all(.infinity),
+        constrained: false,
+        maxScale: 5,
+        minScale: 0.5,
+        panEnabled: !isDragging,
+        scaleEnabled: !isDragging,
+        transformationController: _transformController,
+        child: child ?? const SizedBox.shrink(),
+      ),
+      valueListenable: _isDragging,
+      child: FfiImageFile(
+        widget.image,
+        builder: (_, image) => ListenableBuilder(
           builder: (_, child) => CustomPaint(
             foregroundPainter: DrawPainter(
               _controller.elements,
               selectedIndex: _controller.selectedIndex,
             ),
+            willChange: _isDragging.value,
             child: child,
           ),
           listenable: _controller,
-          child: Image(
-            fit: .fill,
-            height: widget.imageHeight,
-            image: widget.image,
-            semanticLabel: 'Background Image', // TODO.
-            width: widget.imageWidth,
-          ),
+          child: image,
         ),
+        fit: .fill,
+        size: widget.size,
       ),
     ),
   );

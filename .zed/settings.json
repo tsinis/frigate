@@ -1,0 +1,14 @@
+{
+  "lsp": {
+    "dart": {
+      "settings": {
+        "lineLength": 100,
+      },
+    },
+  },
+  "languages": {
+    "Dart": {
+      "preferred_line_length": 100,
+    },
+  },
+}

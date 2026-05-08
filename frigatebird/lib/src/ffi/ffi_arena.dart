@@ -1,19 +1,24 @@
 import 'dart:ffi';
 
-/// A multi-buffer arena for passing variable-length data across FFI.
-/// Matches Rust `#[repr(C)] FfiArena`.
+/// Mirrors Rust `#[repr(C)] FfiArena`.
+///
+/// Layout MUST match `crates/<...>/src/ffi.rs::FfiArena`. If the Rust struct
+/// changes (field order, types, sizes), update this declaration AND
+/// `FfiAbi.assertArena()` together.
 final class FfiArena extends Struct {
   external Pointer<Uint8> textBuf;
   @Size()
   external int textLen;
 
-  // Reserved for future in-place image ops (e.g. merge with byte-stream background).
-  // Always null/0 for now — no op reads these fields yet.
+  // Reserved for future in-place image ops (e.g. byte-stream merge).
+  // Always null/0 today — no Rust function reads these fields yet.
   external Pointer<Uint8> imageBuf;
+
   @Size()
   external int imageLen;
 
   external Pointer<Uint8> errorBuf;
+
   @Size()
   external int errorCap;
 }

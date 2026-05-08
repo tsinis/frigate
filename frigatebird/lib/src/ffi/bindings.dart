@@ -25,6 +25,17 @@ import 'package:ffi/ffi.dart';
 import 'byte_buffer.dart';
 import 'ffi_arena.dart';
 import 'ffi_element.dart';
+import 'image_info_struct.dart';
+
+/// Returns oriented dimensions and metadata for an image without decoding full pixel data.
+///
+/// Returns a `u8` status code. Result info is written to [out].
+@Native<Uint8 Function(Pointer<Utf8>, Pointer<FfiArena>, Pointer<ImageInfoStruct>)>()
+external int get_image_info(
+  Pointer<Utf8> path,
+  Pointer<FfiArena> arena,
+  Pointer<ImageInfoStruct> out,
+);
 
 /// Bytes-in / path-in merge: composites `foreground_png` bytes over the image at `backgroundPath`
 /// and returns the result as a byte buffer owned by Rust.

@@ -26,6 +26,16 @@ pub struct ByteBuffer {
     pub length: usize,
 }
 
+#[derive_ReprC]
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ImageInfo {
+    pub width: u32,      // oriented (post-EXIF)
+    pub height: u32,     // oriented (post-EXIF)
+    pub format: u8,      // 0 = PNG, 1 = JPEG, 255 = unknown
+    pub orientation: u8, // raw EXIF tag 1..=8 for diagnostics
+}
+
 fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + Send>) -> u8 {
     let msg = if let Some(s) = payload.downcast_ref::<&'static str>() {
         (*s).to_string()
@@ -35,6 +45,86 @@ fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + S
         "panic with non-string payload".to_string()
     };
     write_panic_to_arena(arena, &msg).code
+}
+
+/// Returns oriented dimensions and metadata for an image without decoding full pixel data.
+/// Returns a `u8` status code. Result info is written to `*out`.
+#[ffi_export]
+pub fn get_image_info(
+    path: Option<char_p::Ref<'_>>,
+    arena: Option<&mut FfiArena>,
+    out: Option<&mut ImageInfo>,
+) -> u8 {
+    let mut arena_opt = arena;
+
+    if out.is_none() {
+        return write_error_to_arena(
+            arena_opt.as_deref_mut(),
+            FfiErrorCode::InvalidArg,
+            "Missing output ImageInfo pointer",
+        )
+        .code;
+    }
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let inner: Result<ImageInfo, (FfiErrorCode, String)> = (|| {
+            let p_str = path
+                .ok_or((FfiErrorCode::InvalidArg, "Missing path".to_string()))?
+                .to_str();
+            let path_ref = Path::new(p_str);
+
+            let reader = image::ImageReader::open(path_ref).map_err(|_| {
+                (
+                    FfiErrorCode::Io,
+                    "Failed to open image for info".to_string(),
+                )
+            })?;
+            let reader = reader.with_guessed_format().map_err(|_| {
+                (
+                    FfiErrorCode::Decode,
+                    "Failed to guess image format".to_string(),
+                )
+            })?;
+
+            let format = match reader.format() {
+                Some(image::ImageFormat::Png) => 0,
+                Some(image::ImageFormat::Jpeg) => 1,
+                _ => 255,
+            };
+
+            let (mut w, mut h) = reader.into_dimensions().map_err(|_| {
+                (
+                    FfiErrorCode::Decode,
+                    "Failed to read image dimensions".to_string(),
+                )
+            })?;
+
+            let orientation = io::read_orientation(path_ref);
+            // Tags 5, 6, 7, 8 involve a 90 or 270 degree rotation, which swaps dimensions.
+            if (5..=8).contains(&orientation) {
+                std::mem::swap(&mut w, &mut h);
+            }
+
+            Ok(ImageInfo {
+                width: w,
+                height: h,
+                format,
+                orientation,
+            })
+        })();
+        inner
+    }));
+
+    match result {
+        Ok(Ok(info)) => {
+            if let Some(o) = out {
+                *o = info;
+            }
+            FfiErrorCode::Success as u8
+        }
+        Ok(Err((code, msg))) => write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code,
+        Err(payload) => handle_panic(arena_opt, payload),
+    }
 }
 
 /// Bytes-in / path-in merge: composites `foreground_png` bytes over the image at `background_path`

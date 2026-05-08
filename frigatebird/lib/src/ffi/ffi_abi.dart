@@ -5,6 +5,7 @@ import 'ffi_element.dart';
 import 'ffi_error.dart';
 import 'ffi_rect_element.dart';
 import 'ffi_result_count.dart';
+import 'image_info_struct.dart';
 
 /// Runtime guards that the Dart-side `Struct` layouts for the FFI types match the wire
 /// contract baked into the Rust crate. Cheap — `sizeOf<T>()` specializes to a direct read for
@@ -28,6 +29,10 @@ sealed class FfiAbi {
   /// Expected byte size of [FfiRectElement]. Mirrors `rust/src/lib.rs` (4 × f64 + 3 × u32 with
   /// 8-byte alignment padding).
   static const rectElementBytes = 48;
+
+  /// Expected byte size of [ImageInfoStruct].
+  /// (2 x u32 + 2 x u8 + 2 bytes padding).
+  static const imageInfoBytes = 12;
 
   /// Expected size in bytes for the element payload union in C.
   // ignore: avoid-duplicate-constant-values, it is conceptually distinct from rectElementBytes.
@@ -79,6 +84,14 @@ sealed class FfiAbi {
     assert(
       actualSize == expectedSize,
       'FfiResultCountStruct ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
+    );
+  }
+
+  static void assertImageInfo({int expectedSize = imageInfoBytes}) {
+    final actualSize = sizeOf<ImageInfoStruct>();
+    assert(
+      actualSize == expectedSize,
+      'ImageInfoStruct ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
     );
   }
 

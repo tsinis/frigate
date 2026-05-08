@@ -12,7 +12,7 @@ import 'package:ffi/ffi.dart';
 /// Flutter reads via [bytes] (zero-copy view). Rust reads via [address] (zero-copy pointer
 /// reconstruction).
 ///
-/// Lifecycle: create once at image load, dispose when done. Reading [address] or [bytes] after
+/// Life-cycle: create once at image load, dispose when done. Reading [address] or [bytes] after
 /// [dispose] throws [StateError] — a silent use-after-free footgun would be much worse than a
 /// loud crash. NEVER dispose while an export is in progress.
 ///

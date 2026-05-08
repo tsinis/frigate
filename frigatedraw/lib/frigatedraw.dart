@@ -7,3 +7,4 @@ export 'src/helpers/rect_element_extension.dart';
 export 'src/ui/draw_controller.dart';
 export 'src/ui/draw_editor.dart';
 export 'src/ui/draw_painter.dart';
+export 'src/ui/ffi_image_file.dart';
