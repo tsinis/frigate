@@ -33,8 +33,63 @@ pub enum IoError {
 /// Decode an image from disk. Format is auto-detected by the `image` crate from the file contents
 /// (magic bytes), not from the extension — so a mis-labelled `.jpg` that's actually a PNG still
 /// decodes correctly.
+///
+/// This function automatically applies EXIF orientation to the image so that the resulting
+/// `DynamicImage` is physically oriented correctly.
 pub fn read_image(path: &Path) -> Result<DynamicImage, IoError> {
-    image::open(path).map_err(|_| IoError::Decode)
+    let mut img = image::open(path).map_err(|_| IoError::Decode)?;
+    let orientation = read_orientation(path);
+    if orientation > 1 {
+        img = apply_orientation(img, orientation);
+    }
+    Ok(img)
+}
+
+/// Reads the EXIF orientation tag from an image file.
+/// Returns a value in the range 1..=8. Returns 1 if no orientation is found or on any error.
+pub(crate) fn read_orientation(path: &Path) -> u8 {
+    let Ok(file) = std::fs::File::open(path) else {
+        return 1;
+    };
+    let mut reader = std::io::BufReader::new(file);
+    let Ok(exif) = exif::Reader::new().read_from_container(&mut reader) else {
+        return 1;
+    };
+
+    let orientation = exif
+        .get_field(exif::Tag::Orientation, exif::In::PRIMARY)
+        .and_then(|f| f.value.get_uint(0))
+        .and_then(|v| {
+            if (1..=8).contains(&v) {
+                Some(v as u8)
+            } else {
+                None
+            }
+        });
+
+    orientation.unwrap_or(1)
+}
+
+fn apply_orientation(img: DynamicImage, orientation: u8) -> DynamicImage {
+    // Standard EXIF orientation mapping:
+    // 1: Horizontal (normal)
+    // 2: Mirror horizontal
+    // 3: Rotate 180
+    // 4: Mirror vertical
+    // 5: Transpose (Rotate 90 CW then Mirror horizontal)
+    // 6: Rotate 90 CW
+    // 7: Transverse (Rotate 270 CW then Mirror horizontal)
+    // 8: Rotate 270 CW
+    match orientation {
+        2 => img.fliph(),
+        3 => img.rotate180(),
+        4 => img.flipv(),
+        5 => img.rotate90().fliph(),
+        6 => img.rotate90(),
+        7 => img.rotate270().fliph(),
+        8 => img.rotate270(),
+        _ => img,
+    }
 }
 
 /// Read raw font bytes. Returns ownership of the buffer because `ab_glyph::FontRef` borrows from
@@ -43,6 +98,8 @@ pub fn read_font(path: &Path) -> Result<Vec<u8>, IoError> {
     std::fs::read(path).map_err(|_| IoError::Read)
 }
 
+// IMPORTANT: Output must NEVER contain an EXIF Orientation tag.
+// Pixels are already physically rotated by read_image. Writing an Orientation tag would cause double-rotation in any consumer.
 /// Encode and write an RGBA image. Format is dispatched by file extension:
 ///   - `.png`  → lossless PNG, alpha preserved, `image_quality` ignored.
 ///   - `.jpg`/`.jpeg` → JPEG, alpha flattened to opaque black, `image_quality` applied (0..=100).
@@ -145,5 +202,15 @@ mod tests {
         // JPEG SOI marker.
         assert_eq!(&bytes[..2], &[0xFF, 0xD8]);
         std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn read_orientation_on_missing_file_is_1() {
+        assert_eq!(read_orientation(Path::new("not_here.jpg")), 1);
+    }
+
+    #[test]
+    fn read_orientation_on_non_image_is_1() {
+        assert_eq!(read_orientation(Path::new("Cargo.toml")), 1);
     }
 }

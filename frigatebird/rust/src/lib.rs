@@ -26,6 +26,44 @@ pub struct ByteBuffer {
     pub length: usize,
 }
 
+#[derive_ReprC]
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ImageInfo {
+    pub width: u32,      // oriented (post-EXIF)
+    pub height: u32,     // oriented (post-EXIF)
+    pub format: u8,      // 0 = PNG, 1 = JPEG, 255 = unknown
+    pub orientation: u8, // raw EXIF tag 1..=8 for diagnostics
+    pub _pad: [u8; 2],   // explicit C alignment padding
+}
+
+impl Default for ImageInfo {
+    fn default() -> Self {
+        Self {
+            width: 0,
+            height: 0,
+            format: 255,
+            orientation: 1,
+            _pad: [0; 2],
+        }
+    }
+}
+
+/// Returns the byte sizes of the core FFI structs as seen by Rust.
+/// Used by Dart to verify ABI compatibility at runtime.
+#[ffi_export]
+pub fn get_abi_sizes(
+    out_element: &mut usize,
+    out_arena: &mut usize,
+    out_error: &mut usize,
+    out_image_info: &mut usize,
+) {
+    *out_element = std::mem::size_of::<FfiElement>();
+    *out_arena = std::mem::size_of::<FfiArena>();
+    *out_error = std::mem::size_of::<FfiError>();
+    *out_image_info = std::mem::size_of::<ImageInfo>();
+}
+
 fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + Send>) -> u8 {
     let msg = if let Some(s) = payload.downcast_ref::<&'static str>() {
         (*s).to_string()
@@ -35,6 +73,97 @@ fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + S
         "panic with non-string payload".to_string()
     };
     write_panic_to_arena(arena, &msg).code
+}
+
+/// Returns oriented dimensions and metadata for an image without decoding full pixel data.
+/// Returns a `u8` status code. Result info is written to `*out`.
+#[ffi_export]
+pub fn get_image_info(
+    path: Option<char_p::Ref<'_>>,
+    arena: Option<&mut FfiArena>,
+    out: Option<&mut ImageInfo>,
+) -> u8 {
+    let mut arena_opt = arena;
+
+    if out.is_none() {
+        return write_error_to_arena(
+            arena_opt.as_deref_mut(),
+            FfiErrorCode::InvalidArg,
+            "Missing output ImageInfo pointer",
+        )
+        .code;
+    }
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let inner: Result<ImageInfo, (FfiErrorCode, String)> = (|| {
+            let p_str = path
+                .ok_or((FfiErrorCode::InvalidArg, "Missing path".to_string()))?
+                .to_str();
+            let path_ref = Path::new(p_str);
+
+            let reader = image::ImageReader::open(path_ref).map_err(|_| {
+                (
+                    FfiErrorCode::Io,
+                    "Failed to open image for info".to_string(),
+                )
+            })?;
+            let reader = reader.with_guessed_format().map_err(|_| {
+                (
+                    FfiErrorCode::Decode,
+                    "Failed to guess image format".to_string(),
+                )
+            })?;
+
+            let format = match reader.format() {
+                Some(image::ImageFormat::Png) => 0,
+                Some(image::ImageFormat::Jpeg) => 1,
+                _ => 255,
+            };
+
+            let (mut w, mut h) = reader.into_dimensions().map_err(|_| {
+                (
+                    FfiErrorCode::Decode,
+                    "Failed to read image dimensions".to_string(),
+                )
+            })?;
+
+            let orientation = io::read_orientation(path_ref);
+            // Tags 5, 6, 7, 8 involve a 90 or 270 degree rotation, which swaps dimensions.
+            if (5..=8).contains(&orientation) {
+                std::mem::swap(&mut w, &mut h);
+            }
+
+            Ok(ImageInfo {
+                width: w,
+                height: h,
+                format,
+                orientation,
+                _pad: [0; 2],
+            })
+        })();
+        inner
+    }));
+
+    match result {
+        Ok(Ok(info)) => {
+            if let Some(o) = out {
+                *o = info;
+            }
+            FfiErrorCode::Success as u8
+        }
+        Ok(Err((code, msg))) => {
+            if let Some(o) = out {
+                *o = ImageInfo::default();
+            }
+            write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code
+        }
+        Err(payload) => {
+            if let Some(o) = out {
+                *o = ImageInfo::default();
+            }
+            handle_panic(arena_opt, payload)
+        }
+    }
 }
 
 /// Bytes-in / path-in merge: composites `foreground_png` bytes over the image at `background_path`
@@ -779,5 +908,12 @@ mod merge_tests {
             "Expected 'Missing image path' in arena, got: {:?}",
             msg
         );
+    }
+
+    #[test]
+    fn test_handle_panic_fallback() {
+        let payload = Box::new(42i32); // Non-string payload
+        let code = handle_panic(None, payload);
+        assert_eq!(code, FfiErrorCode::Panic as u8);
     }
 }

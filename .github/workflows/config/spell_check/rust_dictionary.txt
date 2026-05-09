@@ -12,7 +12,10 @@ demul
 demultiplied
 demultiply
 demultiplying
+exif
 ffi
+fliph
+flipv
 freeable
 imageops
 imageproc

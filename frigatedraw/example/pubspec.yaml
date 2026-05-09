@@ -14,9 +14,8 @@ dependencies:
   frigatedraw:
     path: ../
   meta: any # Constrained by Flutter SDK
-  # Range syntax (not caret) so pub will accept stable `2.1.5` when published — caret on a
-  # pre-release version pins you to the `-dev*` series only.
-  path_provider_ffi: ">=2.1.5-dev2 <3.0.0"
+  path_provider_dart:
+    git: https://github.com/tsinis/path_provider
 
 dev_dependencies:
   dart_code_metrics_presets: any # Constrained in the workspace pubspec.yaml
@@ -24,6 +23,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  config:
+    enable-swift-package-manager: true
 
   assets:
     - assets/sample.png

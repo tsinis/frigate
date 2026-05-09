@@ -12,7 +12,7 @@ import 'package:ffi/ffi.dart';
 /// Flutter reads via [bytes] (zero-copy view). Rust reads via [address] (zero-copy pointer
 /// reconstruction).
 ///
-/// Lifecycle: create once at image load, dispose when done. Reading [address] or [bytes] after
+/// Life-cycle: create once at image load, dispose when done. Reading [address] or [bytes] after
 /// [dispose] throws [StateError] — a silent use-after-free footgun would be much worse than a
 /// loud crash. NEVER dispose while an export is in progress.
 ///
@@ -23,7 +23,7 @@ import 'package:ffi/ffi.dart';
 /// after [dispose] is undefined behavior and the VM cannot detect it. Rule of thumb: treat every
 /// `bytes`/`address` read as valid only for the duration of a single synchronous span; never
 /// hold one across an `await` or an isolate hop without also keeping the [NativeImage] alive.
-final class NativeImage {
+final class NativeImage implements Finalizable {
   NativeImage._(this._pointer, this.height, this.length, this.width)
     : _bytes = _pointer.asTypedList(length);
 
@@ -33,7 +33,10 @@ final class NativeImage {
     final length = dartBytes.length;
     final pointer = calloc<Uint8>(length)..asTypedList(length).setRange(0, length, dartBytes);
 
-    return NativeImage._(pointer, height, length, width);
+    final image = NativeImage._(pointer, height, length, width);
+    image._attach(); // ignore: cascade_invocations, attach is a separate step after construction.
+
+    return image;
   }
 
   /// Byte length of the encoded image (PNG/JPEG bytes, NOT raw RGBA).
@@ -45,9 +48,15 @@ final class NativeImage {
   /// Image height in pixels — source of truth for document-space coordinates.
   final int height;
 
+  static final _finalizer = NativeFinalizer(calloc.nativeFree);
+
   final Uint8List _bytes;
   final Pointer<Uint8> _pointer;
   bool _isDisposed = false;
+
+  void _attach() {
+    _finalizer.attach(this, _pointer.cast<Void>(), detach: this);
+  }
 
   /// Zero-copy view of native memory for Flutter widgets.
   ///
@@ -83,6 +92,7 @@ final class NativeImage {
   void dispose() {
     if (_isDisposed) return;
     _isDisposed = true;
+    _finalizer.detach(this);
     calloc.free(_pointer);
   }
 

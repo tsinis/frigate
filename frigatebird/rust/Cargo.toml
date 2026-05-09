@@ -23,6 +23,7 @@ fuzzing = ["dep:arbitrary"]
 safer-ffi = { version = "0.2.0-rc1", features = ["headers"] }
 
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
+kamadak-exif = "0.6.1"
 bytemuck = { version = "1.25.0", features = ["derive"] }
 ab_glyph = "0.2.32"
 # Drop tiny-skia's `png-format` feature — we use `image` for PNG/JPEG decode and encode, so
@@ -30,7 +31,7 @@ ab_glyph = "0.2.32"
 # SIMD-accelerated rasterizer paths (the main perf win on x86 / aarch64).
 tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "simd"] }
 
-arbitrary = { version = "1.4.1", features = ["derive"], optional = true }
+arbitrary = { version = "1.4.2", features = ["derive"], optional = true }
 
 [profile.release]
 lto = "thin"

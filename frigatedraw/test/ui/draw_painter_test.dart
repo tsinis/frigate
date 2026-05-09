@@ -171,6 +171,13 @@ void main() => group(DrawPainter, () {
       );
       expect(canvas.lastPaintColorAlpha, 255, reason: 'black fill has alpha 255');
     });
+
+    test('non-positive width or height is silently skipped for ovals', () {
+      final canvas = _RecordingCanvas();
+      const oval = OvalElement(height: 0, width: 100, x: 0, y: 0);
+      const DrawPainter([oval]).paint(canvas, const Size(100, 100));
+      expect(canvas.drawOvalCount, isZero);
+    });
   });
 
   group('isPointOnShape', () {
@@ -196,6 +203,11 @@ void main() => group(DrawPainter, () {
         isFalse,
         reason: 'bounding-box corner is not on the oval outline',
       );
+    });
+
+    test('is false for non-positive dimensions', () {
+      const oval = OvalElement(height: 0, width: 100, x: 0, y: 0);
+      expect(DrawPainter.isPointOnShape(const Offset(50, 0), element: oval), isFalse);
     });
 
     test('is false in the interior of a shape', () {

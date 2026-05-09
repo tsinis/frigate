@@ -1,21 +1,58 @@
 import 'dart:ffi';
 
+import 'package:ffi/ffi.dart';
+import 'bindings.dart' as ffi;
 import 'ffi_arena.dart';
 import 'ffi_element.dart';
 import 'ffi_error.dart';
-import 'ffi_rect_element.dart';
-import 'ffi_result_count.dart';
+import 'image_info_struct.dart';
 
 /// Runtime guards that the Dart-side `Struct` layouts for the FFI types match the wire
-/// contract baked into the Rust crate. Cheap — `sizeOf<T>()` specializes to a direct read for
-/// fixed-layout `Struct` subclasses. Assertions fire in debug only (CI runs in debug, and a
-/// mismatch crashes the very first test we run); release builds trust the Rust-side compile-
-/// time asserts on both sides of the boundary.
+/// contract baked into the Rust crate.
 ///
 /// Class with statics rather than top-level functions so the FFI namespace stays discoverable
 /// (`FfiAbi.` autocompletes both checks together) instead of leaking two unrelated-looking
 /// names into every file that imports `ffi_abi.dart`.
 sealed class FfiAbi {
+  /// Single entry point for all ABI stability checks.
+  ///
+  /// Probes the Rust library at runtime to verify that the byte-size of every shared struct
+  /// matches Dart's expectation. This catches cross-language drift (e.g. adding a field in
+  /// Rust but forgetting to update the Dart Struct) which would otherwise cause silent memory
+  /// corruption or garbage reads.
+  ///
+  /// No-op in release builds (asserts are stripped).
+  static void assertAll() {
+    // ignore: avoid-immediately-invoked-functions, standard assert-gated init pattern.
+    assert(() {
+      final elementSizePtr = calloc<Size>();
+      // ignore: avoid-duplicate-initializers, multiple pointers of same type required.
+      final arenaSizePtr = calloc<Size>();
+      // ignore: avoid-duplicate-initializers, multiple pointers of same type required.
+      final errorSizePtr = calloc<Size>();
+      // ignore: avoid-duplicate-initializers, multiple pointers of same type required.
+      final infoSizePtr = calloc<Size>();
+
+      try {
+        ffi.get_abi_sizes(elementSizePtr, arenaSizePtr, errorSizePtr, infoSizePtr);
+
+        _matchSize(sizeOf<FfiElement>(), elementSizePtr.value, 'FfiElement');
+        _matchSize(sizeOf<FfiArena>(), arenaSizePtr.value, 'FfiArena');
+        _matchSize(sizeOf<FfiError>(), errorSizePtr.value, 'FfiError');
+        _matchSize(sizeOf<ImageInfoStruct>(), infoSizePtr.value, 'ImageInfoStruct');
+        assertPayload();
+      } finally {
+        calloc
+          ..free(elementSizePtr)
+          ..free(arenaSizePtr)
+          ..free(errorSizePtr)
+          ..free(infoSizePtr);
+      }
+
+      return true;
+    }(), 'ABI check failed');
+  }
+
   /// Expected byte size of [FfiElement] as defined by the Rust `#[repr(C, u8)]` layout.
   static const elementBytes = 56;
 
@@ -25,17 +62,23 @@ sealed class FfiAbi {
   /// Expected byte size of [FfiError].
   static const errorBytes = 4;
 
-  /// Expected byte size of [FfiRectElement]. Mirrors `rust/src/lib.rs` (4 × f64 + 3 × u32 with
-  /// 8-byte alignment padding).
-  static const rectElementBytes = 48;
+  /// Expected byte size of [ImageInfoStruct].
+  /// (2 x u32 + 2 x u8 + 2 bytes padding).
+  static const imageInfoBytes = 12;
 
   /// Expected size in bytes for the element payload union in C.
-  // ignore: avoid-duplicate-constant-values, it is conceptually distinct from rectElementBytes.
   static const payloadBytes = 48;
 
   /// Error buffer capacity allocated by `FfiMarshal.encodeElements` for Rust to write
   /// diagnostic messages into. Single source of truth — Rust docs reference this value too.
   static const errorCapBytes = 256;
+
+  static void _matchSize(int dartSize, int rustSize, String name) {
+    assert(
+      dartSize == rustSize,
+      '$name ABI mismatch: Dart sees $dartSize bytes, Rust expects $rustSize.',
+    );
+  }
 
   /// Guard that the Dart-side Struct layout for [FfiElement] matches the wire contract.
   static void assertElement({int expectedSize = elementBytes}) {
@@ -72,24 +115,11 @@ sealed class FfiAbi {
     );
   }
 
-  /// Guard that the Dart-side [FfiResultCountStruct] layout matches Rust.
-  /// Reserved for future ops that return a count — not called from production code yet.
-  static void assertResultCount({int expectedSize = 8}) {
-    final actualSize = sizeOf<FfiResultCountStruct>();
+  static void assertImageInfo({int expectedSize = imageInfoBytes}) {
+    final actualSize = sizeOf<ImageInfoStruct>();
     assert(
       actualSize == expectedSize,
-      'FfiResultCountStruct ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
-    );
-  }
-
-  /// Guard that the Dart-side Struct layout for [FfiRectElement] matches the wire contract.
-  /// Reserved — not yet called from production code; add a call here when a load/export op lands.
-  static void assertRectElement({int expectedSize = rectElementBytes}) {
-    final actualSize = sizeOf<FfiRectElement>();
-    assert(
-      actualSize == expectedSize,
-      'FfiRectElement ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize. '
-      'Struct layout has drifted between sides — all export_image calls would read garbage.',
+      'ImageInfoStruct ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
     );
   }
 }

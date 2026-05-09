@@ -39,26 +39,4 @@ void main() {
       expect(() => FfiAbi.assertError(expectedSize: 999), throwsA(isA<AssertionError>()));
     });
   });
-
-  group('FfiAbi.assertResultCount', () {
-    test(
-      'succeeds on the host platform (8 bytes - Rust FfiResultCount is 8)',
-      () => expect(FfiAbi.assertResultCount, returnsNormally),
-    );
-
-    test('throws AssertionError when the expected size is wrong', () {
-      expect(() => FfiAbi.assertResultCount(expectedSize: 999), throwsA(isA<AssertionError>()));
-    });
-  });
-
-  group('FfiAbi.assertRectElement', () {
-    test(
-      'succeeds on the host platform (48 bytes)',
-      () => expect(FfiAbi.assertRectElement, returnsNormally),
-    );
-
-    test('throws AssertionError when the expected size is wrong', () {
-      expect(() => FfiAbi.assertRectElement(expectedSize: 999), throwsA(isA<AssertionError>()));
-    });
-  });
 }

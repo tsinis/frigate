@@ -25,6 +25,28 @@ import 'package:ffi/ffi.dart';
 import 'byte_buffer.dart';
 import 'ffi_arena.dart';
 import 'ffi_element.dart';
+import 'image_info_struct.dart';
+
+/// Returns the byte sizes of the core FFI structs as seen by Rust.
+///
+/// `isLeaf: true` — just returns static constants, no safepoints needed.
+@Native<Void Function(Pointer<Size>, Pointer<Size>, Pointer<Size>, Pointer<Size>)>(isLeaf: true)
+external void get_abi_sizes(
+  Pointer<Size> outElement,
+  Pointer<Size> outArena,
+  Pointer<Size> outError,
+  Pointer<Size> outImageInfo,
+);
+
+/// Returns oriented dimensions and metadata for an image without decoding full pixel data.
+///
+/// Returns a `u8` status code. Result info is written to [out].
+@Native<Uint8 Function(Pointer<Utf8>, Pointer<FfiArena>, Pointer<ImageInfoStruct>)>()
+external int get_image_info(
+  Pointer<Utf8> path,
+  Pointer<FfiArena> arena,
+  Pointer<ImageInfoStruct> out,
+);
 
 /// Bytes-in / path-in merge: composites `foreground_png` bytes over the image at `backgroundPath`
 /// and returns the result as a byte buffer owned by Rust.

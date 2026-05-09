@@ -35,15 +35,11 @@ class DrawPainter extends CustomPainter {
     if (index == null || index.isNegative || index >= elements.length) return;
 
     final selected = elements.elementAtOrNull(index);
-    if (selected != null) {
-      final hasHandles = switch (selected) {
-        RectElement() || OvalElement() => true,
-        TextElement() => false,
-      };
-      if (hasHandles) {
-        for (final handle in HandlePosition.values) {
-          _paintHandle(canvas, _handleCenter(element: selected, handle: handle));
-        }
+    if (selected == null) return;
+
+    if (selected is! TextElement && selected.width > 0 && selected.height > 0) {
+      for (final handle in HandlePosition.values) {
+        _paintHandle(canvas, _handleCenter(element: selected, handle: handle));
       }
     }
   }
@@ -148,6 +144,8 @@ class DrawPainter extends CustomPainter {
       !identical(oldDelegate.elements, elements) || oldDelegate.selectedIndex != selectedIndex;
 
   static HandlePosition? hitTestHandle(Offset point, {required DrawElement element}) {
+    if (element.width <= 0 || element.height <= 0) return null;
+
     for (final handle in HandlePosition.values) {
       final center = _handleCenter(element: element, handle: handle);
       if ((point - center).distance <= handleRadius) return handle;
@@ -157,6 +155,8 @@ class DrawPainter extends CustomPainter {
   }
 
   static bool isPointOnShape(Offset point, {required DrawElement element}) {
+    if (element.width <= 0 || element.height <= 0) return false;
+
     final rect = element.rect;
     final outlineThickness = switch (element) {
       RectElement() => element.outlineThickness.toDouble(),
