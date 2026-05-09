@@ -31,7 +31,7 @@ ab_glyph = "0.2.32"
 # SIMD-accelerated rasterizer paths (the main perf win on x86 / aarch64).
 tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "simd"] }
 
-arbitrary = { version = "1.4.1", features = ["derive"], optional = true }
+arbitrary = { version = "1.4.2", features = ["derive"], optional = true }
 
 [profile.release]
 lto = "thin"
