@@ -62,11 +62,12 @@ class FfiImageFile extends Image {
 
 class _FfiImageFileState extends State<FfiImageFile> {
   // ignore: avoid-late-keyword, it's more efficient to reuse the same Future instance.
-  late Future<ImageInformation?> _infoFuture = _loadInfo();
+  late Future<ImageInformation?> _infoFuture = _loadInfo;
 
-  // ignore: prefer-getter-over-method, more suitable for the FutureBuilder pattern.
-  Future<ImageInformation?> _loadInfo() async =>
+  Future<ImageInformation?> get _loadInfo async =>
       widget.size == null ? FfiImageFile._infoBuilder(widget._image.absolute.path) : null;
+
+  void _updateInfoFuture() => _infoFuture = _loadInfo;
 
   @override
   void didUpdateWidget(FfiImageFile oldWidget) {
@@ -75,8 +76,10 @@ class _FfiImageFileState extends State<FfiImageFile> {
     final hasPathChanged = oldWidget._image.absolute.path != widget._image.absolute.path;
     final hasSizeNullabilityChanged = (oldWidget.size == null) != (widget.size == null);
 
-    //ignore:avoid-async-call-in-sync-function,avoid-unnecessary-setstate, to trigger FutureBuilder.
-    if (hasPathChanged || hasSizeNullabilityChanged) setState(() => _infoFuture = _loadInfo());
+    if (!hasPathChanged && !hasSizeNullabilityChanged) return;
+    _updateInfoFuture();
+    // ignore: avoid-empty-setstate, no-empty-block, triggers FutureBuilder with the new future.
+    WidgetsBinding.instance.addPostFrameCallback((_) => mounted ? setState(() {}) : null);
   }
 
   @override
