@@ -26,12 +26,13 @@ sealed class FfiAbi {
     // ignore: avoid-immediately-invoked-functions, standard assert-gated init pattern.
     assert(() {
       final elementSizePtr = calloc<Size>();
-      // ignore: avoid-duplicate-initializers, allocating multiple Size pointers is intentional.
+      // ignore: avoid-duplicate-initializers, multiple pointers of same type required.
       final arenaSizePtr = calloc<Size>();
-      // ignore: avoid-duplicate-initializers, allocating multiple Size pointers is intentional.
+      // ignore: avoid-duplicate-initializers, multiple pointers of same type required.
       final errorSizePtr = calloc<Size>();
-      // ignore: avoid-duplicate-initializers, allocating multiple Size pointers is intentional.
+      // ignore: avoid-duplicate-initializers, multiple pointers of same type required.
       final infoSizePtr = calloc<Size>();
+
       try {
         ffi.get_abi_sizes(elementSizePtr, arenaSizePtr, errorSizePtr, infoSizePtr);
 
@@ -39,7 +40,7 @@ sealed class FfiAbi {
         _matchSize(sizeOf<FfiArena>(), arenaSizePtr.value, 'FfiArena');
         _matchSize(sizeOf<FfiError>(), errorSizePtr.value, 'FfiError');
         _matchSize(sizeOf<ImageInfoStruct>(), infoSizePtr.value, 'ImageInfoStruct');
-        _matchSize(sizeOf<FfiPayload>(), 48, 'FfiPayload');
+        assertPayload();
       } finally {
         calloc
           ..free(elementSizePtr)

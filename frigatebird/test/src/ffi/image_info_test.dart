@@ -26,7 +26,7 @@ void main() {
       // But in Dart test they might be relative to the package root.
       final fixtureDir = Directory('rust/tests/fixtures/orientation');
       if (!fixtureDir.existsSync()) {
-        fail('required test fixtures missing: rust/tests/fixtures/orientation');
+        fail('required test fixtures missing: ${fixtureDir.absolute.path}');
       }
 
       for (int tag = 1; tag <= 8; tag += 1) {

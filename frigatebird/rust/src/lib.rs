@@ -28,13 +28,25 @@ pub struct ByteBuffer {
 
 #[derive_ReprC]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct ImageInfo {
     pub width: u32,      // oriented (post-EXIF)
     pub height: u32,     // oriented (post-EXIF)
     pub format: u8,      // 0 = PNG, 1 = JPEG, 255 = unknown
     pub orientation: u8, // raw EXIF tag 1..=8 for diagnostics
     pub _pad: [u8; 2],   // explicit C alignment padding
+}
+
+impl Default for ImageInfo {
+    fn default() -> Self {
+        Self {
+            width: 0,
+            height: 0,
+            format: 255,
+            orientation: 1,
+            _pad: [0; 2],
+        }
+    }
 }
 
 /// Returns the byte sizes of the core FFI structs as seen by Rust.

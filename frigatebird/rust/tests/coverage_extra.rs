@@ -39,13 +39,15 @@ fn test_get_image_info_clears_out_on_error() {
         width: 123,
         height: 456,
         format: 0,
-        orientation: 1,
+        orientation: 6,
         _pad: [0; 2],
     };
     let bad_path = char_p::new("non_existent.jpg");
     let _ = get_image_info(Some(bad_path.as_ref()), None, Some(&mut info));
     assert_eq!(info.width, 0);
     assert_eq!(info.height, 0);
+    assert_eq!(info.format, 255);
+    assert_eq!(info.orientation, 1);
 }
 
 #[test]

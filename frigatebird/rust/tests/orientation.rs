@@ -4,22 +4,21 @@ use std::path::Path;
 
 #[test]
 fn test_get_image_info_orientation() {
-    // This test assumes fixtures are generated.
-    // We'll try to generate them if they don't exist or just skip if we can't.
     let fixture_dir = Path::new("tests/fixtures/orientation");
     if !fixture_dir.exists() {
-        std::fs::create_dir_all(fixture_dir).unwrap();
-        // Here we would ideally generate the files.
-        // For now, let's assume we have them or skip.
-        return;
+        panic!(
+            "SETUP: required test fixtures missing: tests/fixtures/orientation. Run 'cargo run --example gen_fixtures' to generate them."
+        );
     }
 
+    let mut exercised_count = 0;
     for tag in 1..=8 {
-        let path_str = format!("tests/fixtures/orientation/exif_{}.jpg", tag);
+        let path_str = format!("tests/fixtures/orientation/exif_{tag}.jpg");
         let path = Path::new(&path_str);
         if !path.exists() {
             continue;
         }
+        exercised_count += 1;
 
         let c_path = char_p::new(path_str.as_str());
         let mut info = ImageInfo {
@@ -55,4 +54,8 @@ fn test_get_image_info_orientation() {
             assert_eq!(img.height(), 128);
         }
     }
+    assert!(
+        exercised_count > 0,
+        "SETUP: no fixtures were exercised. Run 'cargo run --example gen_fixtures' to generate them."
+    );
 }

@@ -27,8 +27,8 @@ class FfiImageFile extends Image {
     super.gaplessPlayback = true,
   }) : super.file(_image, height: size?.height, width: size?.width);
 
-  @visibleForTesting
   /// Sets a test-only builder and returns a function to restore the previous builder.
+  @visibleForTesting
   static VoidCallback setInfoBuilder(Future<ImageInformation> Function(String path) builder) {
     final oldBuilder = _infoBuilder;
     _infoFutureBuilderSetter(builder);
