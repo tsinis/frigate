@@ -3,8 +3,6 @@ import 'dart:ffi';
 import 'ffi_arena.dart';
 import 'ffi_element.dart';
 import 'ffi_error.dart';
-import 'ffi_rect_element.dart';
-import 'ffi_result_count.dart';
 import 'image_info_struct.dart';
 
 /// Runtime guards that the Dart-side `Struct` layouts for the FFI types match the wire
@@ -26,16 +24,11 @@ sealed class FfiAbi {
   /// Expected byte size of [FfiError].
   static const errorBytes = 4;
 
-  /// Expected byte size of [FfiRectElement]. Mirrors `rust/src/lib.rs` (4 × f64 + 3 × u32 with
-  /// 8-byte alignment padding).
-  static const rectElementBytes = 48;
-
   /// Expected byte size of [ImageInfoStruct].
   /// (2 x u32 + 2 x u8 + 2 bytes padding).
   static const imageInfoBytes = 12;
 
   /// Expected size in bytes for the element payload union in C.
-  // ignore: avoid-duplicate-constant-values, it is conceptually distinct from rectElementBytes.
   static const payloadBytes = 48;
 
   /// Error buffer capacity allocated by `FfiMarshal.encodeElements` for Rust to write
@@ -77,32 +70,11 @@ sealed class FfiAbi {
     );
   }
 
-  /// Guard that the Dart-side [FfiResultCountStruct] layout matches Rust.
-  /// Reserved for future ops that return a count — not called from production code yet.
-  static void assertResultCount({int expectedSize = 8}) {
-    final actualSize = sizeOf<FfiResultCountStruct>();
-    assert(
-      actualSize == expectedSize,
-      'FfiResultCountStruct ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
-    );
-  }
-
   static void assertImageInfo({int expectedSize = imageInfoBytes}) {
     final actualSize = sizeOf<ImageInfoStruct>();
     assert(
       actualSize == expectedSize,
       'ImageInfoStruct ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize.',
-    );
-  }
-
-  /// Guard that the Dart-side Struct layout for [FfiRectElement] matches the wire contract.
-  /// Reserved — not yet called from production code; add a call here when a load/export op lands.
-  static void assertRectElement({int expectedSize = rectElementBytes}) {
-    final actualSize = sizeOf<FfiRectElement>();
-    assert(
-      actualSize == expectedSize,
-      'FfiRectElement ABI mismatch: Dart sees $actualSize bytes, Rust expects $expectedSize. '
-      'Struct layout has drifted between sides — all export_image calls would read garbage.',
     );
   }
 }

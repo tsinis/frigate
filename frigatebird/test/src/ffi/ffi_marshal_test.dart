@@ -3,6 +3,7 @@ import 'package:ffi/ffi.dart';
 import 'package:frigatebird/src/ffi/ffi_echo_element.dart';
 import 'package:frigatebird/src/ffi/ffi_marshal.dart';
 import 'package:frigatebird/src/model/draw_element.dart';
+import 'package:frigatebird/src/model/ffi_color.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -13,7 +14,7 @@ void main() {
         cornerRadius: 10,
         fillColor: .black,
         height: 50,
-        outlineColor: .green,
+        outlineColor: FfiColor(0xFF00FF00),
         outlineThickness: 5,
         rotation: 90,
         width: 100,
@@ -52,7 +53,7 @@ void main() {
     test('Text round-trip via Rust echo', () {
       const text = TextElement(
         blur: 1,
-        fillColor: .blue,
+        fillColor: FfiColor(0xFF0000FF),
         fontId: 42,
         fontSize: 32,
         rotation: -45,

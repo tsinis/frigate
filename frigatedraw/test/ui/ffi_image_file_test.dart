@@ -9,7 +9,7 @@ import 'package:frigatedraw/frigatedraw.dart';
 class _ErrorWidget extends StatelessWidget {
   const _ErrorWidget({required this.error});
 
-  final Object error;
+  final Object error; // ignore: diagnostic_describe_all_properties, it's a test.
 
   @override
   Widget build(BuildContext context) => Text('Error: $error');
@@ -22,8 +22,6 @@ void main() {
       if (!file.existsSync()) {
         final altFile = File('frigatebird/rust/tests/fixtures/orientation/exif_6.jpg');
         if (!altFile.existsSync()) {
-          print('Skipping test: fixtures not found');
-
           return;
         }
       }

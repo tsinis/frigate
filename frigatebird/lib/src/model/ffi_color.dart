@@ -25,15 +25,6 @@ final class FfiColor {
   /// Fully opaque black (0xFF000000) — the conventional default fill color.
   static const black = FfiColor(0xFF000000);
 
-  /// Fully opaque green (0xFF00FF00).
-  static const green = FfiColor(0xFF00FF00);
-
-  /// Fully opaque blue (0xFF0000FF).
-  static const blue = FfiColor(0xFF0000FF);
-
-  /// Fully opaque white (0xFFFFFFFF).
-  static const white = FfiColor(0xFFFFFFFF);
-
   /// Fully transparent (0x00000000) — the conventional "no visible color" sentinel.
   static const transparent = FfiColor(0);
 

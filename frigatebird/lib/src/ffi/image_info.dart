@@ -19,31 +19,10 @@ final class ImageInformation {
     this.orientation = 1,
   });
 
-  /// Width AFTER applying EXIF orientation.
-  final int width;
-
-  /// Height AFTER applying EXIF orientation.
-  final int height;
-
-  /// 0 = PNG, 1 = JPEG, 255 = unknown.
-  final int format;
-
-  /// Raw EXIF orientation tag 1..=8 (1 = no rotation). Diagnostic — Rust has
-  /// already swapped width/height for tags 5..=8 before returning.
-  final int orientation;
-
-  /// True when the source file required a 90°/270° rotation.
-  bool get isRotated => orientation >= 5 && orientation <= 8;
-
-  bool get isZero => width == 0 && height == 0;
-
-  /// Async entry point. Runs the FFI call on a worker isolate so the UI
-  /// isolate is never blocked by file I/O or EXIF parsing.
-  static Future<ImageInformation> probe(String path) => Isolate.run(() => probeSync(path));
-
   /// Synchronous version. Public for use inside isolate workers and tests.
   /// Do NOT call directly from the UI isolate — use [probe].
-  static ImageInformation probeSync(String path) {
+  // ignore: avoid-non-empty-constructor-bodies, this factory constructor...
+  factory ImageInformation.probeSync(String path) {
     FfiAbi.assertImageInfo();
     FfiAbi.assertArena();
 
@@ -76,6 +55,24 @@ final class ImageInformation {
       calloc.free(pathPtr);
     }
   }
+
+  /// Width AFTER applying EXIF orientation.
+  final int width;
+
+  /// Height AFTER applying EXIF orientation.
+  final int height;
+
+  /// 0 = PNG, 1 = JPEG, 255 = unknown.
+  final int format;
+
+  /// Raw EXIF orientation tag 1..=8 (1 = no rotation). Diagnostic — Rust has
+  /// already swapped width/height for tags 5..=8 before returning.
+  final int orientation;
+
+  /// Async entry point. Runs the FFI call on a worker isolate so the UI
+  /// isolate is never blocked by file I/O or EXIF parsing.
+  static Future<ImageInformation> probe(String path) =>
+      Isolate.run(() => ImageInformation.probeSync(path));
 
   @override
   String toString() =>

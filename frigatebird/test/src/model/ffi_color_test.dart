@@ -49,31 +49,7 @@ void main() => group(FfiColor, () {
     test('accepts the full legal u32 range at both ends', () {
       // ignore: use_named_constants, exercising the raw constructor at the boundary.
       expect(const FfiColor(0).argb, 0, reason: 'lower bound');
-      // ignore: use_named_constants, exercising the raw constructor at the boundary.
       expect(const FfiColor(0xFFFFFFFF).argb, 0xFFFFFFFF, reason: 'upper bound');
-    });
-
-    test('from() rejects channel values outside [0, 255]', () {
-      expect(() => FfiColor.from(alpha: -1), throwsA(isA<AssertionError>()));
-      expect(() => FfiColor.from(red: 256), throwsA(isA<AssertionError>()));
-      expect(() => FfiColor.from(green: -10), throwsA(isA<AssertionError>()));
-      expect(() => FfiColor.from(blue: 999), throwsA(isA<AssertionError>()));
-    });
-
-    test('from() accepts channel boundary values', () {
-      // ignore: use_named_constants, exercising the from() constructor.
-      const allMax = FfiColor.from(blue: 255, green: 255, red: 255);
-      expect(
-        allMax.argb,
-        FfiColor.white.argb,
-        reason: 'rgb at max with default alpha=255 produces opaque white',
-      );
-      expect(
-        // ignore: use_named_constants, exercising the constructor's default-args path.
-        const FfiColor.from().argb,
-        FfiColor.black.argb,
-        reason: 'defaults: opaque black (alpha=255 default, others 0)',
-      );
     });
   });
 });

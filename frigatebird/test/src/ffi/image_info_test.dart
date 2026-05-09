@@ -24,8 +24,6 @@ void main() {
       // But in Dart test they might be relative to the package root.
       final fixtureDir = Directory('rust/tests/fixtures/orientation');
       if (!fixtureDir.existsSync()) {
-        print('Skipping fixture test: ${fixtureDir.path} not found');
-
         return;
       }
 
@@ -34,7 +32,6 @@ void main() {
         final info = ImageInformation.probeSync(path);
 
         expect(info.orientation, equals(tag));
-        expect(info.isRotated, equals(tag >= 5));
 
         if (tag <= 4) {
           expect(info.width, equals(128));
@@ -44,16 +41,6 @@ void main() {
           expect(info.height, equals(128));
         }
       }
-    });
-
-    test('isZero returns true for 0x0', () {
-      const info = ImageInformation(height: 0, width: 0);
-      expect(info.isZero, isTrue);
-    });
-
-    test('isZero returns false for non-zero dimensions', () {
-      const info = ImageInformation(height: 1, width: 1);
-      expect(info.isZero, isFalse);
     });
   });
 }

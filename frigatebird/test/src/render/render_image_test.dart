@@ -19,7 +19,13 @@ void main() {
       final outPath = _ensureTempFileAbsent('frigate_render_basic.png');
 
       const rect = RectElement(height: 100, outlineThickness: 4, width: 200, x: 100, y: 100);
-      const text = TextElement(fillColor: .green, fontSize: 48, text: 'Hi', x: 150, y: 250);
+      const text = TextElement(
+        fillColor: FfiColor(0xFF00FF00),
+        fontSize: 48,
+        text: 'Hi',
+        x: 150,
+        y: 250,
+      );
       await RenderImage.run(
         backgroundPath: imagePath,
         elements: [rect, text],
@@ -39,7 +45,13 @@ void main() {
     test('renders a basic mix of elements (rect + text) with FfiColor shorthand', () async {
       final outPath = _ensureTempFileAbsent('frigate_render_shorthand.png');
 
-      const text = TextElement(fillColor: .green, fontSize: 48, text: 'Frigate', x: 50, y: 250);
+      const text = TextElement(
+        fillColor: FfiColor(0xFF00FF00),
+        fontSize: 48,
+        text: 'Frigate',
+        x: 50,
+        y: 250,
+      );
       await RenderImage.run(
         backgroundPath: imagePath,
         elements: [text],
@@ -56,7 +68,7 @@ void main() {
       final outPath = _ensureTempFileAbsent('frigate_render_rect.jpg');
       const rect = RectElement(
         height: 50,
-        outlineColor: .blue,
+        outlineColor: FfiColor(0xFF0000FF),
         outlineThickness: 4,
         width: 100,
         x: 10,
