@@ -1,15 +1,16 @@
-// ignore_for_file: avoid-ignoring-return-values, avoid-returning-widgets, prefer-correct-handler-name, prefer-commenting-analyzer-ignores, prefer-match-file-name, no-object-declaration, prefer-extracting-function-callbacks, avoid-collection-mutating-methods, avoid-duplicate-test-assertions, avoid-unsafe-collection-methods, prefer-moving-to-variable, avoid-local-functions
+// ignore_for_file: avoid-ignoring-return-values, prefer-moving-to-variable, avoid-duplicate-test-assertions, format-comment, avoid-similar-names, prefer-extracting-function-callbacks
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frigatedraw/frigatedraw.dart';
 
-class _ErrorWidget extends StatelessWidget {
-  const _ErrorWidget({required this.error});
+class _FfiImageFileTest extends StatelessWidget {
+  const _FfiImageFileTest({required this.error});
 
-  final Object error; // ignore: diagnostic_describe_all_properties, it's a test.
+  final Object error; // ignore: diagnostic_describe_all_properties,no-object-declaration, it's test
 
   @override
   Widget build(BuildContext context) => Text('Error: $error');
@@ -18,43 +19,25 @@ class _ErrorWidget extends StatelessWidget {
 void main() {
   group(FfiImageFile, () {
     testWidgets('shows image with correct dimensions after load', (tester) async {
-      final file = File('../frigatebird/rust/tests/fixtures/orientation/exif_6.jpg');
-      if (!file.existsSync()) {
-        final altFile = File('frigatebird/rust/tests/fixtures/orientation/exif_6.jpg');
-        if (!altFile.existsSync()) {
-          return;
-        }
-      }
+      final file = File('test.jpg');
 
-      final targetFile = file.existsSync()
-          ? file
-          : File('frigatebird/rust/tests/fixtures/orientation/exif_6.jpg');
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) => Future.value(const ImageInformation(height: 128, orientation: 6, width: 64)),
+      );
+      addTearDown(restore);
 
-      await tester.runAsync(() async {
-        await tester.pumpWidget(
-          MaterialApp(
-            home: Scaffold(
-              body: FfiImageFile(
-                targetFile,
-                errorBuilder: (bc, error, stack) => _ErrorWidget(error: error),
-              ),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FfiImageFile(
+              file,
+              errorBuilder: (bc, error, stack) => _FfiImageFileTest(error: error),
             ),
           ),
-        );
+        ),
+      );
 
-        // Wait for the async getImageInfo call to complete in the background.
-        int attempts = 0;
-        while (attempts < 50) {
-          // Wait for the background worker (Rust) to finish parsing.
-          await Future<void>.delayed(const Duration(milliseconds: 50));
-          await tester.pump();
-          if (find.byType(Image).evaluate().length > 1 ||
-              find.textContaining('Error:').evaluate().isNotEmpty) {
-            break;
-          }
-          attempts += 1;
-        }
-      });
+      await tester.pumpAndSettle();
 
       final errorFinder = find.byWidgetPredicate(
         (widget) =>
@@ -71,10 +54,10 @@ void main() {
       final widgetList = tester.widgetList<Image>(imageFinder);
       expect(widgetList.length, greaterThanOrEqualTo(1));
 
-      final finalImage = widgetList.last;
+      final finalImage = widgetList.lastOrNull;
       // Tag 6 is RightTop (90 deg CW rotation) -> original 128x64 becomes 64x128.
-      expect(finalImage.width, 64.0);
-      expect(finalImage.height, 128.0);
+      expect(finalImage?.width, 64.0);
+      expect(finalImage?.height, 128.0);
     });
 
     testWidgets('respects provided width/height and skips FFI', (tester) async {
@@ -96,15 +79,15 @@ void main() {
     testWidgets('falls back to Image.file and calls errorBuilder on probe failure', (tester) async {
       final file = File('corrupted.jpg');
 
-      // Inject a failing builder.
-      FfiImageFile.infoBuilder = (path) => Future.error('Probe failed');
+      final restore = FfiImageFile.setInfoBuilder((_) => Future.error('Probe failed'));
+      addTearDown(restore);
 
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
             body: FfiImageFile(
               file,
-              errorBuilder: (bc, error, stack) => _ErrorWidget(error: error),
+              errorBuilder: (bc, error, stack) => _FfiImageFileTest(error: error),
             ),
           ),
         ),
@@ -113,22 +96,21 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Error: Probe failed'), findsOneWidget);
-
-      // Reset builder.
-      FfiImageFile.infoBuilder = ImageInformation.probe;
     });
 
     testWidgets('does not re-probe when widget updates with same file path', (tester) async {
       final file = File('cached.jpg');
       int probeCount = 0;
 
+      // ignore: avoid-local-functions, it's fine for a test.
       Future<ImageInformation> mockBuilder(String _) {
         probeCount += 1;
 
         return Future.value(const ImageInformation(height: 400, width: 300));
       }
 
-      FfiImageFile.infoBuilder = mockBuilder;
+      final restore = FfiImageFile.setInfoBuilder(mockBuilder);
+      addTearDown(restore);
 
       // First mount.
       await tester.pumpWidget(MaterialApp(home: Scaffold(body: FfiImageFile(file))));
@@ -141,16 +123,16 @@ void main() {
 
       // Should still be 1 if didUpdateWidget correctly kept the same future.
       expect(probeCount, 1);
-
-      // Reset builder.
-      FfiImageFile.infoBuilder = ImageInformation.probe;
     });
 
     testWidgets('calls builder with resolved image', (tester) async {
       final file = File('test.jpg');
       Image? resolvedImage;
 
-      FfiImageFile.infoBuilder = (path) async => const ImageInformation(height: 400, width: 300);
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) => Future.value(const ImageInformation(height: 400, width: 300)),
+      );
+      addTearDown(restore);
 
       await tester.pumpWidget(
         MaterialApp(
@@ -171,9 +153,103 @@ void main() {
 
       expect(resolvedImage?.width, 300.0);
       expect(resolvedImage?.height, 400.0);
+    });
 
-      // Reset builder.
-      FfiImageFile.infoBuilder = ImageInformation.probe;
+    testWidgets('re-probes when file path changes', (tester) async {
+      final file1 = File('file1.jpg');
+      final file2 = File('file2.jpg');
+      int probeCount = 0;
+      FfiImageFile.setInfoBuilder((_) async {
+        probeCount += 1;
+
+        return const ImageInformation(height: 100, width: 100);
+      });
+
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: FfiImageFile(file1))));
+      await tester.pumpAndSettle();
+      expect(probeCount, 1);
+
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: FfiImageFile(file2))));
+      await tester.pumpAndSettle();
+      expect(probeCount, 2);
+    });
+
+    testWidgets('re-probes when size nullability changes', (tester) async {
+      final file = File('test.jpg');
+      int probeCount = 0;
+      FfiImageFile.setInfoBuilder((_) async {
+        probeCount += 1;
+
+        return const ImageInformation(height: 100, width: 100);
+      });
+
+      // Initially with size -> no probe
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: FfiImageFile(file, size: const Size(100, 100))),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(probeCount, 0);
+
+      // Change to no size -> probe
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: FfiImageFile(file))));
+      await tester.pumpAndSettle();
+      expect(probeCount, 1);
+
+      // Change back to size -> reset future (but no probe call because _loadInfo returns null)
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: FfiImageFile(file, size: const Size(200, 200))),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(probeCount, 1);
+    });
+
+    testWidgets('shows image while waiting if builder is not provided', (tester) async {
+      final file = File('test.jpg');
+      final completer = Completer<ImageInformation>();
+      FfiImageFile.setInfoBuilder((_) => completer.future);
+
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: FfiImageFile(file))));
+      // Should show Image.file (fallback) because no placeholderBuilder provided
+      expect(find.byType(Image), findsOneWidget);
+    });
+
+    testWidgets('calls builder with null data while loading', (tester) async {
+      final file = File('test.jpg');
+      final completer = Completer<ImageInformation>();
+      FfiImageFile.setInfoBuilder((_) => completer.future);
+
+      bool isCalledWithNull = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FfiImageFile(
+              file,
+              builder: (context, image) {
+                if (image.width == null) isCalledWithNull = true;
+
+                return const SizedBox();
+              },
+            ),
+          ),
+        ),
+      );
+      expect(isCalledWithNull, isTrue);
+    });
+
+    testWidgets('falls back to Image.file when probe fails and errorBuilder is null', (
+      tester,
+    ) async {
+      final file = File('corrupted.jpg');
+      FfiImageFile.setInfoBuilder((_) => Future.error('Failed'));
+
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: FfiImageFile(file))));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Image), findsOneWidget);
     });
   });
 }

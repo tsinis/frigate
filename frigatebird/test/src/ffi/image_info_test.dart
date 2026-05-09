@@ -1,3 +1,5 @@
+// ignore_for_file: prefer-correct-identifier-length, prefer-moving-to-variable
+
 import 'dart:io';
 
 import 'package:frigatebird/src/ffi/image_info.dart';
@@ -41,6 +43,14 @@ void main() {
           expect(info.height, equals(128));
         }
       }
+    });
+  });
+
+  group('ImageInfoException', () {
+    test('toString contains code and message', () {
+      const ex = ImageInfoException(code: 42, message: 'some error');
+      expect(ex.toString(), contains('42'));
+      expect(ex.toString(), contains('some error'));
     });
   });
 }

@@ -870,4 +870,11 @@ mod merge_tests {
             msg
         );
     }
+
+    #[test]
+    fn test_handle_panic_fallback() {
+        let payload = Box::new(42i32); // Non-string payload
+        let code = handle_panic(None, payload);
+        assert_eq!(code, FfiErrorCode::Panic as u8);
+    }
 }

@@ -19,7 +19,7 @@ Future<void> main() async {
     return;
   }
 
-  final tempDir = await directory.create(recursive: true);
+  final tempDir = await Directory.systemTemp.createTemp('frigate_');
   final imageFile = await _copyAssetToDisk(_sampleAsset, '${tempDir.path}/frigate_bg.png');
   final fontFile = await _copyAssetToDisk(_fontAsset, '${tempDir.path}/frigate_font.ttf');
 
@@ -123,18 +123,18 @@ class _DrawingScreenState extends State<DrawingScreen> {
     try {
       final directory = widget.destination;
       final downloadDir = await directory.create(recursive: true);
-      final imageFile = await _copyAssetToDisk(
-        _sampleAsset,
-        '${downloadDir.path}/frigate_sample.png',
-      );
-      final fontFile = await _copyAssetToDisk(_fontAsset, '${downloadDir.path}/frigate_font.ttf');
+      final tempDir = widget.tempDir;
 
-      // Write to a temporary file then rename to ensure we don't open the same
-      // file for reading and writing simultaneously in Rust.
-      final outFile = File('${imageFile.path}.tmp.png');
+      final tempImageFile = await _copyAssetToDisk(
+        _sampleAsset,
+        '${tempDir.path}/frigate_sample.png',
+      );
+      final fontFile = await _copyAssetToDisk(_fontAsset, '${tempDir.path}/frigate_font.ttf');
+
+      final outFile = File('${downloadDir.path}/frigate_sample.png');
 
       await RenderImage.run(
-        backgroundPath: imageFile.path,
+        backgroundPath: tempImageFile.path,
         elements: [
           TextElement(
             fontSize: params.fontSize,
@@ -148,9 +148,10 @@ class _DrawingScreenState extends State<DrawingScreen> {
         outputPath: outFile.path,
       );
 
-      await outFile.rename(imageFile.path); // ignore: avoid-ignoring-return-values, it's example.
-
-      _showSnackBar('Stored in Files app under Frigatedraw');
+      final msg = Platform.isIOS
+          ? 'Stored in Files app under Frigatedraw'
+          : 'Stored at ${outFile.path}';
+      _showSnackBar(msg);
     } on Object catch (error, stackTrace) {
       _showSnackBar('Render failed: $error, $stackTrace');
     } finally {
@@ -183,10 +184,17 @@ class _DrawingScreenState extends State<DrawingScreen> {
       if (!mounted) return;
       final isConfirmed = await _isExportConfirmed(jpegBytes);
       if (isConfirmed == true) {
-        final finalFile = File('${tempDir.path}/frigate_composition.jpg')
-          ..writeAsBytesSync(jpegBytes, flush: true);
+        final downloadDir = await widget.destination.create(recursive: true);
+        final finalFile = File('${downloadDir.path}/frigate_composition.jpg');
+        // ignore: avoid-ignoring-return-values, it is just an example
+        await finalFile.writeAsBytes(jpegBytes, flush: true);
 
-        if (mounted) _showSnackBar('Saved to ${finalFile.path}');
+        if (mounted) {
+          final msg = Platform.isIOS
+              ? 'Stored in Files app under Frigatedraw'
+              : 'Saved to ${finalFile.path}';
+          _showSnackBar(msg);
+        }
       }
     } on Object catch (error) {
       if (!mounted) return;

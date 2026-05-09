@@ -17,7 +17,7 @@ import 'ffi_arena.dart';
 /// Do NOT pass [ptr] to code that outlives this handle — after [free] the
 /// pointer is dangling.
 final class FfiArenaHandle {
-  const FfiArenaHandle._(this.ptr);
+  FfiArenaHandle._(this.ptr);
 
   /// Allocates a zero-initialized arena with an error buffer attached.
   /// Text and image buffers stay `nullptr`/0 — callers that need them
@@ -42,7 +42,9 @@ final class FfiArenaHandle {
   static const defaultErrorCapacity = 512;
 
   /// Pointer to the C-side struct. Pass to FFI calls as `arena.ptr`.
-  final Pointer<FfiArena> ptr;
+  Pointer<FfiArena> ptr;
+
+  bool _isFreed = false;
 
   /// Reads the NUL-terminated UTF-8 message Rust wrote into `errorBuf`.
   /// Returns `null` if the buffer is missing, empty, or starts with NUL.
@@ -51,6 +53,8 @@ final class FfiArenaHandle {
   /// stops there, which matches Rust's `write_error_to_arena` contract.
   // ignore: prefer-getter-over-method, potentially useful for future extensions.
   String? readErrorMessage() {
+    if (_isFreed) throw StateError('Cannot read from a freed FfiArenaHandle');
+
     final i = ptr.ref;
     if (i.errorBuf == nullptr || i.errorCap == 0) return null;
     if (i.errorBuf.value == 0) return null; // Empty / nothing written.
@@ -61,10 +65,13 @@ final class FfiArenaHandle {
   /// Frees the error buffer, any text/image buffers that were attached, and
   /// the arena struct itself. Safe to call once. Calling twice is undefined.
   void free() {
+    if (_isFreed) return;
     final i = ptr.ref;
     if (i.errorBuf != nullptr) calloc.free(i.errorBuf);
     if (i.textBuf != nullptr) calloc.free(i.textBuf);
     if (i.imageBuf != nullptr) calloc.free(i.imageBuf);
     calloc.free(ptr);
+    ptr = nullptr;
+    _isFreed = true;
   }
 }

@@ -194,4 +194,14 @@ mod tests {
         assert_eq!(&bytes[..2], &[0xFF, 0xD8]);
         std::fs::remove_file(&tmp).ok();
     }
+
+    #[test]
+    fn read_orientation_on_missing_file_is_1() {
+        assert_eq!(read_orientation(Path::new("not_here.jpg")), 1);
+    }
+
+    #[test]
+    fn read_orientation_on_non_image_is_1() {
+        assert_eq!(read_orientation(Path::new("Cargo.toml")), 1);
+    }
 }

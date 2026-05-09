@@ -27,31 +27,32 @@ final class ImageInformation {
     FfiAbi.assertArena();
 
     final pathPtr = path.toNativeUtf8();
+    Pointer<ImageInfoStruct> infoPtr = nullptr;
+    FfiArenaHandle? arena;
+
     try {
-      final infoPtr = calloc<ImageInfoStruct>();
-      final arena = FfiArenaHandle.allocate();
-      try {
-        final code = ffi.get_image_info(pathPtr, arena.ptr, infoPtr);
-        if (code != 0) {
-          throw ImageInfoException(
-            code: code,
-            message: arena.readErrorMessage() ?? 'get_image_info failed ($code)',
-          );
-        }
+      infoPtr = calloc<ImageInfoStruct>();
+      arena = FfiArenaHandle.allocate();
 
-        final i = infoPtr.ref;
-
-        return ImageInformation(
-          format: i.format,
-          height: i.height,
-          orientation: i.orientation,
-          width: i.width,
+      final code = ffi.get_image_info(pathPtr, arena.ptr, infoPtr);
+      if (code != 0) {
+        throw ImageInfoException(
+          code: code,
+          message: arena.readErrorMessage() ?? 'get_image_info failed ($code)',
         );
-      } finally {
-        arena.free();
-        calloc.free(infoPtr);
       }
+
+      final i = infoPtr.ref;
+
+      return ImageInformation(
+        format: i.format,
+        height: i.height,
+        orientation: i.orientation,
+        width: i.width,
+      );
     } finally {
+      arena?.free();
+      if (infoPtr != nullptr) calloc.free(infoPtr);
       calloc.free(pathPtr);
     }
   }

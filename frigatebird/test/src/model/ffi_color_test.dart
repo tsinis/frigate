@@ -19,10 +19,10 @@ void main() => group(FfiColor, () {
     expect(FfiColor.black.argb, raw.argb, reason: 'named constant == raw bit pattern');
   });
 
-  test(
-    'toString renders ARGB in hex',
-    () => expect(FfiColor.black.toString(), 'FfiColor(0xFF000000)'),
-  );
+  test('toString renders ARGB in hex', () {
+    expect(FfiColor.black.toString(), 'FfiColor(0xFF000000)');
+    expect(const FfiColor(0x00ABCDEF).toString(), 'FfiColor(0x00ABCDEF)');
+  });
 
   test('from() packs custom alpha + blue correctly', () {
     const color = FfiColor.from(alpha: 128, blue: 255);

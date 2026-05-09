@@ -42,7 +42,7 @@ void main() {
       outFile.deleteSync();
     });
 
-    test('renders a basic mix of elements (rect + text) with FfiColor shorthand', () async {
+    test('renders text element with explicit FfiColor', () async {
       final outPath = _ensureTempFileAbsent('frigate_render_shorthand.png');
 
       const text = TextElement(

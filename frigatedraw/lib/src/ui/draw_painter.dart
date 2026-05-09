@@ -144,6 +144,8 @@ class DrawPainter extends CustomPainter {
       !identical(oldDelegate.elements, elements) || oldDelegate.selectedIndex != selectedIndex;
 
   static HandlePosition? hitTestHandle(Offset point, {required DrawElement element}) {
+    if (element.width <= 0 || element.height <= 0) return null;
+
     for (final handle in HandlePosition.values) {
       final center = _handleCenter(element: element, handle: handle);
       if ((point - center).distance <= handleRadius) return handle;
@@ -153,6 +155,8 @@ class DrawPainter extends CustomPainter {
   }
 
   static bool isPointOnShape(Offset point, {required DrawElement element}) {
+    if (element.width <= 0 || element.height <= 0) return false;
+
     final rect = element.rect;
     final outlineThickness = switch (element) {
       RectElement() => element.outlineThickness.toDouble(),

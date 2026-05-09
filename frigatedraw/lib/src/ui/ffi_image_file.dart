@@ -26,6 +26,19 @@ class FfiImageFile extends Image {
     this.size,
   }) : super.file(_image, height: size?.height, width: size?.width);
 
+  @visibleForTesting
+  /// Sets a test-only builder and returns a function to restore the previous builder.
+  static VoidCallback setInfoBuilder(Future<ImageInformation> Function(String path) builder) {
+    final oldBuilder = _infoBuilder;
+    _infoFutureBuilderSetter(builder);
+
+    return () => _infoFutureBuilderSetter(oldBuilder);
+  }
+
+  // ignore: use_setters_to_change_properties, not a public API and the method is more explicit.
+  static void _infoFutureBuilderSetter(Future<ImageInformation> Function(String path) builder) =>
+      _infoBuilder = builder;
+
   final File _image;
 
   /// If provided, this callback allows custom layout control by wrapping the pre-configured [Image].
@@ -41,13 +54,10 @@ class FfiImageFile extends Image {
     properties.add(ObjectFlagProperty.has('builder', builder));
   }
 
-  @visibleForTesting
-  /// Test seam. Override to inject a fake info loader in widget tests.
-  // ignore: avoid-global-state, it's a static test seam for the info loader.
-  static Future<ImageInformation> Function(String path) infoBuilder = ImageInformation.probe;
-
   @override
   State<FfiImageFile> createState() => _FfiImageFileState();
+
+  static Future<ImageInformation> Function(String path) _infoBuilder = ImageInformation.probe;
 }
 
 class _FfiImageFileState extends State<FfiImageFile> {
@@ -56,13 +66,17 @@ class _FfiImageFileState extends State<FfiImageFile> {
 
   // ignore: prefer-getter-over-method, more suitable for the FutureBuilder pattern.
   Future<ImageInformation?> _loadInfo() async =>
-      widget.size == null ? FfiImageFile.infoBuilder(widget._image.absolute.path) : null;
+      widget.size == null ? FfiImageFile._infoBuilder(widget._image.absolute.path) : null;
 
   @override
   void didUpdateWidget(FfiImageFile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // ignore: avoid-async-call-in-sync-function, resetting the [Future] for the [FutureBuilder].
-    if (oldWidget._image.absolute.path != widget._image.absolute.path) _infoFuture = _loadInfo();
+
+    final hasPathChanged = oldWidget._image.absolute.path != widget._image.absolute.path;
+    final hasSizeNullabilityChanged = (oldWidget.size == null) != (widget.size == null);
+
+    //ignore:avoid-async-call-in-sync-function,avoid-unnecessary-setstate, to trigger FutureBuilder.
+    if (hasPathChanged || hasSizeNullabilityChanged) setState(() => _infoFuture = _loadInfo());
   }
 
   @override

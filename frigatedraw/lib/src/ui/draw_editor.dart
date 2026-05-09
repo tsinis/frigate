@@ -209,7 +209,7 @@ class _DrawEditorState extends State<DrawEditor> {
             willChange: _isDragging.value,
             child: child,
           ),
-          listenable: _controller,
+          listenable: Listenable.merge([_controller, _isDragging]),
           child: image,
         ),
         fit: .fill,
