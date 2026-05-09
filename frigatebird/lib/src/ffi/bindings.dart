@@ -27,6 +27,17 @@ import 'ffi_arena.dart';
 import 'ffi_element.dart';
 import 'image_info_struct.dart';
 
+/// Returns the byte sizes of the core FFI structs as seen by Rust.
+///
+/// `isLeaf: true` — just returns static constants, no safepoints needed.
+@Native<Void Function(Pointer<Size>, Pointer<Size>, Pointer<Size>, Pointer<Size>)>(isLeaf: true)
+external void get_abi_sizes(
+  Pointer<Size> outElement,
+  Pointer<Size> outArena,
+  Pointer<Size> outError,
+  Pointer<Size> outImageInfo,
+);
+
 /// Returns oriented dimensions and metadata for an image without decoding full pixel data.
 ///
 /// Returns a `u8` status code. Result info is written to [out].

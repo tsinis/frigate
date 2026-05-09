@@ -15,7 +15,7 @@ import 'ffi_arena.dart';
 ///   }
 ///
 /// Do NOT pass [ptr] to code that outlives this handle — after [free] the
-/// pointer is dangling.
+/// pointer is dangling and its memory is unmapped/reused.
 final class FfiArenaHandle {
   FfiArenaHandle._(this.ptr);
 
@@ -42,7 +42,7 @@ final class FfiArenaHandle {
   static const defaultErrorCapacity = 512;
 
   /// Pointer to the C-side struct. Pass to FFI calls as `arena.ptr`.
-  Pointer<FfiArena> ptr;
+  final Pointer<FfiArena> ptr;
 
   bool _isFreed = false;
 
@@ -57,13 +57,17 @@ final class FfiArenaHandle {
 
     final i = ptr.ref;
     if (i.errorBuf == nullptr || i.errorCap == 0) return null;
-    if (i.errorBuf.value == 0) return null; // Empty / nothing written.
+    // Check first byte: if 0, Rust didn't write anything (or wrote an empty string).
+    if (i.errorBuf.value == 0) return null;
 
     return i.errorBuf.cast<Utf8>().toDartString();
   }
 
   /// Frees the error buffer, any text/image buffers that were attached, and
-  /// the arena struct itself. Safe to call once. Calling twice is undefined.
+  /// the arena struct itself.
+  ///
+  /// Idempotent — calling multiple times is safe and has no effect after the
+  /// first call.
   void free() {
     if (_isFreed) return;
     final i = ptr.ref;
@@ -71,7 +75,6 @@ final class FfiArenaHandle {
     if (i.textBuf != nullptr) calloc.free(i.textBuf);
     if (i.imageBuf != nullptr) calloc.free(i.imageBuf);
     calloc.free(ptr);
-    ptr = nullptr;
     _isFreed = true;
   }
 }

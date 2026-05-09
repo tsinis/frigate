@@ -15,7 +15,7 @@ final class ImageInformation {
   const ImageInformation({
     required this.width,
     required this.height,
-    this.format = 1,
+    this.format = 255,
     this.orientation = 1,
   });
 
@@ -23,10 +23,10 @@ final class ImageInformation {
   /// Do NOT call directly from the UI isolate — use [probe].
   // ignore: avoid-non-empty-constructor-bodies, this factory constructor...
   factory ImageInformation.probeSync(String path) {
-    FfiAbi.assertImageInfo();
-    FfiAbi.assertArena();
+    FfiAbi.assertAll();
 
     final pathPtr = path.toNativeUtf8();
+
     Pointer<ImageInfoStruct> infoPtr = nullptr;
     FfiArenaHandle? arena;
 

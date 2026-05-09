@@ -28,12 +28,28 @@ pub struct ByteBuffer {
 
 #[derive_ReprC]
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ImageInfo {
     pub width: u32,      // oriented (post-EXIF)
     pub height: u32,     // oriented (post-EXIF)
     pub format: u8,      // 0 = PNG, 1 = JPEG, 255 = unknown
     pub orientation: u8, // raw EXIF tag 1..=8 for diagnostics
+    pub _pad: [u8; 2],   // explicit C alignment padding
+}
+
+/// Returns the byte sizes of the core FFI structs as seen by Rust.
+/// Used by Dart to verify ABI compatibility at runtime.
+#[ffi_export]
+pub fn get_abi_sizes(
+    out_element: &mut usize,
+    out_arena: &mut usize,
+    out_error: &mut usize,
+    out_image_info: &mut usize,
+) {
+    *out_element = std::mem::size_of::<FfiElement>();
+    *out_arena = std::mem::size_of::<FfiArena>();
+    *out_error = std::mem::size_of::<FfiError>();
+    *out_image_info = std::mem::size_of::<ImageInfo>();
 }
 
 fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + Send>) -> u8 {
@@ -110,6 +126,7 @@ pub fn get_image_info(
                 height: h,
                 format,
                 orientation,
+                _pad: [0; 2],
             })
         })();
         inner
@@ -122,8 +139,18 @@ pub fn get_image_info(
             }
             FfiErrorCode::Success as u8
         }
-        Ok(Err((code, msg))) => write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code,
-        Err(payload) => handle_panic(arena_opt, payload),
+        Ok(Err((code, msg))) => {
+            if let Some(o) = out {
+                *o = ImageInfo::default();
+            }
+            write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code
+        }
+        Err(payload) => {
+            if let Some(o) = out {
+                *o = ImageInfo::default();
+            }
+            handle_panic(arena_opt, payload)
+        }
     }
 }
 

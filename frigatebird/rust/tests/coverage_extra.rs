@@ -10,6 +10,7 @@ fn test_get_image_info_errors() {
         height: 0,
         format: 0,
         orientation: 0,
+        _pad: [0; 2],
     };
 
     // 1. Missing path
@@ -30,6 +31,21 @@ fn test_get_image_info_errors() {
     let cargo_toml = char_p::new("Cargo.toml");
     let status = get_image_info(Some(cargo_toml.as_ref()), None, Some(&mut info));
     assert_eq!(status, FfiErrorCode::Decode as u8);
+}
+
+#[test]
+fn test_get_image_info_clears_out_on_error() {
+    let mut info = ImageInfo {
+        width: 123,
+        height: 456,
+        format: 0,
+        orientation: 1,
+        _pad: [0; 2],
+    };
+    let bad_path = char_p::new("non_existent.jpg");
+    let _ = get_image_info(Some(bad_path.as_ref()), None, Some(&mut info));
+    assert_eq!(info.width, 0);
+    assert_eq!(info.height, 0);
 }
 
 #[test]
@@ -153,11 +169,13 @@ fn test_merge_errors() {
     assert_eq!(status, FfiErrorCode::InvalidArg as u8);
 
     // 4. Decode failure background
+    let fg_bytes = tiny_red_png();
+    let fg_ptr = safer_ffi::ptr::NonNull::new(fg_bytes.as_ptr() as *mut u8).unwrap();
     let cargo_toml = char_p::new("Cargo.toml");
     let status = frigate::merge(
         Some(cargo_toml.as_ref()),
-        None,
-        0,
+        Some(fg_ptr),
+        fg_bytes.len(),
         0,
         0,
         0,
@@ -165,7 +183,17 @@ fn test_merge_errors() {
         None,
         Some(&mut out),
     );
-    assert_ne!(status, FfiErrorCode::Success as u8);
+    assert_eq!(status, FfiErrorCode::Decode as u8);
+}
+
+fn tiny_red_png() -> Vec<u8> {
+    use image::{DynamicImage, RgbaImage};
+    let img = RgbaImage::from_pixel(1, 1, image::Rgba([255, 0, 0, 255]));
+    let mut buf = std::io::Cursor::new(Vec::new());
+    DynamicImage::ImageRgba8(img)
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .unwrap();
+    buf.into_inner()
 }
 
 #[test]
@@ -183,5 +211,5 @@ fn test_draw_elements_more_errors() {
             std::ptr::null_mut(),
         )
     };
-    assert_ne!(status, FfiErrorCode::Success as u8);
+    assert_eq!(status, FfiErrorCode::Decode as u8);
 }

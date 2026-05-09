@@ -27,6 +27,7 @@ fn test_get_image_info_orientation() {
             height: 0,
             format: 0,
             orientation: 0,
+            _pad: [0; 2],
         };
 
         let status = frigate::get_image_info(Some(c_path.as_ref()), None, Some(&mut info));

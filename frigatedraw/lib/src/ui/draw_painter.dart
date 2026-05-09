@@ -37,7 +37,7 @@ class DrawPainter extends CustomPainter {
     final selected = elements.elementAtOrNull(index);
     if (selected == null) return;
 
-    if (selected is! TextElement) {
+    if (selected is! TextElement && selected.width > 0 && selected.height > 0) {
       for (final handle in HandlePosition.values) {
         _paintHandle(canvas, _handleCenter(element: selected, handle: handle));
       }

@@ -24,6 +24,7 @@ class FfiImageFile extends Image {
     super.key,
     super.semanticLabel,
     this.size,
+    super.gaplessPlayback = true,
   }) : super.file(_image, height: size?.height, width: size?.width);
 
   @visibleForTesting
@@ -90,13 +91,14 @@ class _FfiImageFileState extends State<FfiImageFile> {
       excludeFromSemantics: widget.excludeFromSemantics,
       filterQuality: widget.filterQuality,
       fit: widget.fit,
+      gaplessPlayback: widget.gaplessPlayback,
       height: widget.size?.height,
       semanticLabel: widget.semanticLabel,
       width: widget.size?.width,
     );
     if (widget.size != null) return widget.builder?.call(context, fallback) ?? fallback;
 
-    return FutureBuilder(
+    return FutureBuilder<ImageInformation?>(
       builder: (bc, snap) {
         final image = Image.file(
           widget._image,
@@ -104,6 +106,7 @@ class _FfiImageFileState extends State<FfiImageFile> {
           excludeFromSemantics: widget.excludeFromSemantics,
           filterQuality: widget.filterQuality,
           fit: widget.fit,
+          gaplessPlayback: widget.gaplessPlayback,
           height: snap.data?.height.toDouble() ?? fallback.height,
           semanticLabel: widget.semanticLabel,
           width: snap.data?.width.toDouble() ?? fallback.width,

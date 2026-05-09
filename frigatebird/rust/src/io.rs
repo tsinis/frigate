@@ -71,6 +71,15 @@ pub(crate) fn read_orientation(path: &Path) -> u8 {
 }
 
 fn apply_orientation(img: DynamicImage, orientation: u8) -> DynamicImage {
+    // Standard EXIF orientation mapping:
+    // 1: Horizontal (normal)
+    // 2: Mirror horizontal
+    // 3: Rotate 180
+    // 4: Mirror vertical
+    // 5: Transpose (Rotate 90 CW then Mirror horizontal)
+    // 6: Rotate 90 CW
+    // 7: Transverse (Rotate 270 CW then Mirror horizontal)
+    // 8: Rotate 270 CW
     match orientation {
         2 => img.fliph(),
         3 => img.rotate180(),

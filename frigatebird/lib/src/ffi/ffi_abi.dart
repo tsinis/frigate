@@ -1,20 +1,57 @@
 import 'dart:ffi';
 
+import 'package:ffi/ffi.dart';
+import 'bindings.dart' as ffi;
 import 'ffi_arena.dart';
 import 'ffi_element.dart';
 import 'ffi_error.dart';
 import 'image_info_struct.dart';
 
 /// Runtime guards that the Dart-side `Struct` layouts for the FFI types match the wire
-/// contract baked into the Rust crate. Cheap — `sizeOf<T>()` specializes to a direct read for
-/// fixed-layout `Struct` subclasses. Assertions fire in debug only (CI runs in debug, and a
-/// mismatch crashes the very first test we run); release builds trust the Rust-side compile-
-/// time asserts on both sides of the boundary.
+/// contract baked into the Rust crate.
 ///
 /// Class with statics rather than top-level functions so the FFI namespace stays discoverable
 /// (`FfiAbi.` autocompletes both checks together) instead of leaking two unrelated-looking
 /// names into every file that imports `ffi_abi.dart`.
 sealed class FfiAbi {
+  /// Single entry point for all ABI stability checks.
+  ///
+  /// Probes the Rust library at runtime to verify that the byte-size of every shared struct
+  /// matches Dart's expectation. This catches cross-language drift (e.g. adding a field in
+  /// Rust but forgetting to update the Dart Struct) which would otherwise cause silent memory
+  /// corruption or garbage reads.
+  ///
+  /// No-op in release builds (asserts are stripped).
+  static void assertAll() {
+    // ignore: avoid-immediately-invoked-functions, standard assert-gated init pattern.
+    assert(() {
+      final elementSizePtr = calloc<Size>();
+      // ignore: avoid-duplicate-initializers, allocating multiple Size pointers is intentional.
+      final arenaSizePtr = calloc<Size>();
+      // ignore: avoid-duplicate-initializers, allocating multiple Size pointers is intentional.
+      final errorSizePtr = calloc<Size>();
+      // ignore: avoid-duplicate-initializers, allocating multiple Size pointers is intentional.
+      final infoSizePtr = calloc<Size>();
+      try {
+        ffi.get_abi_sizes(elementSizePtr, arenaSizePtr, errorSizePtr, infoSizePtr);
+
+        _matchSize(sizeOf<FfiElement>(), elementSizePtr.value, 'FfiElement');
+        _matchSize(sizeOf<FfiArena>(), arenaSizePtr.value, 'FfiArena');
+        _matchSize(sizeOf<FfiError>(), errorSizePtr.value, 'FfiError');
+        _matchSize(sizeOf<ImageInfoStruct>(), infoSizePtr.value, 'ImageInfoStruct');
+        _matchSize(sizeOf<FfiPayload>(), 48, 'FfiPayload');
+      } finally {
+        calloc
+          ..free(elementSizePtr)
+          ..free(arenaSizePtr)
+          ..free(errorSizePtr)
+          ..free(infoSizePtr);
+      }
+
+      return true;
+    }(), 'ABI check failed');
+  }
+
   /// Expected byte size of [FfiElement] as defined by the Rust `#[repr(C, u8)]` layout.
   static const elementBytes = 56;
 
@@ -34,6 +71,13 @@ sealed class FfiAbi {
   /// Error buffer capacity allocated by `FfiMarshal.encodeElements` for Rust to write
   /// diagnostic messages into. Single source of truth — Rust docs reference this value too.
   static const errorCapBytes = 256;
+
+  static void _matchSize(int dartSize, int rustSize, String name) {
+    assert(
+      dartSize == rustSize,
+      '$name ABI mismatch: Dart sees $dartSize bytes, Rust expects $rustSize.',
+    );
+  }
 
   /// Guard that the Dart-side Struct layout for [FfiElement] matches the wire contract.
   static void assertElement({int expectedSize = elementBytes}) {
