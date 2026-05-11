@@ -12,6 +12,8 @@ crate-type = ["rlib", "cdylib", "staticlib"]
 # `native_toolchain_rust` when building for `dart test` (debug profile). Never set in the
 # production build hook.
 ffi-echo = []
+# Feature for FFI test helpers.
+ffi-test-helpers = []
 # Internal feature for structured fuzzing.
 fuzzing = ["dep:arbitrary"]
 
@@ -32,6 +34,7 @@ ab_glyph = "0.2.32"
 tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "simd"] }
 
 arbitrary = { version = "1.4.2", features = ["derive"], optional = true }
+libc = "0.2.186"
 
 [profile.release]
 lto = "thin"

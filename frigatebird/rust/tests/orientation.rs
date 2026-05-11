@@ -1,8 +1,9 @@
-use frigate::{FfiErrorCode, ImageInfo, io};
-use safer_ffi::char_p;
+use frigate::{FfiErrorCode, ImageInformation, io};
+use std::ffi::CString;
 use std::path::Path;
 
 #[test]
+#[allow(unsafe_code)]
 fn test_get_image_info_orientation() {
     let fixture_dir = Path::new("tests/fixtures/orientation");
     if !fixture_dir.exists() {
@@ -20,8 +21,8 @@ fn test_get_image_info_orientation() {
         }
         exercised_count += 1;
 
-        let c_path = char_p::new(path_str.as_str());
-        let mut info = ImageInfo {
+        let c_path = CString::new(path_str.as_str()).unwrap();
+        let mut info = ImageInformation {
             width: 0,
             height: 0,
             format: 0,
@@ -29,7 +30,9 @@ fn test_get_image_info_orientation() {
             _pad: [0; 2],
         };
 
-        let status = frigate::get_image_info(Some(c_path.as_ref()), None, Some(&mut info));
+        let status = unsafe {
+            frigate::get_image_info(c_path.as_ptr(), std::ptr::null_mut(), &raw mut info)
+        };
         assert_eq!(status, FfiErrorCode::Success as u8);
         assert_eq!(info.orientation, tag);
 
