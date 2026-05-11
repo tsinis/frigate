@@ -45,22 +45,20 @@ void main() {
   });
 }
 
-List<RectElement> _generateRects(int count, Random random) {
-  return List.generate(count, (_) {
-    final randDouble = random.nextDouble();
-    final colorMax = 0xFFFFFFFF + 1;
+List<RectElement> _generateRects(int count, Random random) => .generate(count, (_) {
+  const colorMax = 0xFFFFFFFF + 1;
+  final randDouble = random.nextDouble();
 
-    return RectElement(
-      blur: random.nextInt(256),
-      cornerRadius: random.nextInt(65536),
-      fillColor: FfiColor(random.nextInt(colorMax)),
-      height: randDouble * 1000,
-      outlineColor: FfiColor(random.nextInt(colorMax)),
-      outlineThickness: random.nextInt(256),
-      rotation: random.nextInt(360) - 180,
-      width: randDouble * 1000,
-      x: randDouble * 1000 - 500,
-      y: randDouble * 1000 - 500,
-    );
-  });
-}
+  return RectElement(
+    blur: random.nextInt(256),
+    cornerRadius: random.nextInt(65536),
+    fillColor: FfiColor(random.nextInt(colorMax)),
+    height: randDouble * 1000,
+    outlineColor: FfiColor(random.nextInt(colorMax)),
+    outlineThickness: random.nextInt(256),
+    rotation: random.nextInt(360) - 180,
+    width: randDouble * 1000,
+    x: randDouble * 1000 - 500,
+    y: randDouble * 1000 - 500,
+  );
+});
