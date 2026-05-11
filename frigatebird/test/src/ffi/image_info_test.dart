@@ -33,7 +33,7 @@ void main() {
         final path = '${fixtureDir.path}/exif_$tag.jpg';
         final info = ImageInformation.probeSync(path);
 
-        expect(info.orientation, equals(tag));
+        expect(info.orientation, equals(ExifOrientation.fromWire(tag)));
 
         if (tag <= 4) {
           expect(info.width, equals(128));
@@ -48,8 +48,8 @@ void main() {
 
   group('ImageInfoException', () {
     test('toString contains code and message', () {
-      const ex = ImageInfoException(code: 42, message: 'some error');
-      expect(ex.toString(), contains('42'));
+      const ex = ImageInfoException(codeWire: 9, message: 'some error');
+      expect(ex.toString(), contains('unknown'));
       expect(ex.toString(), contains('some error'));
     });
   });

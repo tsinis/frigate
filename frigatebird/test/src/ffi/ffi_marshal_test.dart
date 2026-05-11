@@ -1,7 +1,8 @@
 import 'dart:ffi';
+
 import 'package:ffi/ffi.dart';
-import 'package:frigatebird/src/ffi/ffi_echo_element.dart';
 import 'package:frigatebird/src/ffi/ffi_marshal.dart';
+import 'package:frigatebird/src/ffi/ffi_test_helpers.dart';
 import 'package:frigatebird/src/model/draw_element.dart';
 import 'package:frigatebird/src/model/ffi_color.dart';
 import 'package:test/test.dart';
@@ -25,12 +26,13 @@ void main() {
       final bundle = FfiMarshal.encodeElements([rect], malloc);
       try {
         final echoedPtr = ffi_echo_element(bundle.elementsPtr);
-        final decoded = FfiMarshal.decodeElements(
+        final decodeResult = FfiMarshal.decodeElements(
           echoedPtr,
           bundle.count,
           bundle.textBufferPtr,
-          payloadBufferLen: bundle.arenaPtr.ref.textLen,
+          payloadBufferLen: bundle.arena.ptr.ref.textLen,
         );
+        final decoded = decodeResult.elements;
 
         expect(decoded.length, 1);
         expect(decoded.first, isA<RectElement>(), reason: 'decoded element type');
@@ -65,12 +67,13 @@ void main() {
       final bundle = FfiMarshal.encodeElements([text], malloc);
       try {
         final echoedPtr = ffi_echo_element(bundle.elementsPtr);
-        final decoded = FfiMarshal.decodeElements(
+        final decodeResult = FfiMarshal.decodeElements(
           echoedPtr,
           bundle.count,
           bundle.textBufferPtr,
-          payloadBufferLen: bundle.arenaPtr.ref.textLen,
+          payloadBufferLen: bundle.arena.ptr.ref.textLen,
         );
+        final decoded = decodeResult.elements;
 
         expect(decoded.length, 1);
         expect(decoded.first, isA<TextElement>(), reason: 'decoded element type');
@@ -99,12 +102,13 @@ void main() {
       final bundle = FfiMarshal.encodeElements(elements, malloc);
       try {
         final echoedPtr = ffi_echo_element(bundle.elementsPtr);
-        final decoded = FfiMarshal.decodeElements(
+        final decodeResult = FfiMarshal.decodeElements(
           echoedPtr,
           bundle.count,
           bundle.textBufferPtr,
-          payloadBufferLen: bundle.arenaPtr.ref.textLen,
+          payloadBufferLen: bundle.arena.ptr.ref.textLen,
         );
+        final decoded = decodeResult.elements;
 
         expect(decoded.length, elements.length);
         for (final (i, item) in elements.indexed) {
@@ -166,15 +170,66 @@ void main() {
       try {
         // Overwrite tag with a value beyond FfiElementType.values.length.
         bundle.elementsPtr.ref.tag = 99;
-        final decoded = FfiMarshal.decodeElements(
+        final decodeResult = FfiMarshal.decodeElements(
           bundle.elementsPtr,
           1,
           bundle.textBufferPtr,
           payloadBufferLen: 0,
         );
-        expect(decoded, isEmpty, reason: 'unknown tag must be skipped, not decoded as text');
+        expect(decodeResult.elements, isEmpty, reason: 'unknown tag must be skipped');
+        expect(decodeResult.unknownTags, [99], reason: 'unknown tag must be reported');
       } finally {
         bundle.free();
+      }
+    });
+
+    test('round-trip with ffi_zero_element catches offset bugs', () {
+      final handle = FfiMarshal.encodeElements(
+        [const RectElement(height: 0, width: 0, x: 0, y: 0)], // Dart 3.8 formatting.
+        malloc,
+      );
+      try {
+        ffi_zero_element(handle.elementsPtr);
+        final decoded = FfiMarshal.decodeElements(
+          handle.elementsPtr,
+          1,
+          handle.textBufferPtr,
+          payloadBufferLen: 0,
+        ).elements.first;
+
+        if (decoded case final RectElement rect) {
+          expect(rect.x, 0);
+          expect(rect.y, 0);
+          expect(rect.width, 0);
+          expect(rect.height, 0);
+          expect(rect.rotation, 0);
+          expect(rect.fillColor.argb, 0);
+        } else {
+          fail('Expected RectElement');
+        }
+      } finally {
+        handle.free();
+      }
+    });
+
+    test('round-trip with ffi_one_element catches offset bugs', () {
+      final handle = FfiMarshal.encodeElements(
+        [const RectElement(height: 0, width: 0, x: 0, y: 0)], // Dart 3.8 formatting.
+        malloc,
+      );
+      try {
+        ffi_one_element(handle.elementsPtr);
+        final decodeResult = FfiMarshal.decodeElements(
+          handle.elementsPtr,
+          1,
+          handle.textBufferPtr,
+          payloadBufferLen: 0,
+        );
+
+        expect(decodeResult.elements, isEmpty);
+        expect(decodeResult.unknownTags, [0xAA], reason: '0xAA is an invalid tag');
+      } finally {
+        handle.free();
       }
     });
 
@@ -185,16 +240,15 @@ void main() {
       try {
         // Force an out-of-bounds offset on the first element's text payload.
         bundle.elementsPtr.ref.payload.text.textOffset = 999_999;
-        final decoded = FfiMarshal.decodeElements(
-          bundle.elementsPtr,
-          1,
-          bundle.textBufferPtr,
-          payloadBufferLen: bundle.arenaPtr.ref.textLen,
-        );
         expect(
-          decoded,
-          isEmpty,
-          reason: 'out-of-bounds text slice must be skipped, not throw RangeError',
+          () => FfiMarshal.decodeElements(
+            bundle.elementsPtr,
+            1,
+            bundle.textBufferPtr,
+            payloadBufferLen: bundle.arena.ptr.ref.textLen,
+          ),
+          throwsStateError,
+          reason: 'out-of-bounds text slice must throw StateError',
         );
       } finally {
         bundle.free();
