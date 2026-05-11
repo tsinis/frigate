@@ -11,10 +11,12 @@ environment:
 dependencies:
   ffi: ^2.2.0
   hooks: ^1.0.3
+  meta: ^1.17.0 # Constrained by latest stable Flutter SDK.
   native_toolchain_rust: ^1.0.4
 
 dev_dependencies:
   benchmark_harness: ^2.4.0
+  crypto: ^3.0.7
   dart_code_metrics_presets: any # Constrained in the workspace pubspec.yaml
   lints: ^6.1.0
   test: any # Constrained in the workspace pubspec.yaml
