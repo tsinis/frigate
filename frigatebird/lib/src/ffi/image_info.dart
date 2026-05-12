@@ -18,8 +18,8 @@ final class ImageInformation {
   const ImageInformation({
     required this.width,
     required this.height,
-    this.formatWire = 255,
-    this.orientationWire = 1,
+    this.formatWire = _defaultFormatWire,
+    this.orientationWire = _defaultOrientationWire,
   });
 
   /// Convenience constructor that accepts enums.
@@ -44,8 +44,7 @@ final class ImageInformation {
   });
 
   /// Synchronous version. Public for use inside isolate workers and tests.
-  /// Do NOT call directly from the UI isolate — use [probe].
-  // ignore: avoid-non-empty-constructor-bodies, this factory constructor...
+  // ignore: avoid-non-empty-constructor-bodies, description: FFI setup requires complex init.
   factory ImageInformation.probeSync(String path) {
     FfiAbi.assertAll();
 
@@ -74,9 +73,9 @@ final class ImageInformation {
         width: i.width,
       );
     } finally {
-      arena?.free();
-      if (infoPtr != nullptr) calloc.free(infoPtr);
       calloc.free(pathPtr);
+      if (infoPtr != nullptr) calloc.free(infoPtr);
+      arena?.free();
     }
   }
 
@@ -92,6 +91,9 @@ final class ImageInformation {
   /// Raw EXIF orientation tag 1..=8 (1 = no rotation). Diagnostic — Rust has
   /// already swapped width/height for tags 5..=8 before returning.
   final int orientationWire;
+
+  static const _defaultFormatWire = 255; // ImageFormat.unknown.wire.
+  static const _defaultOrientationWire = 1; // ExifOrientation.normal.wire.
 
   /// Oriented image format as an enum.
   ImageFormat get format => ImageFormat.fromWire(formatWire);

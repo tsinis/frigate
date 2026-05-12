@@ -4,6 +4,7 @@ import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 
 import 'bindings.dart' as ffi;
+import 'ffi_allocator_utils.dart';
 import 'ffi_arena.dart';
 import 'ffi_error.dart';
 import 'ffi_result_unit.dart';
@@ -28,9 +29,14 @@ final class FfiArenaHandle implements Finalizable {
   /// Text and image buffers stay `nullptr`/0 — callers that need them
   /// should populate the fields before the FFI call and free them in [free]
   /// (or extend this class).
+  ///
+  /// If a custom [allocator] is provided, the caller MUST either provide a
+  /// matching [finalizer] or call [free] manually to prevent leaks.
+  /// Standard [malloc] and [calloc] are handled automatically.
   factory FfiArenaHandle.allocate({
     int errorCapacity = defaultErrorCapacity,
     Allocator allocator = calloc,
+    NativeFinalizer? finalizer,
   }) {
     assert(errorCapacity > 0, 'errorCapacity must be positive');
 
@@ -38,20 +44,24 @@ final class FfiArenaHandle implements Finalizable {
     _initializeArena(arenaPtr, errorCapacity, allocator);
 
     final handle = FfiArenaHandle._(arenaPtr, allocator);
-    if (allocator == calloc) _finalizer.attach(handle, arenaPtr.cast<Void>(), detach: handle);
+
+    if (finalizer != null) {
+      finalizer.attach(handle, arenaPtr.cast<Void>(), detach: handle);
+    } else if (isMallocCompatible(allocator)) {
+      _finalizer.attach(handle, arenaPtr.cast<Void>(), detach: handle);
+    }
 
     return handle;
   }
 
   static void _initializeArena(Pointer<FfiArena> arenaPtr, int errorCapacity, Allocator allocator) {
-    // Zeroed by calloc, or manually below if malloc.
-    if (allocator != calloc) {
-      final bytes = arenaPtr.cast<Uint8>().asTypedList(sizeOf<FfiArena>());
-      bytes.fillRange(0, bytes.length, 0);
-    }
+    // Always zero the newly allocated memory for consistent behavior across allocators.
+    // asTypedList produces a zero-copy unowned view of the native memory.
+    final bytes = arenaPtr.cast<Uint8>().asTypedList(sizeOf<FfiArena>());
+    bytes.fillRange(0, bytes.length, 0);
 
     final errorBuf = allocator<Uint8>(errorCapacity);
-    if (allocator != calloc) errorBuf.asTypedList(errorCapacity).fillRange(0, errorCapacity, 0);
+    errorBuf.asTypedList(errorCapacity).fillRange(0, errorCapacity, 0);
 
     arenaPtr.ref
       ..errorBuf = errorBuf
@@ -107,7 +117,7 @@ final class FfiArenaHandle implements Finalizable {
     if (_isFreed) return;
     _isFreed = true;
 
-    if (_allocator == calloc) {
+    if (isMallocCompatible(_allocator)) {
       _finalizer.detach(this);
       ffi.ffi_arena_drop(ptr);
     } else {

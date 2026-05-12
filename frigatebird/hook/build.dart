@@ -1,5 +1,5 @@
-// ignore_for_file: prefer-static-class, it's a convention for build hooks.
-
+// ignore_for_file: avoid_print, prefer-static-class, it's a convention for build hooks.
+import 'dart:io';
 import 'package:hooks/hooks.dart';
 import 'package:native_toolchain_rust/native_toolchain_rust.dart';
 
@@ -7,11 +7,19 @@ Future<void> main(List<String> args) => build(args, _buildRust);
 
 Future<void> _buildRust(BuildInput input, BuildOutputBuilder output) async {
   try {
-    await const RustBuilder(
+    // The `hooks` package runs in a semi-hermetic environment and strips custom environment
+    // variables. Variables starting with `NIX_` are allowed through (tested on macOS).
+    // `CCACHE_` is documented as allowed but appears to be stripped in this environment.
+    final isDebugFfi =
+        Platform.environment['FRIGATE_DEBUG_FFI'] == 'true' ||
+        Platform.environment['NIX_FRIGATE_DEBUG_FFI'] == 'true';
+
+    if (isDebugFfi) print('Building Rust crate in debug mode with test features!');
+    await RustBuilder(
       assetName: 'src/ffi/bindings.dart',
+      buildMode: isDebugFfi ? .debug : .release,
       // `ffi-echo` and `ffi-test-helpers` export test-only symbols.
-      features: ['ffi-echo', 'ffi-test-helpers'],
-      // TODO(tsinis): run proper build mod.
+      features: isDebugFfi ? const ['ffi-echo', 'ffi-test-helpers'] : const [],
     ).run(input: input, output: output);
   } on Object catch (error, stackTrace) {
     final message = error.toString();

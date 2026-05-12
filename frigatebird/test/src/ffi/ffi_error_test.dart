@@ -45,14 +45,28 @@ void main() {
       }
     });
 
-    test('Unknown error code (version skew) maps to unknown', () {
+    test('Decoder maps unknown numeric code to FfiErrorCode.unknown', () {
       final arena = FfiArenaHandle.allocate();
       try {
-        final result = arena.readResult(99);
-        if (result case final ErrUnit err) {
-          expect(err.code, FfiErrorCode.unknown);
-        } else {
-          fail('Expected ErrUnit');
+        const msg = 'Some unknown error';
+        final msgPtr = msg.toNativeUtf8();
+        try {
+          final returnedCode = ffi_force_error(
+            99, // Unknown code.
+            msgPtr.cast<Uint8>(),
+            utf8.encode(msg).length,
+            arena.ptr,
+          );
+
+          final result = arena.readResult(returnedCode);
+          if (result case final ErrUnit err) {
+            expect(err.code, FfiErrorCode.unknown);
+            expect(err.message, msg);
+          } else {
+            fail('Expected ErrUnit');
+          }
+        } finally {
+          calloc.free(msgPtr);
         }
       } finally {
         arena.free();

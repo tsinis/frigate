@@ -112,24 +112,14 @@ fn call_draw(
     quality: u8,
 ) -> u8 {
     #[expect(unsafe_code, reason = "FFI call to draw_elements requires raw pointer")]
-    #[allow(unused_assignments)]
     unsafe {
         let img_cs = image_path.map(|p| std::ffi::CString::new(p.to_string()).unwrap());
         let out_cs = output_path.map(|p| std::ffi::CString::new(p.to_string()).unwrap());
         let font_cs = font_path.map(|p| std::ffi::CString::new(p.to_string()).unwrap());
 
-        let img_p = img_cs
-            .as_ref()
-            .map(|cs| cs.as_ptr())
-            .unwrap_or(std::ptr::null());
-        let out_p = out_cs
-            .as_ref()
-            .map(|cs| cs.as_ptr())
-            .unwrap_or(std::ptr::null());
-        let font_p = font_cs
-            .as_ref()
-            .map(|cs| cs.as_ptr())
-            .unwrap_or(std::ptr::null());
+        let img_p = img_cs.as_ref().map_or(std::ptr::null(), |cs| cs.as_ptr());
+        let out_p = out_cs.as_ref().map_or(std::ptr::null(), |cs| cs.as_ptr());
+        let font_p = font_cs.as_ref().map_or(std::ptr::null(), |cs| cs.as_ptr());
 
         frigate::draw_elements(
             img_p,

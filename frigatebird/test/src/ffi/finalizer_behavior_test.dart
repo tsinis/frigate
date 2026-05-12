@@ -22,6 +22,7 @@ void main() {
 
       // Force GC. The wrapper is unreachable, but `view` is still retained.
       await _forceGC();
+      expect(result.view.length, 100);
 
       // Wait for any asynchronous cleanup.
       await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -99,9 +100,10 @@ void _createAndDropArena(_TrackingAllocator allocator, Finalizer<int> finalizer)
 }
 
 Future<void> _forceGC() async {
-  // Allocate memory to trigger GC.
+  // Allocate memory to attempt to trigger GC.
+  // This is a best-effort heuristic. Callers should perform bounded retries.
   for (int i = 0; i < 5; i += 1) {
-    // Give Isolate time to process GC requests.
+    // Yield to allow GC events to process (zero-duration yield).
     await Future<void>.delayed(.zero);
     final _ = List.generate(100_000, (index) => Object());
   }
@@ -135,6 +137,9 @@ class _TrackingAllocator implements Allocator {
 
   /// Called manually by test Finalizers to simulate the NativeFinalizer running.
   void recordFinalizerFree(int address) {
+    if (!_allocations.containsKey(address)) {
+      throw StateError('Finalizer freed untracked address $address');
+    }
     final _ = _allocations.remove(address);
   }
 }

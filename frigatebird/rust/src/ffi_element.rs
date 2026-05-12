@@ -280,6 +280,8 @@ const _: () = assert!(std::mem::size_of::<RectanglePayload>() == 48);
 const _: () = assert!(std::mem::size_of::<OvalPayload>() == 48);
 const _: () = assert!(std::mem::size_of::<TextPayload>() == 48);
 const _: () = assert!(std::mem::size_of::<FfiPayload>() == 48);
+const _: () =
+    assert!(std::mem::align_of::<FfiPayload>() == std::mem::align_of::<RectanglePayload>());
 const _: () = assert!(std::mem::size_of::<FfiElement>() == 56); // Tag(1) + Pad(7) + Payload(48)
 const _: () = assert!(std::mem::align_of::<FfiElement>() == 8);
 
@@ -293,6 +295,10 @@ mod tests {
         assert_eq!(std::mem::size_of::<OvalPayload>(), 48);
         assert_eq!(std::mem::size_of::<TextPayload>(), 48);
         assert_eq!(std::mem::size_of::<FfiPayload>(), 48);
+        assert_eq!(
+            std::mem::align_of::<FfiPayload>(),
+            std::mem::align_of::<RectanglePayload>()
+        );
         assert_eq!(std::mem::size_of::<FfiElement>(), 56);
         assert_eq!(std::mem::align_of::<FfiElement>(), 8);
     }

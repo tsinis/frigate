@@ -97,13 +97,20 @@ pub unsafe extern "C" fn ffi_arena_drop(arena: *mut FfiArena) {
         if !a.error_buf.is_null() {
             libc::free(a.error_buf.cast());
         }
-        // text_buf and image_buf are owned by Dart handles (FfiElementsHandle etc.)
-        // and must be freed there, not here.
+        // TODO: text_buf and image_buf are owned by Dart handles (FfiElementsHandle etc.)
+        // and must be freed there, not here. Dart's FfiArenaHandle.free() (calloc branch) detaches and calls
+        // ffi_arena_drop so the NativeFinalizer will not run. Explicitly require that any code writing non-null
+        // pointers into FfiArena.text_buf or FfiArena.image_buf must guarantee the corresponding
+        // FfiElementsHandle outlives the arena (or update this drop to take ownership).
+        // Introducing Rust-side allocations here without changing this contract will leak or double-free.
         libc::free(arena.cast());
     }
 }
 
 /// Drop hook for `NativeFinalizer` on `ByteBuffer`s.
+///
+/// The `ByteBuffer` struct itself is allocated on the Dart side (`calloc<ByteBuffer>()`),
+/// while its data field is Rust-allocated (`Box::into_raw()`). This function frees both correctly.
 ///
 /// # Safety
 ///
@@ -159,8 +166,8 @@ pub unsafe extern "C" fn ffi_force_error(
             6 => FfiErrorCode::Font,
             7 => FfiErrorCode::Render,
             8 => FfiErrorCode::Utf8,
-            9 => FfiErrorCode::Unknown,
-            _ => FfiErrorCode::Success,
+            0 => FfiErrorCode::Success,
+            _ => FfiErrorCode::Unknown,
         };
 
         write_error_to_arena(arena_opt, ffi_code, msg_str).code
@@ -187,7 +194,7 @@ pub unsafe extern "C" fn ffi_zero_element(out: *mut FfiElement) {
 #[cfg(feature = "ffi-test-helpers")]
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ffi_one_element(out: *mut FfiElement) {
+pub unsafe extern "C" fn ffi_fill_element_0xAA(out: *mut FfiElement) {
     if !out.is_null() {
         unsafe { std::ptr::write_bytes(out, 0xAA, 1) };
     }
@@ -352,15 +359,25 @@ pub unsafe extern "C" fn merge(
                     })?
             };
 
-            let fg_bytes = if !foreground_png_ptr.is_null() && foreground_png_len > 0 {
+            let fg_bytes = if foreground_png_ptr.is_null() {
+                return Err((
+                    FfiErrorCode::InvalidArg,
+                    "Missing foreground pointer".to_string(),
+                ));
+            } else if foreground_png_len == 0 {
+                return Err((
+                    FfiErrorCode::InvalidArg,
+                    "Foreground length is zero".to_string(),
+                ));
+            } else if foreground_png_len > isize::MAX as usize {
+                return Err((
+                    FfiErrorCode::InvalidArg,
+                    "Foreground length exceeds isize::MAX".to_string(),
+                ));
+            } else {
                 // SAFETY: Pointer and length are checked for non-null/non-zero and provided by
                 // the caller as a valid slice for the duration of the call.
                 unsafe { slice::from_raw_parts(foreground_png_ptr, foreground_png_len) }
-            } else {
-                return Err((
-                    FfiErrorCode::InvalidArg,
-                    "Missing foreground bytes".to_string(),
-                ));
             };
 
             let mut bg_img = io::read_image(Path::new(bg_p)).map_err(|_| {

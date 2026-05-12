@@ -32,7 +32,7 @@
     "command": "bash",
     "args": [
       "-lc",
-      "set -euo pipefail; cd $ZED_WORKTREE_ROOT/frigatebird; dart format --set-exit-if-changed .; dart analyze; dart test; cd $ZED_WORKTREE_ROOT/frigatedraw; dart format --set-exit-if-changed .; flutter analyze; flutter test; dcm analyze ."
+      "set -euo pipefail; cd $ZED_WORKTREE_ROOT/frigatebird; dart format --set-exit-if-changed .; dart analyze; NIX_FRIGATE_DEBUG_FFI=true dart test; cd $ZED_WORKTREE_ROOT/frigatedraw; dart format --set-exit-if-changed .; flutter analyze; flutter test; dcm analyze ."
     ],
     "cwd": "$ZED_WORKTREE_ROOT/",
     "use_new_terminal": true,
@@ -47,7 +47,7 @@
     "command": "bash",
     "args": [
       "-lc",
-      "set -euo pipefail; echo '=== Rust ===' && cd $ZED_WORKTREE_ROOT/frigatebird/rust && cargo fetch && cargo make check-all && echo '✓ Rust checks passed' && echo '=== Dart/Flutter ===' && cd $ZED_WORKTREE_ROOT/frigatebird && dart format --set-exit-if-changed . && dart analyze && dart test && cd $ZED_WORKTREE_ROOT/frigatedraw && dart format --set-exit-if-changed . && flutter analyze && flutter test && dcm analyze . && echo '✓ Dart/Flutter checks passed'"
+      "set -euo pipefail; echo '=== Rust ===' && cd $ZED_WORKTREE_ROOT/frigatebird/rust && cargo fetch && cargo make check-all && echo '✓ Rust checks passed' && echo '=== Dart/Flutter ===' && cd $ZED_WORKTREE_ROOT/frigatebird && dart format --set-exit-if-changed . && dart analyze && NIX_FRIGATE_DEBUG_FFI=true dart test && cd $ZED_WORKTREE_ROOT/frigatedraw && dart format --set-exit-if-changed . && flutter analyze && flutter test && dcm analyze . && echo '✓ Dart/Flutter checks passed'"
     ],
     "cwd": "$ZED_WORKTREE_ROOT/",
     "use_new_terminal": true,
@@ -70,9 +70,10 @@
   },
   {
     "label": "Dart: Test",
-    "command": "dart",
+    "command": "bash",
     "args": [
-      "test"
+      "-c",
+      "NIX_FRIGATE_DEBUG_FFI=true dart test"
     ],
     "cwd": "$ZED_WORKTREE_ROOT/frigatebird",
     "tags": [

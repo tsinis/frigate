@@ -8,6 +8,8 @@ library;
 
 import 'dart:ffi';
 
+import 'package:meta/meta.dart' show visibleForTesting;
+
 import 'ffi_arena.dart';
 import 'ffi_element.dart';
 
@@ -29,4 +31,5 @@ external void ffi_zero_element(Pointer<FfiElement> out);
 
 /// Test helper to fill an element with 0xAA pattern.
 @Native<Void Function(Pointer<FfiElement>)>(isLeaf: true)
-external void ffi_one_element(Pointer<FfiElement> out);
+@visibleForTesting
+external void ffi_fill_element_0xAA(Pointer<FfiElement> out);

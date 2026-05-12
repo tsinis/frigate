@@ -10,6 +10,7 @@ import 'package:ffi/ffi.dart';
 import '../model/draw_element.dart';
 import '../model/ffi_color.dart';
 import 'ffi_abi.dart';
+import 'ffi_allocator_utils.dart';
 import 'ffi_arena_handle.dart';
 import 'ffi_element.dart';
 import 'ffi_element_type.dart';
@@ -33,7 +34,7 @@ final class FfiElementsHandle implements Finalizable {
   final FfiArenaHandle arena;
   final Pointer<Uint8> textBufferPtr;
 
-  static final _finalizer = NativeFinalizer(malloc.nativeFree.cast<NativeFinalizerFunction>());
+  static final _finalizer = NativeFinalizer(malloc.nativeFree);
 
   bool _freed = false;
 
@@ -41,8 +42,7 @@ final class FfiElementsHandle implements Finalizable {
   void free() {
     if (_freed) return;
     _freed = true;
-    _finalizer.detach(this);
-
+    if (isMallocCompatible(allocator)) _finalizer.detach(this);
     if (elementsPtr != nullptr) allocator.free(elementsPtr);
     if (textBufferPtr != nullptr) allocator.free(textBufferPtr);
     arena.free();
@@ -54,6 +54,8 @@ sealed class FfiMarshal {
   /// Encodes a list of [DrawElement]s into native memory and builds a ready-to-use [FfiElementsHandle].
   ///
   /// Caller MUST call `FfiElementsHandle.free` on the returned object to prevent memory leaks.
+  /// If a custom [allocator] is provided, it MUST be malloc-compatible if automatic
+  /// finalization (fallback cleanup) is expected.
   static FfiElementsHandle encodeElements(
     List<DrawElement> drawElements,
     Allocator allocator, {
@@ -140,7 +142,7 @@ sealed class FfiMarshal {
         }
       }
 
-      final arena = FfiArenaHandle.allocate(errorCapacity: errorCap);
+      final arena = FfiArenaHandle.allocate(allocator: allocator, errorCapacity: errorCap);
       arena.ptr.ref
         ..textBuf = textBufferPtr
         ..textLen = payloadTotal;
@@ -153,11 +155,13 @@ sealed class FfiMarshal {
         textBufferPtr: textBufferPtr,
       );
 
-      if (elementsPtr != nullptr) {
-        FfiElementsHandle._finalizer.attach(handle, elementsPtr.cast<Void>(), detach: handle);
-      }
-      if (textBufferPtr != nullptr) {
-        FfiElementsHandle._finalizer.attach(handle, textBufferPtr.cast<Void>(), detach: handle);
+      if (isMallocCompatible(allocator)) {
+        if (elementsPtr != nullptr) {
+          FfiElementsHandle._finalizer.attach(handle, elementsPtr.cast<Void>(), detach: handle);
+        }
+        if (textBufferPtr != nullptr) {
+          FfiElementsHandle._finalizer.attach(handle, textBufferPtr.cast<Void>(), detach: handle);
+        }
       }
 
       return handle;
@@ -239,6 +243,8 @@ sealed class FfiMarshal {
           final end = start + txt.textLen;
           // Guard against a corrupt or malicious text-slice reference.
           // `start` and `end` are u32-derived so always ≥ 0; only the upper bound matters.
+          // Note: `start` and `txt.textLen` originate from u32 fields in Rust, and Dart uses
+          // 64-bit ints, so `start + txt.textLen` cannot overflow.
           if (end < start || end > textBytes.length) {
             throw StateError('Corrupt text slice: offset=$start, len=${txt.textLen}');
           }

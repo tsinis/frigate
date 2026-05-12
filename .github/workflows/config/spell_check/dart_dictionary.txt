@@ -162,6 +162,10 @@ fifa
 frigatebird
 ltwh
 malloc
+calloc
+Finalizer
+NativeFinalizer
+argb
 rects
 frigatedraw
 fileno

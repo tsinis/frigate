@@ -40,7 +40,8 @@ void main() {
         ),
       );
 
-      trackingAllocator.assertNoLeaks();
+      expect(trackingAllocator.outstandingCount, 0, reason: 'elements must be freed on error');
+      expect(trackingAllocator.totalAllocated, 1, reason: 'only the first alloc succeeded');
     });
   });
 }
@@ -87,7 +88,7 @@ class _TrackingAllocator implements Allocator {
   @override
   void free(Pointer<NativeType> pointer) {
     if (pointer == nullptr) {
-      return;
+      throw StateError('free called with nullptr');
     }
 
     if (!_allocations.containsKey(pointer.address)) {

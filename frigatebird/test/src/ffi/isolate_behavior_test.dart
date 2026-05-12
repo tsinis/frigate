@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:frigatebird/src/ffi/image_info.dart';
 import 'package:test/test.dart';
 
@@ -6,6 +8,10 @@ void main() {
     const imagePath = 'test/assets/paint.jpg';
 
     test('Concurrent ImageInformation.probe across 10 isolates', () async {
+      if (!File(imagePath).existsSync()) {
+        fail('fixture missing: $imagePath');
+      }
+
       final futures = <Future<ImageInformation>>[];
       for (int i = 0; i < 10; i += 1) {
         futures.add(ImageInformation.probe(imagePath));

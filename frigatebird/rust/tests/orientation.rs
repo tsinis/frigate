@@ -1,9 +1,10 @@
+#![expect(unsafe_code, reason = "Integration tests exercise FFI boundary")]
+
 use frigate::{FfiErrorCode, ImageInformation, io};
 use std::ffi::CString;
 use std::path::Path;
 
 #[test]
-#[allow(unsafe_code)]
 fn test_get_image_info_orientation() {
     let fixture_dir = Path::new("tests/fixtures/orientation");
     if !fixture_dir.exists() {

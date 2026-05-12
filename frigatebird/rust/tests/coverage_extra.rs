@@ -5,13 +5,7 @@ use std::ffi::CString;
 
 #[test]
 fn test_get_image_info_errors() {
-    let mut info = ImageInformation {
-        width: 0,
-        height: 0,
-        format: 0,
-        orientation: 0,
-        _pad: [0; 2],
-    };
+    let mut info = ImageInformation::default();
 
     // 1. Missing path
     let status = unsafe { get_image_info(std::ptr::null(), std::ptr::null_mut(), &raw mut info) };
@@ -37,19 +31,14 @@ fn test_get_image_info_errors() {
 
 #[test]
 fn test_get_image_info_clears_out_on_error() {
-    let mut info = ImageInformation {
-        width: 123,
-        height: 456,
-        format: 0,
-        orientation: 6,
-        _pad: [0; 2],
-    };
+    let mut info = ImageInformation::default();
     let bad_path = CString::new("non_existent.jpg").unwrap();
     let _ = unsafe { get_image_info(bad_path.as_ptr(), std::ptr::null_mut(), &raw mut info) };
-    assert_eq!(info.width, 0);
-    assert_eq!(info.height, 0);
-    assert_eq!(info.format, 255);
-    assert_eq!(info.orientation, 1);
+    let def = ImageInformation::default();
+    assert_eq!(info.width, def.width);
+    assert_eq!(info.height, def.height);
+    assert_eq!(info.format, def.format);
+    assert_eq!(info.orientation, def.orientation);
 }
 
 #[test]
@@ -187,6 +176,39 @@ fn test_merge_errors() {
         frigate::merge(
             path.as_ptr(),
             std::ptr::null(),
+            0,
+            0,
+            0,
+            0,
+            90,
+            std::ptr::null_mut(),
+            &raw mut out,
+        )
+    };
+    assert_eq!(status, FfiErrorCode::InvalidArg as u8);
+
+    // 3.5. Null pointer but fg_len > 0
+    let status = unsafe {
+        frigate::merge(
+            path.as_ptr(),
+            std::ptr::null(),
+            1,
+            0,
+            0,
+            0,
+            90,
+            std::ptr::null_mut(),
+            &raw mut out,
+        )
+    };
+    assert_eq!(status, FfiErrorCode::InvalidArg as u8);
+
+    // 3.6. Non-null pointer but fg_len == 0
+    let fg_dummy = [0u8; 1];
+    let status = unsafe {
+        frigate::merge(
+            path.as_ptr(),
+            fg_dummy.as_ptr(),
             0,
             0,
             0,

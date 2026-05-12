@@ -1,3 +1,4 @@
+// ignore_for_file: prefer-trailing-comma
 import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
@@ -152,11 +153,9 @@ void main() {
 
     test('manual free is idempotent (second call is a no-op, not a double-free)', () {
       final allocator = _FailingAllocator(failAfter: 10);
-      final bundle = FfiMarshal.encodeElements(
-        const [TextElement(text: 'hi', x: 0, y: 0)],
-        // Dart 3.8 formatting.
-        allocator,
-      )..free();
+      final bundle = FfiMarshal.encodeElements(const [
+        TextElement(text: 'hi', x: 0, y: 0),
+      ], allocator)..free();
       expect(bundle.free, returnsNormally, reason: 'double-free must be safe');
     });
   });
@@ -184,18 +183,19 @@ void main() {
     });
 
     test('round-trip with ffi_zero_element catches offset bugs', () {
-      final handle = FfiMarshal.encodeElements(
-        [const RectElement(height: 0, width: 0, x: 0, y: 0)], // Dart 3.8 formatting.
-        malloc,
-      );
+      final handle = FfiMarshal.encodeElements([
+        const RectElement(height: 0, width: 0, x: 0, y: 0),
+      ], malloc);
       try {
         ffi_zero_element(handle.elementsPtr);
-        final decoded = FfiMarshal.decodeElements(
+        final decodeResult = FfiMarshal.decodeElements(
           handle.elementsPtr,
           1,
           handle.textBufferPtr,
           payloadBufferLen: 0,
-        ).elements.first;
+        );
+        expect(decodeResult.elements.length, equals(1));
+        final decoded = decodeResult.elements.first;
 
         if (decoded case final RectElement rect) {
           expect(rect.x, 0);
@@ -212,13 +212,12 @@ void main() {
       }
     });
 
-    test('round-trip with ffi_one_element catches offset bugs', () {
-      final handle = FfiMarshal.encodeElements(
-        [const RectElement(height: 0, width: 0, x: 0, y: 0)], // Dart 3.8 formatting.
-        malloc,
-      );
+    test('round-trip with ffi_fill_element_0xAA catches offset bugs', () {
+      final handle = FfiMarshal.encodeElements([
+        const RectElement(height: 0, width: 0, x: 0, y: 0),
+      ], malloc);
       try {
-        ffi_one_element(handle.elementsPtr);
+        ffi_fill_element_0xAA(handle.elementsPtr);
         final decodeResult = FfiMarshal.decodeElements(
           handle.elementsPtr,
           1,
@@ -233,7 +232,7 @@ void main() {
       }
     });
 
-    test('out-of-bounds text offset is skipped without throwing', () {
+    test('out-of-bounds text offset throws StateError', () {
       // Encode a text element, then corrupt textOffset so it points past the buffer end.
       const text = TextElement(text: 'hi', x: 0, y: 0);
       final bundle = FfiMarshal.encodeElements([text], malloc);

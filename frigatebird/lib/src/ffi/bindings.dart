@@ -46,10 +46,10 @@ external int sizeof_image_info();
 
 // --- Drop Hooks ---.
 
-@Native<Void Function(Pointer<FfiArena>)>()
+@Native<Void Function(Pointer<FfiArena>)>(isLeaf: true)
 external void ffi_arena_drop(Pointer<FfiArena> arena);
 
-@Native<Void Function(Pointer<ByteBuffer>)>()
+@Native<Void Function(Pointer<ByteBuffer>)>(isLeaf: true)
 external void free_byte_buffer(Pointer<ByteBuffer> buf);
 
 /// Returns oriented dimensions and metadata for an image without decoding full pixel data.

@@ -172,5 +172,5 @@ final class _MergeArgs {
   final int outFormatWire;
 
   /// Output format as an enum.
-  ImageFormat get outFormat => outFormatWire == ImageFormat.png.wire ? .png : .jpg;
+  ImageFormat get outFormat => ImageFormat.fromWire(outFormatWire);
 }

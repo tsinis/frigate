@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 
+import 'ffi_allocator_utils.dart';
+
 /// Owns image bytes in native heap (malloc).
 ///
 /// WHY native heap instead of Dart Uint8List: Dart GC can relocate Uint8List at any time
@@ -15,8 +17,8 @@ import 'package:meta/meta.dart' show visibleForTesting;
 /// reconstruction).
 ///
 /// Life-cycle: create once at image load. Memory is freed automatically via NativeFinalizer
-/// when BOTH the wrapper and the [bytes] view are GC'ed. The wrapper holds a reference to the
-/// view, and the view is attached to the same finalizer.
+/// when the wrapper is GC'ed. The [bytes] view aliases this memory and MUST NOT be used
+/// after the wrapper is GC'ed or explicitly disposed.
 final class NativeImage implements Finalizable {
   NativeImage._(this._pointer, this._bytes, this.height, this.length, this.width, this._allocator);
 
@@ -42,8 +44,9 @@ final class NativeImage implements Finalizable {
     final view = ptr.asTypedList(src.length)..setAll(0, src);
 
     final image = NativeImage._(ptr, view, height, src.length, width, allocator);
-    if (allocator == malloc) {
-      _finalizer.attach(image, ptr.cast<Void>(), detach: image);
+    if (isMallocCompatible(allocator)) {
+      final voidPtr = ptr.cast<Void>();
+      _finalizer.attach(image, voidPtr, detach: image);
     }
 
     return image;
@@ -58,7 +61,7 @@ final class NativeImage implements Finalizable {
   /// Image height in pixels — source of truth for document-space coordinates.
   final int height;
 
-  static final _finalizer = NativeFinalizer(malloc.nativeFree.cast<NativeFinalizerFunction>());
+  static final _finalizer = NativeFinalizer(malloc.nativeFree);
 
   final Uint8List _bytes;
   final Pointer<Uint8> _pointer;
@@ -91,10 +94,7 @@ final class NativeImage implements Finalizable {
   void dispose() {
     if (_isDisposed) return;
     _isDisposed = true;
-
-    if (_allocator == malloc) {
-      _finalizer.detach(this);
-    }
+    if (isMallocCompatible(_allocator)) _finalizer.detach(this);
     _allocator.free(_pointer);
   }
 

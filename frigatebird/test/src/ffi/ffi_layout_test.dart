@@ -15,7 +15,7 @@ void main() {
         // Poison with non-zero.
         final ref = ptr.ref;
         final rect = ref.payload.rectangle;
-        ref.tag = 0xFF;
+        ref.tag = 0xBE;
         rect.x = 123.456;
 
         ffi_zero_element(ptr);
@@ -28,10 +28,10 @@ void main() {
       }
     });
 
-    test('ffi_one_element fills with 0xAA pattern', () {
+    test('ffi_fill_element_0xAA fills with 0xAA pattern', () {
       final ptr = calloc<FfiElement>();
       try {
-        ffi_one_element(ptr);
+        ffi_fill_element_0xAA(ptr);
 
         final ref = ptr.ref;
         final rect = ref.payload.rectangle;

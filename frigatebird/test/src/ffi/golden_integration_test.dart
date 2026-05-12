@@ -1,3 +1,4 @@
+// ignore_for_file: prefer-extracting-function-callbacks
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:frigatebird/frigatebird.dart';
@@ -18,7 +19,13 @@ void main() {
       'renders same DrawElement list twice via RenderImage; assert byte-identical output',
       () async {
         final pathAlpha = _tempPath('frigate_golden_alpha.png');
+        addTearDown(() {
+          if (File(pathAlpha).existsSync()) File(pathAlpha).deleteSync();
+        });
         final pathBeta = _tempPath('frigate_golden_beta.png');
+        addTearDown(() {
+          if (File(pathBeta).existsSync()) File(pathBeta).deleteSync();
+        });
 
         final elements = [
           const RectElement(fillColor: FfiColor(0xFFFF0000), height: 100, width: 200, x: 10, y: 10),
@@ -50,9 +57,6 @@ void main() {
           hashBeta,
           reason: 'Consecutive renders with same inputs must be byte-identical',
         );
-
-        File(pathAlpha).deleteSync();
-        File(pathBeta).deleteSync();
       },
     );
 
@@ -75,6 +79,9 @@ void main() {
         );
 
         final outPathFinal = _tempPath('frigate_exif_test_final.png');
+        addTearDown(() {
+          if (File(outPathFinal).existsSync()) File(outPathFinal).deleteSync();
+        });
 
         // Now run RenderImage against the rotated fixture.
         await RenderImage.run(
@@ -92,8 +99,6 @@ void main() {
           rotatedInfo.height,
           reason: 'Output should match the oriented height',
         );
-
-        File(outPathFinal).deleteSync();
       },
     );
   });
