@@ -3,9 +3,10 @@
 // and creates ~10-20 stack frames per registered type. With enough types the cumulative depth
 // exceeds the OS default (8 MB on macOS aarch64 / Linux x86-64) before any test code runs.
 //
-// `rustc-link-arg-tests` is Cargo's mechanism for passing linker flags *only* to test binaries,
-// so this has zero effect on the cdylib/staticlib consumed by Dart (which native_toolchain_rust
-// always builds in release mode anyway).
+// `rustc-link-arg-tests` is Cargo's mechanism for passing linker flags *only* to test binaries.
+// Note: We cannot apply these to the cdylib (library) as macOS/Linux linkers only support
+// stack size adjustment for main executables. For the library loaded by Dart, we rely on
+// opt-level = 1 in the dev profile to keep stack usage manageable.
 fn main() {
     if cfg!(target_os = "macos") {
         // macOS: -stack_size is the ld64 spelling (note: no comma after -Wl).

@@ -7,8 +7,10 @@ import 'package:ffi/ffi.dart';
 import '../constants/draw_constants.dart';
 import 'bindings.dart' as ffi;
 import 'byte_buffer.dart';
-import 'ffi_marshal.dart';
+import 'ffi_arena_handle.dart';
 import 'ffi_result_unit.dart';
+import 'image_info.dart';
+import 'native_image.dart';
 
 /// Zero-copy merge backend using `dart:ffi` + Rust.
 ///
@@ -19,7 +21,7 @@ final class ExportBackendNative {
   /// Merges [foregroundPng] onto the image at [backgroundPath] and returns the result as bytes.
   ///
   /// [offsetX] and [offsetY] are the top-left offset of the foreground on the background.
-  /// [outFormat]: 0 for PNG, 1 for JPEG.
+  /// [outFormat]: PNG or JPEG.
   Future<Uint8List> merge({
     required String backgroundPath,
     required Uint8List foregroundPng,
@@ -27,133 +29,135 @@ final class ExportBackendNative {
     int offsetX = 0,
     // ignore: avoid-similar-names, offsetX and offsetY are standard pairings
     int offsetY = 0,
-    int outFormat = 0,
-  }) {
+    ImageFormat outFormat = .png,
+  }) async {
     assert(
       imageQuality >= DrawConstants.minImageQuality &&
           imageQuality <= DrawConstants.maxImageQuality,
       'imageQuality must be in [${DrawConstants.minImageQuality}, '
       '${DrawConstants.maxImageQuality}], got $imageQuality',
     );
-    assert(
-      outFormat == 0 || outFormat == 1,
-      'outFormat must be 0 (PNG) or 1 (JPEG), got $outFormat',
-    );
     final clampedQuality = imageQuality.clamp(
       DrawConstants.minImageQuality,
       DrawConstants.maxImageQuality,
     );
 
-    return Isolate.run(
-      () => _doMerge(
-        _MergeArgs(
-          backgroundPath: backgroundPath,
-          foregroundPng: foregroundPng,
-          imageQuality: clampedQuality,
-          offsetX: offsetX,
-          offsetY: offsetY,
-          outFormat: outFormat,
+    // Wrap the foreground PNG in a NativeImage to get a stable address for Isolate.run.
+    final fgImage = NativeImage.fromBytes(foregroundPng, height: 0, width: 0);
+    // Capture address and length as primitives BEFORE Isolate.run.
+    // NativeImage/Pointer cannot cross isolate boundaries.
+    final fgAddress = fgImage.address;
+    final fgLength = fgImage.length;
+
+    try {
+      return await Isolate.run<Uint8List>(
+        () => _doMerge(
+          _MergeArgs(
+            backgroundPath: backgroundPath,
+            foregroundAddress: fgAddress,
+            foregroundLen: fgLength,
+            imageQuality: clampedQuality,
+            offsetX: offsetX,
+            offsetY: offsetY,
+            outFormatWire: outFormat.wire,
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      // The wrapper stays alive in the caller isolate until Isolate.run completes,
+      // ensuring the memory is not freed while the worker isolate uses it.
+      fgImage.dispose();
+    }
   }
 
   static Uint8List _doMerge(_MergeArgs args) {
     final _MergeArgs(
       :backgroundPath,
-      :foregroundPng,
+      :foregroundAddress,
+      :foregroundLen,
       :imageQuality,
       :offsetX,
       // ignore: avoid-similar-names, offsetX and offsetY are standard pairings
       :offsetY,
-      :outFormat,
+      :outFormatWire,
     ) = args;
 
     if (backgroundPath.isEmpty) {
       throw StateError('Rust merge failed: backgroundPath cannot be empty');
     }
 
-    if (foregroundPng.isEmpty) {
+    if (foregroundAddress == 0 || foregroundLen == 0) {
       throw StateError('Rust merge failed: Missing foreground bytes');
     }
 
     Pointer<Utf8> bgCStr = nullptr;
-    Pointer<Uint8> fgPtr = nullptr;
     Pointer<ByteBuffer> outPtr = nullptr;
     FfiArenaHandle? arenaHandle;
 
     try {
       bgCStr = backgroundPath.toNativeUtf8(allocator: calloc);
       assert(bgCStr != nullptr, 'Failed to convert backgroundPath to C string');
-      final fgLen = foregroundPng.length;
-      fgPtr = calloc<Uint8>(fgLen);
-      fgPtr.asTypedList(fgLen).setAll(0, foregroundPng);
+
       outPtr = calloc<ByteBuffer>();
       // We need an arena for potential error messages.
-      arenaHandle = FfiMarshal.encodeElements([], calloc);
-
-      final arenaRef = arenaHandle.arenaPtr.ref;
+      arenaHandle = FfiArenaHandle.allocate();
 
       final code = ffi.merge(
         bgCStr,
-        fgPtr,
-        fgLen,
+        Pointer<Uint8>.fromAddress(foregroundAddress),
+        foregroundLen,
         offsetX,
         offsetY,
-        outFormat,
+        outFormatWire,
         imageQuality,
-        arenaHandle.arenaPtr,
+        arenaHandle.ptr,
         outPtr,
       );
 
-      final result = FfiResultUnit.decode(code, arenaRef.errorBuf, arenaRef.errorCap);
+      final result = arenaHandle.readResult(code);
 
       if (result is ErrUnit) {
         throw StateError('Rust merge failed: ${result.message}');
       }
 
       final out = outPtr.ref;
-      final outData = out.data;
-      final outLen = out.length;
+      if (out.data == nullptr) throw StateError('Rust merge failed (null output buffer)');
 
-      if (outData == nullptr) {
-        throw StateError('Rust merge failed (null output buffer)');
-      }
-
-      final Uint8List output;
-      try {
-        output = Uint8List.fromList(outData.asTypedList(outLen));
-      } finally {
-        // Manually free the Rust-owned buffer via free_bytes (rather than NativeFinalizer) so
-        // we can guarantee the free happens before this isolate exits the try/finally frame.
-        ffi.free_bytes(outData, outLen);
-      }
-
-      return output;
+      return Uint8List.fromList(out.data.asTypedList(out.length));
     } finally {
       if (bgCStr != nullptr) calloc.free(bgCStr);
-      if (fgPtr != nullptr) calloc.free(fgPtr);
-      if (outPtr != nullptr) calloc.free(outPtr);
+      // Rust-owned buffer must be freed eagerly before isolate exits.
+      // `free_byte_buffer` frees both outPtr.data AND outPtr.
+      if (outPtr != nullptr) ffi.free_byte_buffer(outPtr);
       arenaHandle?.free();
     }
   }
 }
 
+// These types are kept in the same file because they are private to ExportBackendNative's internals.
+// ignore_for_file: prefer-single-declaration-per-file
+
 /// Arguments for `ExportBackendNative._doMerge`, sent to a background isolate.
+@pragma('vm:deeply-immutable')
 final class _MergeArgs {
   const _MergeArgs({
     required this.backgroundPath,
-    required this.foregroundPng,
+    required this.foregroundAddress,
+    required this.foregroundLen,
     required this.imageQuality,
     required this.offsetX,
     required this.offsetY,
-    required this.outFormat,
+    required this.outFormatWire,
   });
 
   final String backgroundPath;
-  final Uint8List foregroundPng;
+  final int foregroundAddress;
+  final int foregroundLen;
   final int imageQuality;
   final int offsetX;
   final int offsetY;
-  final int outFormat;
+  final int outFormatWire;
+
+  /// Output format as an enum.
+  ImageFormat get outFormat => ImageFormat.fromWire(outFormatWire);
 }

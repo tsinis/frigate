@@ -27,16 +27,30 @@ import 'ffi_arena.dart';
 import 'ffi_element.dart';
 import 'image_info_struct.dart';
 
-/// Returns the byte sizes of the core FFI structs as seen by Rust.
-///
-/// `isLeaf: true` — just returns static constants, no safepoints needed.
-@Native<Void Function(Pointer<Size>, Pointer<Size>, Pointer<Size>, Pointer<Size>)>(isLeaf: true)
-external void get_abi_sizes(
-  Pointer<Size> outElement,
-  Pointer<Size> outArena,
-  Pointer<Size> outError,
-  Pointer<Size> outImageInfo,
-);
+// --- Size Oracles ---.
+
+@Native<Size Function()>(isLeaf: true)
+external int sizeof_ffi_element();
+
+@Native<Size Function()>(isLeaf: true)
+external int sizeof_ffi_payload();
+
+@Native<Size Function()>(isLeaf: true)
+external int sizeof_ffi_arena();
+
+@Native<Size Function()>(isLeaf: true)
+external int sizeof_ffi_error();
+
+@Native<Size Function()>(isLeaf: true)
+external int sizeof_image_info();
+
+// --- Drop Hooks ---.
+
+@Native<Void Function(Pointer<FfiArena>)>(isLeaf: true)
+external void ffi_arena_drop(Pointer<FfiArena> arena);
+
+@Native<Void Function(Pointer<ByteBuffer>)>(isLeaf: true)
+external void free_byte_buffer(Pointer<ByteBuffer> buf);
 
 /// Returns oriented dimensions and metadata for an image without decoding full pixel data.
 ///
@@ -76,12 +90,6 @@ external int merge(
   Pointer<FfiArena> arena,
   Pointer<ByteBuffer> out,
 );
-
-/// Free a Rust-allocated byte buffer (returned by [merge]). Null-safe.
-///
-/// `isLeaf: true` — never calls back into Dart, so the Dart VM can skip the safepoint preamble.
-@Native<Void Function(Pointer<Uint8>, Size)>(isLeaf: true)
-external void free_bytes(Pointer<Uint8> ptr, int len);
 
 /// Unified render call: reads the image from [imagePath], composites all [FfiElement]s
 /// (rectangles, text, future shapes), writes the result to [outputPath].

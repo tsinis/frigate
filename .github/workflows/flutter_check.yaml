@@ -7,11 +7,19 @@ on:
       - ".github/workflows/flutter_check.yaml"
       - "frigatedraw/**/*.dart"
       - "frigatedraw/pubspec.yaml"
+      - "frigatebird/lib/**"
+      - "frigatebird/hook/**"
+      - "frigatebird/rust/**"
+      - "frigatebird/pubspec.yaml"
   pull_request:
     paths:
       - ".github/workflows/flutter_check.yaml"
       - "frigatedraw/**/*.dart"
       - "frigatedraw/pubspec.yaml"
+      - "frigatebird/lib/**"
+      - "frigatebird/hook/**"
+      - "frigatebird/rust/**"
+      - "frigatebird/pubspec.yaml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -63,7 +71,7 @@ jobs:
         run: sudo chown -R runner:runner $(pwd) && sudo chmod -R 777 $(pwd)
 
       - name: 🔬 Run Flutter tests with coverage
-        run: flutter test --coverage --no-pub
+        run: NIX_FRIGATE_DEBUG_FFI=true flutter test --coverage --no-pub
 
       - name: 💯 Upload to Codecov
         uses: codecov/codecov-action@v6.0.0

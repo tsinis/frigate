@@ -47,12 +47,9 @@ sealed class RenderImage {
     String? outputPath,
     int imageQuality = DrawConstants.defaultImageQuality,
   }) {
-    // Fails loudly if the Dart VM struct layout has drifted from Rust `#[repr(C)]`. Debug-only,
-    // but CI runs in debug and the mismatch would corrupt every subsequent read.
-    FfiAbi.assertElement();
-    FfiAbi.assertArena();
-    FfiAbi.assertError();
-    FfiAbi.assertPayload();
+    // Fails loudly if the Dart VM struct layout has drifted from Rust `#[repr(C)]`.
+    // Fatal error — mismatch would corrupt every subsequent read.
+    FfiAbi.assertAll();
     if (backgroundPath.isEmpty) {
       throw const RenderException(.invalidArg, 'backgroundPath cannot be empty');
     }
@@ -90,14 +87,12 @@ sealed class RenderImage {
     Pointer<Utf8> backgroundCStr = nullptr;
     Pointer<Utf8> outputCStr = nullptr;
     Pointer<Utf8> fontCStr = nullptr;
-    FfiArenaHandle? handle;
+    FfiElementsHandle? handle;
     try {
       backgroundCStr = backgroundPath.toNativeUtf8(allocator: calloc);
       outputCStr = outputPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
       fontCStr = fontPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
       handle = FfiMarshal.encodeElements(elements, calloc);
-
-      final arenaRef = handle.arenaPtr.ref;
 
       // Handle properties are not all unpacked at once because they are used sequentially, and
       // some are nullable. Destructuring them all upfront would be less readable.
@@ -108,13 +103,11 @@ sealed class RenderImage {
         handle.elementsPtr,
         handle.count,
         imageQuality,
-        handle.arenaPtr,
+        handle.arena.ptr,
       );
 
-      final domainResult = FfiResultUnit.decode(code, arenaRef.errorBuf, arenaRef.errorCap);
-      if (domainResult is ErrUnit) {
-        throw RenderException(domainResult.code, domainResult.message);
-      }
+      final domainResult = handle.arena.readResult(code);
+      if (domainResult is ErrUnit) throw RenderException(domainResult.code, domainResult.message);
     } finally {
       if (backgroundCStr != nullptr) calloc.free(backgroundCStr);
       if (outputCStr != nullptr) calloc.free(outputCStr);

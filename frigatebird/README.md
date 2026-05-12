@@ -52,6 +52,16 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios --too
 rm -rf frigatebird/rust/target
 ```
 
+## Testing
+
+To run tests in `frigatebird/`, you must enable FFI debug features and symbols. This is handled via the `NIX_FRIGATE_DEBUG_FFI` environment variable, which is passed through the hermetic build hook:
+
+```bash
+NIX_FRIGATE_DEBUG_FFI=true fvm dart test
+```
+
+The build hook detects this variable and compiles the Rust crate with `ffi-echo` and `ffi-test-helpers` enabled, providing the necessary native symbols.
+
 ## Strict FFI Tooling
 
 The Rust backend in `frigatebird/rust` follows a "Maximum Strictness" philosophy for FFI safety and performance:

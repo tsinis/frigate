@@ -207,6 +207,7 @@ dependencies = [
  "bytemuck",
  "image",
  "kamadak-exif",
+ "libc",
  "safer-ffi",
  "tiny-skia",
 ]

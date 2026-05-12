@@ -33,7 +33,7 @@ void main() {
         final path = '${fixtureDir.path}/exif_$tag.jpg';
         final info = ImageInformation.probeSync(path);
 
-        expect(info.orientation, equals(tag));
+        expect(info.orientation, equals(ExifOrientation.fromWire(tag)));
 
         if (tag <= 4) {
           expect(info.width, equals(128));
@@ -46,10 +46,37 @@ void main() {
     });
   });
 
+  group('ImageInformation enum fallbacks and toString', () {
+    test(
+      'ImageFormat.fromWire unknown fallback',
+      () => expect(ImageFormat.fromWire(999), equals(ImageFormat.unknown)),
+    );
+
+    test(
+      'ExifOrientation.fromWire unknown fallback',
+      () => expect(ExifOrientation.fromWire(999), equals(ExifOrientation.normal)),
+    );
+
+    test('toString formats correctly', () {
+      final info = ImageInformation.from(
+        format: .jpg,
+        height: 200,
+        orientation: .rotate90,
+        width: 100,
+      );
+      expect(
+        info.toString(),
+        equals(
+          'ImageInformation(width: 100, height: 200, format: ImageFormat.jpg, orientation: ExifOrientation.rotate90)',
+        ),
+      );
+    });
+  });
+
   group('ImageInfoException', () {
     test('toString contains code and message', () {
-      const ex = ImageInfoException(code: 42, message: 'some error');
-      expect(ex.toString(), contains('42'));
+      const ex = ImageInfoException(codeWire: 9, message: 'some error');
+      expect(ex.toString(), contains('unknown'));
       expect(ex.toString(), contains('some error'));
     });
   });

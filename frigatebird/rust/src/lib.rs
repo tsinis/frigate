@@ -14,7 +14,7 @@ pub mod text;
 
 pub use ffi::{FfiArena, FfiError, FfiErrorCode, write_error_to_arena, write_panic_to_arena};
 pub use ffi_element::{
-    FfiElement, OvalPayload, RectanglePayload, Shape, ShapeBuilder, TextPayload,
+    FfiElement, FfiPayload, OvalPayload, RectanglePayload, Shape, ShapeBuilder, TextPayload,
 };
 
 // Rust-side layout anchors: if these ever change, the Dart Struct declarations must be updated.
@@ -29,7 +29,7 @@ pub struct ByteBuffer {
 #[derive_ReprC]
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
-pub struct ImageInfo {
+pub struct ImageInformation {
     pub width: u32,      // oriented (post-EXIF)
     pub height: u32,     // oriented (post-EXIF)
     pub format: u8,      // 0 = PNG, 1 = JPEG, 255 = unknown
@@ -37,7 +37,7 @@ pub struct ImageInfo {
     pub _pad: [u8; 2],   // explicit C alignment padding
 }
 
-impl Default for ImageInfo {
+impl Default for ImageInformation {
     fn default() -> Self {
         Self {
             width: 0,
@@ -49,19 +49,156 @@ impl Default for ImageInfo {
     }
 }
 
-/// Returns the byte sizes of the core FFI structs as seen by Rust.
-/// Used by Dart to verify ABI compatibility at runtime.
-#[ffi_export]
-pub fn get_abi_sizes(
-    out_element: &mut usize,
-    out_arena: &mut usize,
-    out_error: &mut usize,
-    out_image_info: &mut usize,
-) {
-    *out_element = std::mem::size_of::<FfiElement>();
-    *out_arena = std::mem::size_of::<FfiArena>();
-    *out_error = std::mem::size_of::<FfiError>();
-    *out_image_info = std::mem::size_of::<ImageInfo>();
+// --- Size Oracles ---
+
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn sizeof_ffi_element() -> usize {
+    core::mem::size_of::<FfiElement>()
+}
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn sizeof_ffi_payload() -> usize {
+    core::mem::size_of::<FfiPayload>()
+}
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn sizeof_ffi_arena() -> usize {
+    core::mem::size_of::<FfiArena>()
+}
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn sizeof_ffi_error() -> usize {
+    core::mem::size_of::<FfiError>()
+}
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn sizeof_image_info() -> usize {
+    core::mem::size_of::<ImageInformation>()
+}
+
+// --- Drop Hooks ---
+
+/// Drop hook for `NativeFinalizer`.
+///
+/// # Safety
+///
+/// `arena` must be a valid pointer to an `FfiArena` allocated with the C allocator (e.g. `calloc`).
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ffi_arena_drop(arena: *mut FfiArena) {
+    if arena.is_null() {
+        return;
+    }
+    // SAFETY: Caller guarantees `arena` is valid.
+
+    unsafe {
+        let a = &mut *arena;
+        if !a.error_buf.is_null() {
+            libc::free(a.error_buf.cast());
+        }
+        // TODO: text_buf and image_buf are owned by Dart handles (FfiElementsHandle etc.)
+        // and must be freed there, not here. Dart's FfiArenaHandle.free() (calloc branch) detaches and calls
+        // ffi_arena_drop so the NativeFinalizer will not run. Explicitly require that any code writing non-null
+        // pointers into FfiArena.text_buf or FfiArena.image_buf must guarantee the corresponding
+        // FfiElementsHandle outlives the arena (or update this drop to take ownership).
+        // Introducing Rust-side allocations here without changing this contract will leak or double-free.
+        libc::free(arena.cast());
+    }
+}
+
+/// Drop hook for `NativeFinalizer` on `ByteBuffer`s.
+///
+/// The `ByteBuffer` struct itself is allocated on the Dart side (`calloc<ByteBuffer>()`),
+/// while its data field is Rust-allocated (`Box::into_raw()`). This function frees the
+/// Rust-owned `data` first, then the C-allocated struct correctly.
+///
+/// # Safety
+///
+/// `buf` must be a valid pointer to a `ByteBuffer` allocated by Rust (e.g. via `merge`).
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn free_byte_buffer(buf: *mut ByteBuffer) {
+    if buf.is_null() {
+        return;
+    }
+    // SAFETY: Caller guarantees `buf` is valid.
+    unsafe {
+        let b = &mut *buf;
+        if !b.data.is_null() && b.length > 0 {
+            // ByteBuffer.data was allocated via `Box::into_raw(Vec::into_boxed_slice())`.
+            let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(b.data, b.length));
+        }
+        // If the ByteBuffer struct itself was malloc'ed by Dart, we should free it too.
+        // The Dart caller attaches a NativeFinalizer using `outPtr.cast()`, so we are freeing the `ByteBuffer` struct pointer.
+        libc::free(buf.cast());
+    }
+}
+
+// --- Test Helpers ---
+
+/// Test helper to force an error.
+///
+/// # Safety
+/// `msg` must be a valid pointer to a UTF-8 string of length `len`. `arena` must be a valid pointer.
+#[cfg(feature = "ffi-test-helpers")]
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ffi_force_error(
+    code: u8,
+    msg: *const u8,
+    len: usize,
+    arena: *mut FfiArena,
+) -> u8 {
+    unsafe {
+        let arena_opt = arena.as_mut();
+        let msg_str = if msg.is_null() || len == 0 {
+            ""
+        } else {
+            std::str::from_utf8(std::slice::from_raw_parts(msg, len)).unwrap_or("Invalid UTF-8")
+        };
+
+        let ffi_code = match code {
+            1 => FfiErrorCode::Panic,
+            2 => FfiErrorCode::InvalidArg,
+            3 => FfiErrorCode::Io,
+            4 => FfiErrorCode::Decode,
+            5 => FfiErrorCode::Encode,
+            6 => FfiErrorCode::Font,
+            7 => FfiErrorCode::Render,
+            8 => FfiErrorCode::Utf8,
+            0 => FfiErrorCode::Success,
+            _ => FfiErrorCode::Unknown,
+        };
+
+        write_error_to_arena(arena_opt, ffi_code, msg_str).code
+    }
+}
+
+/// Test helper to zero an element.
+///
+/// # Safety
+/// `out` must be a valid pointer to an `FfiElement`.
+#[cfg(feature = "ffi-test-helpers")]
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ffi_zero_element(out: *mut FfiElement) {
+    if !out.is_null() {
+        unsafe { std::ptr::write_bytes(out, 0, 1) };
+    }
+}
+
+/// Test helper to fill an element with 0xAA.
+///
+/// # Safety
+/// `out` must be a valid pointer to an `FfiElement`.
+#[cfg(feature = "ffi-test-helpers")]
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ffi_fill_element_0xAA(out: *mut FfiElement) {
+    if !out.is_null() {
+        unsafe { std::ptr::write_bytes(out, 0xAA, 1) };
+    }
 }
 
 fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + Send>) -> u8 {
@@ -77,28 +214,43 @@ fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + S
 
 /// Returns oriented dimensions and metadata for an image without decoding full pixel data.
 /// Returns a `u8` status code. Result info is written to `*out`.
-#[ffi_export]
-pub fn get_image_info(
-    path: Option<char_p::Ref<'_>>,
-    arena: Option<&mut FfiArena>,
-    out: Option<&mut ImageInfo>,
+///
+/// # Safety
+///
+/// `path` must be a valid null-terminated C string. `arena` and `out` must be valid
+/// pointers for the duration of the call.
+// Safety: `#[unsafe(no_mangle)]` is used intentionally over `#[ffi_export]` for the entire
+// FFI surface. `safer_ffi` 0.2.0-rc1 cannot derive `ReprC` for `FfiArena` (contains raw
+// pointers) or `ByteBuffer` (returned by `merge`). Using `#[unsafe(no_mangle)]` uniformly
+// across all entry points (`get_image_info`, `merge`, `draw_elements`, test helpers) avoids
+// a split-convention API and keeps the Dart-side `@Native` bindings predictable.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn get_image_info(
+    path: *const std::ffi::c_char,
+    arena: *mut FfiArena,
+    out: *mut ImageInformation,
 ) -> u8 {
-    let mut arena_opt = arena;
+    let mut arena_opt = unsafe { arena.as_mut() };
 
-    if out.is_none() {
+    if out.is_null() {
         return write_error_to_arena(
             arena_opt.as_deref_mut(),
             FfiErrorCode::InvalidArg,
-            "Missing output ImageInfo pointer",
+            "Missing output ImageInformation pointer",
         )
         .code;
     }
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let inner: Result<ImageInfo, (FfiErrorCode, String)> = (|| {
-            let p_str = path
-                .ok_or((FfiErrorCode::InvalidArg, "Missing path".to_string()))?
-                .to_str();
+        let inner: Result<ImageInformation, (FfiErrorCode, String)> = (|| {
+            let p_str = if path.is_null() {
+                return Err((FfiErrorCode::InvalidArg, "Missing path".to_string()));
+            } else {
+                unsafe { std::ffi::CStr::from_ptr(path) }
+                    .to_str()
+                    .map_err(|_| (FfiErrorCode::Utf8, "Invalid UTF-8 in path".to_string()))?
+            };
             let path_ref = Path::new(p_str);
 
             let reader = image::ImageReader::open(path_ref).map_err(|_| {
@@ -133,7 +285,7 @@ pub fn get_image_info(
                 std::mem::swap(&mut w, &mut h);
             }
 
-            Ok(ImageInfo {
+            Ok(ImageInformation {
                 width: w,
                 height: h,
                 format,
@@ -146,21 +298,15 @@ pub fn get_image_info(
 
     match result {
         Ok(Ok(info)) => {
-            if let Some(o) = out {
-                *o = info;
-            }
+            unsafe { *out = info };
             FfiErrorCode::Success as u8
         }
         Ok(Err((code, msg))) => {
-            if let Some(o) = out {
-                *o = ImageInfo::default();
-            }
+            unsafe { *out = ImageInformation::default() };
             write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code
         }
         Err(payload) => {
-            if let Some(o) = out {
-                *o = ImageInfo::default();
-            }
+            unsafe { *out = ImageInformation::default() };
             handle_panic(arena_opt, payload)
         }
     }
@@ -171,21 +317,33 @@ pub fn get_image_info(
 ///
 /// Returns a `u8` status code (`FfiErrorCode` cast to `u8`). Result buffer is written to `*out`.
 /// (Previously returned i32; now returns u8/FfiErrorCode.)
-#[ffi_export]
-pub fn merge(
-    background_path: Option<char_p::Ref<'_>>,
-    foreground_png_ptr: Option<safer_ffi::ptr::NonNull<u8>>,
+///
+/// # Safety
+///
+/// `background_path` must be a valid null-terminated C string. `foreground_png_ptr` must
+/// point to at least `foreground_png_len` bytes. `arena` and `out` must be valid
+/// pointers for the duration of the call.
+// Safety: `#[unsafe(no_mangle)]` is used intentionally over `#[ffi_export]` for the entire
+// FFI surface. `safer_ffi` 0.2.0-rc1 cannot derive `ReprC` for `FfiArena` (contains raw
+// pointers) or `ByteBuffer` (returned by `merge`). Using `#[unsafe(no_mangle)]` uniformly
+// across all entry points (`get_image_info`, `merge`, `draw_elements`, test helpers) avoids
+// a split-convention API and keeps the Dart-side `@Native` bindings predictable.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn merge(
+    background_path: *const std::ffi::c_char,
+    foreground_png_ptr: *const u8,
     foreground_png_len: usize,
     dx: i32,
     dy: i32,
     out_format: u8,
     image_quality: u8,
-    arena: Option<&mut FfiArena>,
-    out: Option<&mut ByteBuffer>,
+    arena: *mut FfiArena,
+    out: *mut ByteBuffer,
 ) -> u8 {
-    let mut arena_opt = arena;
+    let mut arena_opt = unsafe { arena.as_mut() };
 
-    if out.is_none() {
+    if out.is_null() {
         return write_error_to_arena(
             arena_opt.as_deref_mut(),
             FfiErrorCode::InvalidArg,
@@ -196,30 +354,41 @@ pub fn merge(
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let inner: Result<Vec<u8>, (FfiErrorCode, String)> = (|| {
-            let bg_p = if let Some(p) = background_path {
-                p.to_str()
-            } else {
+            let bg_p = if background_path.is_null() {
                 return Err((
                     FfiErrorCode::InvalidArg,
                     "Missing background path".to_string(),
                 ));
+            } else {
+                unsafe { std::ffi::CStr::from_ptr(background_path) }
+                    .to_str()
+                    .map_err(|_| {
+                        (
+                            FfiErrorCode::Utf8,
+                            "Invalid UTF-8 in background path".to_string(),
+                        )
+                    })?
             };
 
-            let fg_bytes = match foreground_png_ptr {
-                Some(ptr) if foreground_png_len > 0 => {
-                    // SAFETY: Pointer and length are checked for non-null/non-zero and provided by
-                    // the caller as a valid slice for the duration of the call.
-                    #[allow(unsafe_code)]
-                    unsafe {
-                        slice::from_raw_parts(ptr.as_ptr(), foreground_png_len)
-                    }
-                }
-                _ => {
-                    return Err((
-                        FfiErrorCode::InvalidArg,
-                        "Missing foreground bytes".to_string(),
-                    ));
-                }
+            let fg_bytes = if foreground_png_ptr.is_null() {
+                return Err((
+                    FfiErrorCode::InvalidArg,
+                    "Missing foreground pointer".to_string(),
+                ));
+            } else if foreground_png_len == 0 {
+                return Err((
+                    FfiErrorCode::InvalidArg,
+                    "Foreground length is zero".to_string(),
+                ));
+            } else if foreground_png_len > isize::MAX as usize {
+                return Err((
+                    FfiErrorCode::InvalidArg,
+                    "Foreground length exceeds isize::MAX".to_string(),
+                ));
+            } else {
+                // SAFETY: Pointer and length are checked for non-null/non-zero and provided by
+                // the caller as a valid slice for the duration of the call.
+                unsafe { slice::from_raw_parts(foreground_png_ptr, foreground_png_len) }
             };
 
             let mut bg_img = io::read_image(Path::new(bg_p)).map_err(|_| {
@@ -264,8 +433,8 @@ pub fn merge(
             // SAFETY: `out` was checked to be `Some` at the start of the function.
             // We're converting a Rust-owned Boxed slice to a raw pointer and writing it to the
             // caller-supplied output pointer. The caller is responsible for calling `free_bytes`.
-            if let Some(o) = out {
-                *o = ByteBuffer {
+            unsafe {
+                *out = ByteBuffer {
                     data: Box::into_raw(boxed).cast::<u8>(),
                     length,
                 };
@@ -273,8 +442,8 @@ pub fn merge(
             FfiErrorCode::Success as u8
         }
         Ok(Err((code, msg))) => {
-            if let Some(o) = out {
-                *o = ByteBuffer {
+            unsafe {
+                *out = ByteBuffer {
                     data: std::ptr::null_mut(),
                     length: 0,
                 };
@@ -282,8 +451,8 @@ pub fn merge(
             write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code
         }
         Err(payload) => {
-            if let Some(o) = out {
-                *o = ByteBuffer {
+            unsafe {
+                *out = ByteBuffer {
                     data: std::ptr::null_mut(),
                     length: 0,
                 };
@@ -298,13 +467,10 @@ pub fn merge(
 /// # Safety
 ///
 /// `ptr` must be null or have been returned by a function that allocates memory for FFI.
-#[ffi_export]
 #[allow(unsafe_code)]
-pub unsafe fn free_bytes(ptr: *mut u8, len: usize) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn free_bytes(ptr: *mut u8, len: usize) {
     if !ptr.is_null() && len > 0 {
-        // SAFETY: The memory was originally allocated by `Box::into_raw(Vec::into_boxed_slice())`
-        // in either `merge` or future byte-returning functions. We reconstruct the box
-        // to drop and deallocate it properly.
         unsafe {
             let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len));
         }
@@ -336,9 +502,9 @@ pub unsafe extern "C" fn ffi_echo_element(ptr: *const FfiElement) -> *const FfiE
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn draw_elements(
-    image_path: Option<char_p::Ref<'_>>,
-    output_path: Option<char_p::Ref<'_>>,
-    font_path: Option<char_p::Ref<'_>>,
+    image_path: *const std::ffi::c_char,
+    output_path: *const std::ffi::c_char,
+    font_path: *const std::ffi::c_char,
     elements_ptr: *const FfiElement,
     elements_count: usize,
     image_quality: u8,
@@ -348,10 +514,31 @@ pub unsafe extern "C" fn draw_elements(
     let arena_opt = unsafe { arena.as_mut() };
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let img_p = image_path
-            .ok_or((FfiErrorCode::InvalidArg, "Missing image path".to_string()))?
-            .to_str();
-        let out_p = output_path.map(|p| p.to_str()).unwrap_or(img_p);
+        let img_p = if image_path.is_null() {
+            return Err((FfiErrorCode::InvalidArg, "Missing image path".to_string()));
+        } else {
+            unsafe { std::ffi::CStr::from_ptr(image_path) }
+                .to_str()
+                .map_err(|_| {
+                    (
+                        FfiErrorCode::Utf8,
+                        "Invalid UTF-8 in image path".to_string(),
+                    )
+                })?
+        };
+
+        let out_p = if output_path.is_null() {
+            img_p
+        } else {
+            unsafe { std::ffi::CStr::from_ptr(output_path) }
+                .to_str()
+                .map_err(|_| {
+                    (
+                        FfiErrorCode::Utf8,
+                        "Invalid UTF-8 in output path".to_string(),
+                    )
+                })?
+        };
 
         let elements = if elements_count == 0 {
             &[]
@@ -379,14 +566,17 @@ pub unsafe extern "C" fn draw_elements(
             }
         };
 
-        draw_elements_safe(
-            img_p,
-            out_p,
-            font_path,
-            elements,
-            text_buffer,
-            image_quality,
-        )
+        let font_p = if font_path.is_null() {
+            None
+        } else {
+            Some(
+                unsafe { std::ffi::CStr::from_ptr(font_path) }
+                    .to_str()
+                    .map_err(|_| (FfiErrorCode::Utf8, "Invalid UTF-8 in font path".to_string()))?,
+            )
+        };
+
+        draw_elements_safe(img_p, out_p, font_p, elements, text_buffer, image_quality)
     }));
 
     match result {
@@ -396,10 +586,11 @@ pub unsafe extern "C" fn draw_elements(
     }
 }
 
+#[allow(unsafe_code)]
 fn draw_elements_safe(
     image_path: &str,
     output_path: &str,
-    font_path: Option<char_p::Ref<'_>>,
+    font_path: Option<&str>,
     elements: &[FfiElement],
     text_buffer: &[u8],
     image_quality: u8,
@@ -407,11 +598,8 @@ fn draw_elements_safe(
     let needs_font = elements.iter().any(|e| matches!(e, FfiElement::Text(_)));
     let font_bytes_holder;
     let font: Option<ab_glyph::FontRef<'_>> = if needs_font {
-        let f_path = if let Some(p) = font_path {
-            p.to_str()
-        } else {
-            return Err((FfiErrorCode::InvalidArg, "Missing font path".to_string()));
-        };
+        let f_path =
+            font_path.ok_or((FfiErrorCode::InvalidArg, "Missing font path".to_string()))?;
 
         font_bytes_holder = io::read_font(Path::new(f_path))
             .map_err(|_| (FfiErrorCode::Io, "Failed to read font".to_string()))?;
@@ -753,6 +941,7 @@ fn draw_text_element(
 }
 
 #[cfg(test)]
+#[allow(unsafe_code)]
 mod merge_tests {
     use super::*;
 
@@ -774,17 +963,19 @@ mod merge_tests {
             length: 0,
         };
 
-        let status = merge(
-            None,
-            safer_ffi::ptr::NonNull::new(fg_bytes.as_ptr() as *mut u8),
-            fg_bytes.len(),
-            0,
-            0,
-            1,
-            90,
-            None,
-            Some(&mut out),
-        );
+        let status = unsafe {
+            merge(
+                std::ptr::null(),
+                fg_bytes.as_ptr(),
+                fg_bytes.len(),
+                0,
+                0,
+                1,
+                90,
+                std::ptr::null_mut(),
+                &raw mut out,
+            )
+        };
         // It should return InvalidArg (2) because background_path is None.
         assert_eq!(status, FfiErrorCode::InvalidArg as u8);
     }
@@ -793,27 +984,28 @@ mod merge_tests {
     #[cfg(not(miri))]
     fn merge_rejects_missing_output_buffer() {
         let fg_bytes = tiny_red_png();
-        let path = safer_ffi::char_p::new("fake.jpg");
+        let path = std::ffi::CString::new("fake.jpg").unwrap();
 
-        let status = merge(
-            Some(path.as_ref()),
-            safer_ffi::ptr::NonNull::new(fg_bytes.as_ptr() as *mut u8),
-            fg_bytes.len(),
-            0,
-            0,
-            1,
-            90,
-            None,
-            None, // Output buffer is missing!
-        );
+        let status = unsafe {
+            merge(
+                path.as_ptr(),
+                fg_bytes.as_ptr(),
+                fg_bytes.len(),
+                0,
+                0,
+                1,
+                90,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(), // Output buffer is missing!
+            )
+        };
         assert_eq!(status, FfiErrorCode::InvalidArg as u8);
     }
 
     #[test]
     #[cfg(not(miri))]
     fn merge_rejects_null_foreground_bytes() {
-        let path = safer_ffi::char_p::new("fake.jpg");
-        let c_str = path.as_ref();
+        let path = std::ffi::CString::new("fake.jpg").unwrap();
         let mut arena = FfiArena {
             text_buf: std::ptr::null(),
             text_len: 0,
@@ -827,59 +1019,71 @@ mod merge_tests {
             length: 0,
         };
 
-        let status = merge(
-            Some(c_str),
-            None,
-            10,
-            0,
-            0,
-            0,
-            90,
-            Some(&mut arena),
-            Some(&mut out),
-        );
+        let status = unsafe {
+            merge(
+                path.as_ptr(),
+                std::ptr::null(),
+                10,
+                0,
+                0,
+                0,
+                90,
+                &raw mut arena,
+                &raw mut out,
+            )
+        };
         assert_eq!(status, FfiErrorCode::InvalidArg as u8);
     }
 
     #[test]
     #[cfg(not(miri))]
     fn merge_rejects_empty_foreground_bytes() {
-        let path = safer_ffi::char_p::new("fake.jpg");
-        let c_str = path.as_ref();
+        let path = std::ffi::CString::new("fake.jpg").unwrap();
         let mut fg = vec![0u8; 10];
-        let ptr = safer_ffi::ptr::NonNull::new(fg.as_mut_ptr()).unwrap();
         let mut out = ByteBuffer {
             data: std::ptr::null_mut(),
             length: 0,
         };
 
-        let status = merge(Some(c_str), Some(ptr), 0, 0, 0, 0, 90, None, Some(&mut out));
+        let status = unsafe {
+            merge(
+                path.as_ptr(),
+                fg.as_mut_ptr(),
+                0,
+                0,
+                0,
+                0,
+                90,
+                std::ptr::null_mut(),
+                &raw mut out,
+            )
+        };
         assert_eq!(status, FfiErrorCode::InvalidArg as u8);
     }
 
     #[test]
     #[cfg(not(miri))]
     fn merge_handles_invalid_png_foreground() {
-        let path = safer_ffi::char_p::new("fake.jpg");
-        let c_str = path.as_ref();
+        let path = std::ffi::CString::new("fake.jpg").unwrap();
         let mut fg = vec![1, 2, 3, 4, 5]; // invalid PNG
-        let ptr = safer_ffi::ptr::NonNull::new(fg.as_mut_ptr()).unwrap();
         let mut out = ByteBuffer {
             data: std::ptr::null_mut(),
             length: 0,
         };
 
-        let status = merge(
-            Some(c_str),
-            Some(ptr),
-            fg.len(),
-            0,
-            0,
-            0,
-            90,
-            None,
-            Some(&mut out),
-        );
+        let status = unsafe {
+            merge(
+                path.as_ptr(),
+                fg.as_mut_ptr(),
+                fg.len(),
+                0,
+                0,
+                0,
+                90,
+                std::ptr::null_mut(),
+                &raw mut out,
+            )
+        };
         // "fake.jpg" does not exist so read_image fails with Decode or Io error
         assert!(status != FfiErrorCode::Success as u8);
     }
@@ -898,8 +1102,17 @@ mod merge_tests {
         };
 
         // Missing image path should trigger InvalidArg and write to arena.
-        let status =
-            unsafe { draw_elements(None, None, None, std::ptr::null(), 0, 90, &raw mut arena) };
+        let status = unsafe {
+            draw_elements(
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                90,
+                &raw mut arena,
+            )
+        };
 
         assert_eq!(status, FfiErrorCode::InvalidArg as u8);
         let msg = unsafe { std::ffi::CStr::from_ptr(error_buf.as_ptr().cast()) };

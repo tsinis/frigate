@@ -19,6 +19,7 @@ pub enum FfiErrorCode {
     Font = 6,
     Render = 7,
     Utf8 = 8,
+    Unknown = 9,
 }
 
 /// A multi-buffer arena for passing variable-length data across FFI.

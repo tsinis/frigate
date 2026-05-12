@@ -7,11 +7,17 @@ on:
       - ".github/workflows/dart_check.yaml"
       - "frigatebird/**/*.dart"
       - "frigatebird/pubspec.yaml"
+      - "frigatebird/rust/**"
+      - "frigatebird/**/Cargo.toml"
+      - "frigatebird/rust-toolchain.toml"
   pull_request:
     paths:
       - ".github/workflows/dart_check.yaml"
       - "frigatebird/**/*.dart"
       - "frigatebird/pubspec.yaml"
+      - "frigatebird/rust/**"
+      - "frigatebird/**/Cargo.toml"
+      - "frigatebird/rust-toolchain.toml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -66,7 +72,7 @@ jobs:
           dart pub global run pana . --no-warning --exit-code-threshold 0
 
       - name: 🧪 Run tests with coverage # TODO(tsinis) - adjust --fail-under value.
-        run: dart run coverage:test_with_coverage --fail-under=70
+        run: NIX_FRIGATE_DEBUG_FFI=true dart run coverage:test_with_coverage --fail-under=70
 
       - name: 💯 Upload to Codecov
         uses: codecov/codecov-action@v6.0.0

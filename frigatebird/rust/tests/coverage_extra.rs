@@ -1,53 +1,44 @@
 #![expect(unsafe_code, reason = "Integration tests exercise FFI boundary")]
 
-use frigate::{FfiErrorCode, ImageInfo, get_image_info};
-use safer_ffi::char_p;
+use frigate::{FfiErrorCode, ImageInformation, get_image_info};
+use std::ffi::CString;
 
 #[test]
 fn test_get_image_info_errors() {
-    let mut info = ImageInfo {
-        width: 0,
-        height: 0,
-        format: 0,
-        orientation: 0,
-        _pad: [0; 2],
-    };
+    let mut info = ImageInformation::default();
 
     // 1. Missing path
-    let status = get_image_info(None, None, Some(&mut info));
+    let status = unsafe { get_image_info(std::ptr::null(), std::ptr::null_mut(), &raw mut info) };
     assert_eq!(status, FfiErrorCode::InvalidArg as u8);
 
     // 2. Missing output pointer
-    let path = char_p::new("tests/fixtures/orientation/exif_1.jpg");
-    let status = get_image_info(Some(path.as_ref()), None, None);
+    let path = CString::new("tests/fixtures/orientation/exif_1.jpg").unwrap();
+    let status =
+        unsafe { get_image_info(path.as_ptr(), std::ptr::null_mut(), std::ptr::null_mut()) };
     assert_eq!(status, FfiErrorCode::InvalidArg as u8);
 
     // 3. Non-existent file
-    let bad_path = char_p::new("non_existent.jpg");
-    let status = get_image_info(Some(bad_path.as_ref()), None, Some(&mut info));
+    let bad_path = CString::new("non_existent.jpg").unwrap();
+    let status = unsafe { get_image_info(bad_path.as_ptr(), std::ptr::null_mut(), &raw mut info) };
     assert_eq!(status, FfiErrorCode::Io as u8);
 
     // 4. Not an image (use a text file if available or just a random file)
-    let cargo_toml = char_p::new("Cargo.toml");
-    let status = get_image_info(Some(cargo_toml.as_ref()), None, Some(&mut info));
+    let cargo_toml = CString::new("Cargo.toml").unwrap();
+    let status =
+        unsafe { get_image_info(cargo_toml.as_ptr(), std::ptr::null_mut(), &raw mut info) };
     assert_eq!(status, FfiErrorCode::Decode as u8);
 }
 
 #[test]
 fn test_get_image_info_clears_out_on_error() {
-    let mut info = ImageInfo {
-        width: 123,
-        height: 456,
-        format: 0,
-        orientation: 6,
-        _pad: [0; 2],
-    };
-    let bad_path = char_p::new("non_existent.jpg");
-    let _ = get_image_info(Some(bad_path.as_ref()), None, Some(&mut info));
-    assert_eq!(info.width, 0);
-    assert_eq!(info.height, 0);
-    assert_eq!(info.format, 255);
-    assert_eq!(info.orientation, 1);
+    let mut info = ImageInformation::default();
+    let bad_path = CString::new("non_existent.jpg").unwrap();
+    let _ = unsafe { get_image_info(bad_path.as_ptr(), std::ptr::null_mut(), &raw mut info) };
+    let def = ImageInformation::default();
+    assert_eq!(info.width, def.width);
+    assert_eq!(info.height, def.height);
+    assert_eq!(info.format, def.format);
+    assert_eq!(info.orientation, def.orientation);
 }
 
 #[test]
@@ -55,9 +46,9 @@ fn test_draw_elements_errors() {
     // 1. Missing image path
     let status = unsafe {
         frigate::draw_elements(
-            None,
-            None,
-            None,
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
             std::ptr::null(),
             0,
             90,
@@ -67,12 +58,12 @@ fn test_draw_elements_errors() {
     assert_eq!(status, FfiErrorCode::InvalidArg as u8);
 
     // 2. Missing elements pointer when count > 0
-    let path = char_p::new("tests/fixtures/orientation/exif_1.jpg");
+    let path = CString::new("tests/fixtures/orientation/exif_1.jpg").unwrap();
     let status = unsafe {
         frigate::draw_elements(
-            Some(path.as_ref()),
-            None,
-            None,
+            path.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
             std::ptr::null(),
             1,
             90,
@@ -84,7 +75,7 @@ fn test_draw_elements_errors() {
 
 #[test]
 fn test_draw_elements_font_errors() {
-    let path = char_p::new("tests/fixtures/orientation/exif_1.jpg");
+    let path = CString::new("tests/fixtures/orientation/exif_1.jpg").unwrap();
     // 1. Missing font path when TEXT element is present
     let element = frigate::FfiElement::Text(frigate::TextPayload {
         x: 0.0,
@@ -100,9 +91,9 @@ fn test_draw_elements_font_errors() {
     });
     let status = unsafe {
         frigate::draw_elements(
-            Some(path.as_ref()),
-            None,
-            None, // Missing font path
+            path.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(), // Missing font path
             &raw const element,
             1,
             90,
@@ -112,12 +103,12 @@ fn test_draw_elements_font_errors() {
     assert_eq!(status, FfiErrorCode::InvalidArg as u8);
 
     // 2. Non-existent font file
-    let bad_font = char_p::new("non_existent.ttf");
+    let bad_font = CString::new("non_existent.ttf").unwrap();
     let status = unsafe {
         frigate::draw_elements(
-            Some(path.as_ref()),
-            None,
-            Some(bad_font.as_ref()),
+            path.as_ptr(),
+            std::ptr::null(),
+            bad_font.as_ptr(),
             &raw const element,
             1,
             90,
@@ -129,9 +120,9 @@ fn test_draw_elements_font_errors() {
     // 3. Invalid font file (using a JPEG as font)
     let status = unsafe {
         frigate::draw_elements(
-            Some(path.as_ref()),
-            None,
-            Some(path.as_ref()), // Using image as font
+            path.as_ptr(),
+            std::ptr::null(),
+            path.as_ptr(), // Using image as font
             &raw const element,
             1,
             90,
@@ -144,7 +135,19 @@ fn test_draw_elements_font_errors() {
 #[test]
 fn test_merge_errors() {
     // 1. Missing output buffer
-    let status = frigate::merge(None, None, 0, 0, 0, 0, 90, None, None);
+    let status = unsafe {
+        frigate::merge(
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            0,
+            0,
+            0,
+            90,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
     assert_eq!(status, FfiErrorCode::InvalidArg as u8);
 
     // 2. Missing background path
@@ -152,39 +155,87 @@ fn test_merge_errors() {
         data: std::ptr::null_mut(),
         length: 0,
     };
-    let status = frigate::merge(None, None, 0, 0, 0, 0, 90, None, Some(&mut out));
+    let status = unsafe {
+        frigate::merge(
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            0,
+            0,
+            0,
+            90,
+            std::ptr::null_mut(),
+            &raw mut out,
+        )
+    };
     assert_eq!(status, FfiErrorCode::InvalidArg as u8);
 
     // 3. Missing foreground bytes
-    let path = char_p::new("tests/fixtures/orientation/exif_1.jpg");
-    let status = frigate::merge(
-        Some(path.as_ref()),
-        None,
-        0,
-        0,
-        0,
-        0,
-        90,
-        None,
-        Some(&mut out),
-    );
+    let path = CString::new("tests/fixtures/orientation/exif_1.jpg").unwrap();
+    let status = unsafe {
+        frigate::merge(
+            path.as_ptr(),
+            std::ptr::null(),
+            0,
+            0,
+            0,
+            0,
+            90,
+            std::ptr::null_mut(),
+            &raw mut out,
+        )
+    };
+    assert_eq!(status, FfiErrorCode::InvalidArg as u8);
+
+    // 3.5. Null pointer but fg_len > 0
+    let status = unsafe {
+        frigate::merge(
+            path.as_ptr(),
+            std::ptr::null(),
+            1,
+            0,
+            0,
+            0,
+            90,
+            std::ptr::null_mut(),
+            &raw mut out,
+        )
+    };
+    assert_eq!(status, FfiErrorCode::InvalidArg as u8);
+
+    // 3.6. Non-null pointer but fg_len == 0
+    let fg_dummy = [0u8; 1];
+    let status = unsafe {
+        frigate::merge(
+            path.as_ptr(),
+            fg_dummy.as_ptr(),
+            0,
+            0,
+            0,
+            0,
+            90,
+            std::ptr::null_mut(),
+            &raw mut out,
+        )
+    };
     assert_eq!(status, FfiErrorCode::InvalidArg as u8);
 
     // 4. Decode failure background
     let fg_bytes = tiny_red_png();
-    let fg_ptr = safer_ffi::ptr::NonNull::new(fg_bytes.as_ptr() as *mut u8).unwrap();
-    let cargo_toml = char_p::new("Cargo.toml");
-    let status = frigate::merge(
-        Some(cargo_toml.as_ref()),
-        Some(fg_ptr),
-        fg_bytes.len(),
-        0,
-        0,
-        0,
-        90,
-        None,
-        Some(&mut out),
-    );
+    let cargo_toml = CString::new("Cargo.toml").unwrap();
+    let status = unsafe {
+        frigate::merge(
+            cargo_toml.as_ptr(),
+            fg_bytes.as_ptr(),
+            fg_bytes.len(),
+            0,
+            0,
+            0,
+            90,
+            std::ptr::null_mut(),
+            &raw mut out,
+        )
+    };
     assert_eq!(status, FfiErrorCode::Decode as u8);
 }
 
@@ -200,13 +251,13 @@ fn tiny_red_png() -> Vec<u8> {
 
 #[test]
 fn test_draw_elements_more_errors() {
-    let cargo_toml = char_p::new("Cargo.toml");
+    let cargo_toml = CString::new("Cargo.toml").unwrap();
     // 1. Decode failure image
     let status = unsafe {
         frigate::draw_elements(
-            Some(cargo_toml.as_ref()),
-            None,
-            None,
+            cargo_toml.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
             std::ptr::null(),
             0,
             90,
@@ -214,4 +265,96 @@ fn test_draw_elements_more_errors() {
         )
     };
     assert_eq!(status, FfiErrorCode::Decode as u8);
+}
+
+#[test]
+fn test_merge_with_exif_rotated_and_truncated() {
+    let mut out = frigate::ByteBuffer {
+        data: std::ptr::null_mut(),
+        length: 0,
+    };
+    let fg_bytes = tiny_red_png();
+
+    // EXIF rotated
+    let exif_path = std::ffi::CString::new("tests/fixtures/orientation/exif_6.jpg").unwrap();
+    let status = unsafe {
+        frigate::merge(
+            exif_path.as_ptr(),
+            fg_bytes.as_ptr(),
+            fg_bytes.len(),
+            0,
+            0,
+            0,
+            90,
+            std::ptr::null_mut(),
+            &raw mut out,
+        )
+    };
+    assert_eq!(status, frigate::FfiErrorCode::Success as u8);
+    // free buffer
+    unsafe { frigate::free_bytes(out.data, out.length) };
+
+    // Truncated (non-image)
+    let bad_path = std::ffi::CString::new("Cargo.toml").unwrap();
+    let status = unsafe {
+        frigate::merge(
+            bad_path.as_ptr(),
+            fg_bytes.as_ptr(),
+            fg_bytes.len(),
+            0,
+            0,
+            0,
+            90,
+            std::ptr::null_mut(),
+            &raw mut out,
+        )
+    };
+    assert_eq!(status, frigate::FfiErrorCode::Decode as u8);
+}
+
+#[test]
+fn test_draw_elements_with_exif_rotated_and_truncated() {
+    let out_path = std::ffi::CString::new("tests/assets/out_draw_elements.jpg").unwrap();
+    let elements = [frigate::FfiElement::Rectangle(frigate::RectanglePayload {
+        x: 0.0,
+        y: 0.0,
+        width: 10.0,
+        height: 10.0,
+        rotation_deg: 0,
+        fill_color_argb: 0xFFFFFFFF,
+        outline_color_argb: 0,
+        outline_thickness: 0,
+        blur: 0,
+        corner_radius: 0,
+    })];
+
+    // EXIF rotated
+    let exif_path = std::ffi::CString::new("tests/fixtures/orientation/exif_6.jpg").unwrap();
+    let status = unsafe {
+        frigate::draw_elements(
+            exif_path.as_ptr(),
+            out_path.as_ptr(),
+            std::ptr::null(),
+            elements.as_ptr(),
+            elements.len(),
+            90,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, frigate::FfiErrorCode::Success as u8);
+
+    // Truncated (non-image)
+    let bad_path = std::ffi::CString::new("Cargo.toml").unwrap();
+    let status = unsafe {
+        frigate::draw_elements(
+            bad_path.as_ptr(),
+            out_path.as_ptr(),
+            std::ptr::null(),
+            elements.as_ptr(),
+            elements.len(),
+            90,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, frigate::FfiErrorCode::Decode as u8);
 }

@@ -97,7 +97,8 @@ args = ["fuzz", "run", "ffi_boundary", "--", "-max_total_time=60"]
 ignore_errors = true
 script = [
     '''
-    export RUSTFLAGS="-Z sanitizer=address"
+    export RUSTFLAGS="-Z sanitizer=address -C codegen-units=1"
+    export CARGO_INCREMENTAL=0
     HOST_TRIPLE=$(rustup run ${NIGHTLY} rustc -vV | grep host | cut -d' ' -f2)
     if [ "$(uname)" = "Darwin" ]; then
         ASAN_DYLIB=$(rustup run ${NIGHTLY} rustc --print sysroot)/lib/rustlib/${HOST_TRIPLE}/lib/librustc-nightly_rt.asan.dylib

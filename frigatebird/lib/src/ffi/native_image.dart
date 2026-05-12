@@ -1,7 +1,11 @@
+// ignore_for_file: avoid-non-empty-constructor-bodies
 import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
+
+import 'ffi_allocator_utils.dart';
 
 /// Owns image bytes in native heap (malloc).
 ///
@@ -12,29 +16,38 @@ import 'package:ffi/ffi.dart';
 /// Flutter reads via [bytes] (zero-copy view). Rust reads via [address] (zero-copy pointer
 /// reconstruction).
 ///
-/// Life-cycle: create once at image load, dispose when done. Reading [address] or [bytes] after
-/// [dispose] throws [StateError] — a silent use-after-free footgun would be much worse than a
-/// loud crash. NEVER dispose while an export is in progress.
-///
-/// **Dangling-alias caveat:** the dispose-throws guard fires *at the getter call site only*. If
-/// a caller has already captured the [Uint8List] returned by [bytes] or the [int] returned by
-/// [address], that captured reference is *not* invalidated by [dispose] — the `Uint8List` still
-/// aliases freed heap memory, and the `int` still holds the old numeric address. Using either
-/// after [dispose] is undefined behavior and the VM cannot detect it. Rule of thumb: treat every
-/// `bytes`/`address` read as valid only for the duration of a single synchronous span; never
-/// hold one across an `await` or an isolate hop without also keeping the [NativeImage] alive.
+/// Life-cycle: create once at image load. Memory is freed automatically via NativeFinalizer
+/// when the wrapper is GC'ed. The [bytes] view aliases this memory and MUST NOT be used
+/// after the wrapper is GC'ed or explicitly disposed.
 final class NativeImage implements Finalizable {
-  NativeImage._(this._pointer, this.height, this.length, this.width)
-    : _bytes = _pointer.asTypedList(length);
+  NativeImage._(this._pointer, this._bytes, this.height, this.length, this.width, this._allocator);
 
-  /// Copy [dartBytes] into native heap once. The source can then be GC'd.
-  // ignore: avoid-non-empty-constructor-bodies, this factory constructor is the only way to create a NativeImage.
-  factory NativeImage.fromBytes(Uint8List dartBytes, {required int height, required int width}) {
-    final length = dartBytes.length;
-    final pointer = calloc<Uint8>(length)..asTypedList(length).setRange(0, length, dartBytes);
+  /// Copy [src] into native heap once. The source can then be GC'd.
+  factory NativeImage.fromBytes(Uint8List src, {required int height, required int width}) =>
+      NativeImage._withAllocator(src, allocator: malloc, height: height, width: width);
 
-    final image = NativeImage._(pointer, height, length, width);
-    image._attach(); // ignore: cascade_invocations, attach is a separate step after construction.
+  @visibleForTesting
+  factory NativeImage.testWithAllocator(
+    Uint8List src, {
+    required int height,
+    required int width,
+    required Allocator allocator,
+  }) => NativeImage._withAllocator(src, allocator: allocator, height: height, width: width);
+
+  factory NativeImage._withAllocator(
+    Uint8List src, {
+    required int height,
+    required int width,
+    required Allocator allocator,
+  }) {
+    final ptr = allocator<Uint8>(src.length);
+    final view = ptr.asTypedList(src.length)..setAll(0, src);
+
+    final image = NativeImage._(ptr, view, height, src.length, width, allocator);
+    if (isMallocCompatible(allocator)) {
+      final voidPtr = ptr.cast<Void>();
+      _finalizer.attach(image, voidPtr, detach: image);
+    }
 
     return image;
   }
@@ -48,23 +61,16 @@ final class NativeImage implements Finalizable {
   /// Image height in pixels — source of truth for document-space coordinates.
   final int height;
 
-  static final _finalizer = NativeFinalizer(calloc.nativeFree);
+  static final _finalizer = NativeFinalizer(malloc.nativeFree);
 
   final Uint8List _bytes;
   final Pointer<Uint8> _pointer;
+  final Allocator _allocator;
   bool _isDisposed = false;
-
-  void _attach() {
-    _finalizer.attach(this, _pointer.cast<Void>(), detach: this);
-  }
 
   /// Zero-copy view of native memory for Flutter widgets.
   ///
-  /// WHY asTypedList and not Uint8List.fromList: asTypedList creates a VIEW backed by native
-  /// memory, not a copy. The native memory is stable (malloc, not GC-managed), so the view
-  /// remains valid until [dispose]. Calling this getter after [dispose] throws [StateError] —
-  /// but a `Uint8List` already obtained from a prior call is *not* re-checked; it keeps
-  /// aliasing the (now freed) native buffer and must be dropped before [dispose] runs.
+  /// The wrapper exclusively owns the buffer. The [bytes] view is valid only while the wrapper is alive.
   Uint8List get bytes {
     _throwIfDisposed();
 
@@ -73,27 +79,22 @@ final class NativeImage implements Finalizable {
 
   /// Raw pointer address as int — safe to send between isolates.
   ///
-  /// WHY int and not Pointer: `Pointer` cannot cross isolate boundaries. int can. Reconstruct with
-  /// `Pointer.fromAddress(address)`. Calling this getter after [dispose] throws [StateError] so
-  /// the read itself can't hand a freed pointer to Rust — but an `int` *already captured* from a
-  /// previous call is just a scalar and silently goes stale when [dispose] frees the heap. Keep
-  /// the [NativeImage] alive for the entire span you're using the address (across isolate
-  /// messages in particular).
+  /// The wrapper exclusively owns the buffer. The pointer is valid only while the wrapper is alive.
   int get address {
     _throwIfDisposed();
 
     return _pointer.address;
   }
 
-  /// Free native memory. Idempotent — calling twice is safe. After this, [address] and [bytes]
-  /// throw [StateError] at the getter call site. The throw does *not* retroactively invalidate
-  /// any `Uint8List` view or `int` address the caller captured earlier; the caller must drop
-  /// those references themselves before calling [dispose].
+  /// Frees the native memory immediately.
+  ///
+  /// After calling [dispose], using [bytes] or [address] will throw a [StateError].
+  /// The finalizer is detached to prevent a double-free.
   void dispose() {
     if (_isDisposed) return;
     _isDisposed = true;
-    _finalizer.detach(this);
-    calloc.free(_pointer);
+    if (isMallocCompatible(_allocator)) _finalizer.detach(this);
+    _allocator.free(_pointer);
   }
 
   void _throwIfDisposed() {

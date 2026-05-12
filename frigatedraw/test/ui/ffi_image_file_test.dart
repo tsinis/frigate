@@ -22,8 +22,9 @@ void main() {
       final file = File('test.jpg');
 
       final restore = FfiImageFile.setInfoBuilder(
-        (_) => Future.value(const ImageInformation(height: 128, orientation: 6, width: 64)),
+        (_) async => ImageInformation.from(height: 128, orientation: .rotate90, width: 64),
       );
+
       addTearDown(restore);
 
       await tester.pumpWidget(
