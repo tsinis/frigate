@@ -123,9 +123,7 @@ final class FfiArenaHandle implements Finalizable {
     } else {
       // Custom allocator: free manually.
       final ref = ptr.ref;
-      if (ref.errorBuf != nullptr) {
-        _allocator.free(ref.errorBuf);
-      }
+      if (ref.errorBuf != nullptr) _allocator.free(ref.errorBuf);
       _allocator.free(ptr);
     }
   }

@@ -38,8 +38,6 @@ abstract final class FfiAbi {
   }
 
   static void _check(String name, int dart, int rust) {
-    if (dart != rust) {
-      throw StateError('ABI mismatch: $name Dart=$dart Rust=$rust');
-    }
+    if (dart != rust) throw StateError('ABI mismatch: $name Dart=$dart Rust=$rust');
   }
 }

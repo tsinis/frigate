@@ -107,9 +107,7 @@ sealed class RenderImage {
       );
 
       final domainResult = handle.arena.readResult(code);
-      if (domainResult is ErrUnit) {
-        throw RenderException(domainResult.code, domainResult.message);
-      }
+      if (domainResult is ErrUnit) throw RenderException(domainResult.code, domainResult.message);
     } finally {
       if (backgroundCStr != nullptr) calloc.free(backgroundCStr);
       if (outputCStr != nullptr) calloc.free(outputCStr);

@@ -45,6 +45,13 @@ the pinned version in `rust-toolchain.toml`, not as a normal Flutter cache issue
 
 <!-- keep specific version in sync with rust/rust-toolchain.toml + hook/build.dart, for example: -->
 
+```sh
+export PATH="$HOME/.cargo/bin:$PATH"
+rustup toolchain install 1.94.1
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios --toolchain 1.94.1-aarch64-apple-darwin
+rm -rf frigatebird/rust/target
+```
+
 ## Testing
 
 To run tests in `frigatebird/`, you must enable FFI debug features and symbols. This is handled via the `NIX_FRIGATE_DEBUG_FFI` environment variable, which is passed through the hermetic build hook:
@@ -54,6 +61,8 @@ NIX_FRIGATE_DEBUG_FFI=true fvm dart test
 ```
 
 The build hook detects this variable and compiles the Rust crate with `ffi-echo` and `ffi-test-helpers` enabled, providing the necessary native symbols.
+
+## Strict FFI Tooling
 
 The Rust backend in `frigatebird/rust` follows a "Maximum Strictness" philosophy for FFI safety and performance:
 
