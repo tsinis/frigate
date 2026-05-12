@@ -70,7 +70,7 @@ final class NativeImage implements Finalizable {
 
   /// Zero-copy view of native memory for Flutter widgets.
   ///
-  /// The memory stays alive as long as this view is alive.
+  /// The wrapper exclusively owns the buffer. The [bytes] view is valid only while the wrapper is alive.
   Uint8List get bytes {
     _throwIfDisposed();
 
@@ -79,8 +79,7 @@ final class NativeImage implements Finalizable {
 
   /// Raw pointer address as int — safe to send between isolates.
   ///
-  /// The memory stays alive as long as the [bytes] view is alive (which is kept
-  /// alive by this wrapper).
+  /// The wrapper exclusively owns the buffer. The pointer is valid only while the wrapper is alive.
   int get address {
     _throwIfDisposed();
 

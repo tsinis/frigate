@@ -87,7 +87,8 @@ void main() {
       final length = nativeImage.length;
 
       // 2. Send address to isolate B via Isolate.run and run merge.
-      final resultBytes = await Isolate.run(() => _performMerge(bgPath, fgBytes));
+      final bytesView = nativeImage.bytes;
+      final resultBytes = await Isolate.run(() => _performMerge(bgPath, bytesView));
 
       expect(resultBytes, isNotEmpty);
 
@@ -95,11 +96,10 @@ void main() {
       await Future<void>.delayed(.zero);
       final _ = List.generate(100_000, (index) => Object());
 
-      // Assert NativeImage.bytes is still readable on A.
+      // ignore: use-existing-variable, Assert NativeImage.bytes is still readable on A.
       expect(nativeImage.bytes.length, length);
 
-      // Clean up.
-      nativeImage.dispose();
+      nativeImage.dispose(); // Clean up.
     });
   });
 }

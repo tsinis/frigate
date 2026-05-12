@@ -20,6 +20,7 @@ void main() {
 
       // Wrap in NativeImage.
       final nativeImage = NativeImage.fromBytes(redPng, height: 1, width: 1);
+      addTearDown(nativeImage.dispose);
 
       // 2. Bind to a Flutter widget.
       await tester.pumpWidget(
@@ -60,9 +61,6 @@ void main() {
       // Re-pump to ensure the widget didn't crash due to detached memory.
       await tester.pump();
       expect(imageFinder, findsOneWidget);
-
-      // Cleanup.
-      nativeImage.dispose();
     });
   });
 }

@@ -110,7 +110,8 @@ pub unsafe extern "C" fn ffi_arena_drop(arena: *mut FfiArena) {
 /// Drop hook for `NativeFinalizer` on `ByteBuffer`s.
 ///
 /// The `ByteBuffer` struct itself is allocated on the Dart side (`calloc<ByteBuffer>()`),
-/// while its data field is Rust-allocated (`Box::into_raw()`). This function frees both correctly.
+/// while its data field is Rust-allocated (`Box::into_raw()`). This function frees the
+/// Rust-owned `data` first, then the C-allocated struct correctly.
 ///
 /// # Safety
 ///
@@ -218,6 +219,11 @@ fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + S
 ///
 /// `path` must be a valid null-terminated C string. `arena` and `out` must be valid
 /// pointers for the duration of the call.
+// Safety: `#[unsafe(no_mangle)]` is used intentionally over `#[ffi_export]` for the entire
+// FFI surface. `safer_ffi` 0.2.0-rc1 cannot derive `ReprC` for `FfiArena` (contains raw
+// pointers) or `ByteBuffer` (returned by `merge`). Using `#[unsafe(no_mangle)]` uniformly
+// across all entry points (`get_image_info`, `merge`, `draw_elements`, test helpers) avoids
+// a split-convention API and keeps the Dart-side `@Native` bindings predictable.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn get_image_info(
@@ -317,6 +323,11 @@ pub unsafe extern "C" fn get_image_info(
 /// `background_path` must be a valid null-terminated C string. `foreground_png_ptr` must
 /// point to at least `foreground_png_len` bytes. `arena` and `out` must be valid
 /// pointers for the duration of the call.
+// Safety: `#[unsafe(no_mangle)]` is used intentionally over `#[ffi_export]` for the entire
+// FFI surface. `safer_ffi` 0.2.0-rc1 cannot derive `ReprC` for `FfiArena` (contains raw
+// pointers) or `ByteBuffer` (returned by `merge`). Using `#[unsafe(no_mangle)]` uniformly
+// across all entry points (`get_image_info`, `merge`, `draw_elements`, test helpers) avoids
+// a split-convention API and keeps the Dart-side `@Native` bindings predictable.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn merge(
@@ -555,14 +566,17 @@ pub unsafe extern "C" fn draw_elements(
             }
         };
 
-        draw_elements_safe(
-            img_p,
-            out_p,
-            font_path,
-            elements,
-            text_buffer,
-            image_quality,
-        )
+        let font_p = if font_path.is_null() {
+            None
+        } else {
+            Some(
+                unsafe { std::ffi::CStr::from_ptr(font_path) }
+                    .to_str()
+                    .map_err(|_| (FfiErrorCode::Utf8, "Invalid UTF-8 in font path".to_string()))?,
+            )
+        };
+
+        draw_elements_safe(img_p, out_p, font_p, elements, text_buffer, image_quality)
     }));
 
     match result {
@@ -576,7 +590,7 @@ pub unsafe extern "C" fn draw_elements(
 fn draw_elements_safe(
     image_path: &str,
     output_path: &str,
-    font_path: *const std::ffi::c_char,
+    font_path: Option<&str>,
     elements: &[FfiElement],
     text_buffer: &[u8],
     image_quality: u8,
@@ -584,13 +598,8 @@ fn draw_elements_safe(
     let needs_font = elements.iter().any(|e| matches!(e, FfiElement::Text(_)));
     let font_bytes_holder;
     let font: Option<ab_glyph::FontRef<'_>> = if needs_font {
-        let f_path = if font_path.is_null() {
-            return Err((FfiErrorCode::InvalidArg, "Missing font path".to_string()));
-        } else {
-            unsafe { std::ffi::CStr::from_ptr(font_path) }
-                .to_str()
-                .map_err(|_| (FfiErrorCode::Utf8, "Invalid UTF-8 in font path".to_string()))?
-        };
+        let f_path =
+            font_path.ok_or((FfiErrorCode::InvalidArg, "Missing font path".to_string()))?;
 
         font_bytes_holder = io::read_font(Path::new(f_path))
             .map_err(|_| (FfiErrorCode::Io, "Failed to read font".to_string()))?;

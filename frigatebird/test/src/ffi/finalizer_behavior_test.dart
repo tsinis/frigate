@@ -23,6 +23,7 @@ void main() {
       // Force GC. The wrapper is unreachable, but `view` is still retained.
       await _forceGC();
       expect(result.view.length, 100);
+      _reachabilityFence(result.view);
 
       // Wait for any asynchronous cleanup.
       await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -143,3 +144,7 @@ class _TrackingAllocator implements Allocator {
     final _ = _allocations.remove(address);
   }
 }
+
+@pragma('vm:never-inline')
+// ignore: no-empty-block, avoid-unnecessary-nullable-parameters, it's a test.
+void _reachabilityFence(Object? _) {}

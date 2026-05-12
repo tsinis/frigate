@@ -8,16 +8,12 @@ Future<void> main(List<String> args) => build(args, _buildRust);
 Future<void> _buildRust(BuildInput input, BuildOutputBuilder output) async {
   try {
     // The `hooks` package runs in a semi-hermetic environment and strips custom environment
-    // variables. Variables starting with `NIX_` are allowed through (tested on macOS).
-    // `CCACHE_` is documented as allowed but appears to be stripped in this environment.
-    final isDebugFfi =
-        Platform.environment['FRIGATE_DEBUG_FFI'] == 'true' ||
-        Platform.environment['NIX_FRIGATE_DEBUG_FFI'] == 'true';
+    // variables. Variables starting with `NIX_` are allowed through.
+    final isDebugFfi = Platform.environment['NIX_FRIGATE_DEBUG_FFI'] == 'true';
+    if (isDebugFfi) print('Building Rust crate with test features enabled!');
 
-    if (isDebugFfi) print('Building Rust crate in debug mode with test features!');
     await RustBuilder(
       assetName: 'src/ffi/bindings.dart',
-      buildMode: isDebugFfi ? .debug : .release,
       // `ffi-echo` and `ffi-test-helpers` export test-only symbols.
       features: isDebugFfi ? const ['ffi-echo', 'ffi-test-helpers'] : const [],
     ).run(input: input, output: output);

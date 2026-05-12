@@ -121,27 +121,14 @@ final class ExportBackendNative {
       }
 
       final out = outPtr.ref;
-      if (out.data == nullptr) {
-        throw StateError('Rust merge failed (null output buffer)');
-      }
+      if (out.data == nullptr) throw StateError('Rust merge failed (null output buffer)');
 
-      // Use the built-in finalizer support in asTypedList. Memory is freed when the view is GC'ed.
-      final view = out.data.asTypedList(
-        out.length,
-        finalizer: Native.addressOf<NativeFunction<ByteBufferFinalizerFunc>>(
-          ffi.free_byte_buffer,
-        ).cast<NativeFinalizerFunction>(),
-        token: outPtr.cast<Void>(),
-      );
-
-      // Prevent manual free. The finalizer free_byte_buffer(outPtr) will free both outPtr.data AND outPtr.
-      // ignore: avoid-unused-assignment, needed to prevent manual free in finally block
-      outPtr = nullptr;
-
-      return view;
+      return Uint8List.fromList(out.data.asTypedList(out.length));
     } finally {
       if (bgCStr != nullptr) calloc.free(bgCStr);
-      if (outPtr != nullptr) calloc.free(outPtr);
+      // Rust-owned buffer must be freed eagerly before isolate exits.
+      // `free_byte_buffer` frees both outPtr.data AND outPtr.
+      if (outPtr != nullptr) ffi.free_byte_buffer(outPtr);
       arenaHandle?.free();
     }
   }
