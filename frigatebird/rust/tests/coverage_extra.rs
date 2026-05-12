@@ -266,3 +266,95 @@ fn test_draw_elements_more_errors() {
     };
     assert_eq!(status, FfiErrorCode::Decode as u8);
 }
+
+#[test]
+fn test_merge_with_exif_rotated_and_truncated() {
+    let mut out = frigate::ByteBuffer {
+        data: std::ptr::null_mut(),
+        length: 0,
+    };
+    let fg_bytes = tiny_red_png();
+
+    // EXIF rotated
+    let exif_path = std::ffi::CString::new("tests/fixtures/orientation/exif_6.jpg").unwrap();
+    let status = unsafe {
+        frigate::merge(
+            exif_path.as_ptr(),
+            fg_bytes.as_ptr(),
+            fg_bytes.len(),
+            0,
+            0,
+            0,
+            90,
+            std::ptr::null_mut(),
+            &raw mut out,
+        )
+    };
+    assert_eq!(status, frigate::FfiErrorCode::Success as u8);
+    // free buffer
+    unsafe { frigate::free_bytes(out.data, out.length) };
+
+    // Truncated (non-image)
+    let bad_path = std::ffi::CString::new("Cargo.toml").unwrap();
+    let status = unsafe {
+        frigate::merge(
+            bad_path.as_ptr(),
+            fg_bytes.as_ptr(),
+            fg_bytes.len(),
+            0,
+            0,
+            0,
+            90,
+            std::ptr::null_mut(),
+            &raw mut out,
+        )
+    };
+    assert_eq!(status, frigate::FfiErrorCode::Decode as u8);
+}
+
+#[test]
+fn test_draw_elements_with_exif_rotated_and_truncated() {
+    let out_path = std::ffi::CString::new("tests/assets/out_draw_elements.jpg").unwrap();
+    let elements = [frigate::FfiElement::Rectangle(frigate::RectanglePayload {
+        x: 0.0,
+        y: 0.0,
+        width: 10.0,
+        height: 10.0,
+        rotation_deg: 0,
+        fill_color_argb: 0xFFFFFFFF,
+        outline_color_argb: 0,
+        outline_thickness: 0,
+        blur: 0,
+        corner_radius: 0,
+    })];
+
+    // EXIF rotated
+    let exif_path = std::ffi::CString::new("tests/fixtures/orientation/exif_6.jpg").unwrap();
+    let status = unsafe {
+        frigate::draw_elements(
+            exif_path.as_ptr(),
+            out_path.as_ptr(),
+            std::ptr::null(),
+            elements.as_ptr(),
+            elements.len(),
+            90,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, frigate::FfiErrorCode::Success as u8);
+
+    // Truncated (non-image)
+    let bad_path = std::ffi::CString::new("Cargo.toml").unwrap();
+    let status = unsafe {
+        frigate::draw_elements(
+            bad_path.as_ptr(),
+            out_path.as_ptr(),
+            std::ptr::null(),
+            elements.as_ptr(),
+            elements.len(),
+            90,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, frigate::FfiErrorCode::Decode as u8);
+}
