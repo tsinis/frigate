@@ -7,11 +7,19 @@ on:
       - ".github/workflows/flutter_check.yaml"
       - "frigatedraw/**/*.dart"
       - "frigatedraw/pubspec.yaml"
+      - "frigatebird/lib/**"
+      - "frigatebird/hook/**"
+      - "frigatebird/rust/**"
+      - "frigatebird/pubspec.yaml"
   pull_request:
     paths:
       - ".github/workflows/flutter_check.yaml"
       - "frigatedraw/**/*.dart"
       - "frigatedraw/pubspec.yaml"
+      - "frigatebird/lib/**"
+      - "frigatebird/hook/**"
+      - "frigatebird/rust/**"
+      - "frigatebird/pubspec.yaml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

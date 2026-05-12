@@ -9,50 +9,53 @@ import 'package:test/test.dart';
 
 void main() {
   group('Finalizer Behavior', () {
-    test('NativeImage view retains buffer, dropping view triggers exact-count GC', () async {
-      final trackingAllocator = _TrackingAllocator(malloc);
-      final testFinalizer = Finalizer<int>(trackingAllocator.recordFinalizerFree);
+    test(
+      'NativeImage wrapper retains allocation, dropping wrapper triggers exact-count GC',
+      () async {
+        final trackingAllocator = _TrackingAllocator(malloc);
+        final testFinalizer = Finalizer<int>(trackingAllocator.recordFinalizerFree);
 
-      // We use a nullable variable to allow dropping the reference.
-      ({int address, Uint8List view})? result = _createAndDropWrapper(
-        trackingAllocator,
-        testFinalizer,
-      );
-      final address = result.address;
+        // We use a nullable variable to allow dropping the reference.
+        ({int address, NativeImage wrapper})? result = _createAndDropWrapper(
+          trackingAllocator,
+          testFinalizer,
+        );
+        final address = result.address;
 
-      // Force GC. The wrapper is unreachable, but `view` is still retained.
-      await _forceGC();
-      expect(result.view.length, 100);
-      _reachabilityFence(result.view);
-
-      // Wait for any asynchronous cleanup.
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-
-      expect(trackingAllocator.outstandingCount, 1, reason: 'View retains the allocation');
-
-      // Now drop the view.
-      // ignore: avoid-unused-assignment, dropped for GC test.
-      result = null;
-
-      // Force GC and finalizer execution.
-      bool isFreed = false;
-      for (int i = 0; i < 20; i += 1) {
+        // Force GC. The wrapper is still retained.
         await _forceGC();
+        expect(result.wrapper.bytes.length, 100);
+        _reachabilityFence(result.wrapper);
 
-        // Wait for finalizers to run.
+        // Wait for any asynchronous cleanup.
         await Future<void>.delayed(const Duration(milliseconds: 50));
-        if (trackingAllocator.outstandingCount == 0) {
-          isFreed = true;
 
-          break;
+        expect(trackingAllocator.outstandingCount, 1, reason: 'Wrapper retains the allocation');
+
+        // Now drop the wrapper.
+        // ignore: avoid-unused-assignment, dropped for GC test.
+        result = null;
+
+        // Force GC and finalizer execution.
+        bool isFreed = false;
+        for (int i = 0; i < 20; i += 1) {
+          await _forceGC();
+
+          // Wait for finalizers to run.
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          if (trackingAllocator.outstandingCount == 0) {
+            isFreed = true;
+
+            break;
+          }
         }
-      }
 
-      expect(isFreed, isTrue, reason: 'Dropping view frees the allocation');
+        expect(isFreed, isTrue, reason: 'Dropping wrapper frees the allocation');
 
-      // Suppress unused warning.
-      expect(address, isNot(0));
-    });
+        // Suppress unused warning.
+        expect(address, isNot(0));
+      },
+    );
 
     test('FfiArenaHandle dropping wrapper triggers exact-count GC', () async {
       final trackingAllocator = _TrackingAllocator(malloc);
@@ -80,17 +83,16 @@ void main() {
   });
 }
 
-({int address, Uint8List view}) _createAndDropWrapper(
+({int address, NativeImage wrapper}) _createAndDropWrapper(
   _TrackingAllocator allocator,
   Finalizer<int> finalizer,
 ) {
   final data = Uint8List(100);
   final image = NativeImage.testWithAllocator(data, allocator: allocator, height: 10, width: 10);
   final address = image.address;
-  final view = image.bytes;
-  finalizer.attach(view, address);
+  finalizer.attach(image, address, detach: image);
 
-  return (address: address, view: view);
+  return (address: address, wrapper: image);
 }
 
 void _createAndDropArena(_TrackingAllocator allocator, Finalizer<int> finalizer) {

@@ -51,4 +51,21 @@ void main() => group(FfiArenaHandle, () {
       arena.free();
     }
   });
+
+  test('errorMessage throws if freed', () {
+    final arena = FfiArenaHandle.allocate()..free();
+    expect(() => arena.errorMessage, throwsStateError);
+  });
+
+  test('allocate with custom finalizer', () {
+    // ignore: prefer-explicit-type-arguments, it's a test.
+    final finalizer = NativeFinalizer(calloc.nativeFree.cast());
+    final arena = FfiArenaHandle.allocate(finalizer: finalizer);
+    expect(arena.ptr.address, isNot(0));
+    // Do not call arena.free() because the custom allocator was not provided,
+    // so arena.free() will try to use `calloc.free` but `finalizer` is already attached
+    // and might double-free if we aren't careful, but since we used standard calloc
+    // we should just let the GC handle it or detach it explicitly.
+    // Let's just let it be finalized.
+  });
 });

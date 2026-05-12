@@ -7,11 +7,17 @@ on:
       - ".github/workflows/dart_check.yaml"
       - "frigatebird/**/*.dart"
       - "frigatebird/pubspec.yaml"
+      - "frigatebird/rust/**"
+      - "frigatebird/**/Cargo.toml"
+      - "frigatebird/rust-toolchain.toml"
   pull_request:
     paths:
       - ".github/workflows/dart_check.yaml"
       - "frigatebird/**/*.dart"
       - "frigatebird/pubspec.yaml"
+      - "frigatebird/rust/**"
+      - "frigatebird/**/Cargo.toml"
+      - "frigatebird/rust-toolchain.toml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
