@@ -1,7 +1,4 @@
-#![expect(unsafe_code, reason = "Integration tests exercise FFI boundary")]
-
 use frigate::{FfiErrorCode, ImageInformation, io};
-use std::ffi::CString;
 use std::path::Path;
 
 #[test]
@@ -22,7 +19,7 @@ fn test_get_image_info_orientation() {
         }
         exercised_count += 1;
 
-        let c_path = CString::new(path_str.as_str()).unwrap();
+        let c_path = safer_ffi::char_p::new(path_str.as_str());
         let mut info = ImageInformation {
             width: 0,
             height: 0,
@@ -31,9 +28,7 @@ fn test_get_image_info_orientation() {
             _pad: [0; 2],
         };
 
-        let status = unsafe {
-            frigate::get_image_info(c_path.as_ptr(), std::ptr::null_mut(), &raw mut info)
-        };
+        let status = frigate::get_image_info(Some(c_path.as_ref()), None, &mut info);
         assert_eq!(status, FfiErrorCode::Success as u8);
         assert_eq!(info.orientation, tag);
 

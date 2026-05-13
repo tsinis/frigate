@@ -51,29 +51,24 @@ impl Default for ImageInformation {
 
 // --- Size Oracles ---
 
-#[allow(unsafe_code)]
-#[unsafe(no_mangle)]
-pub extern "C" fn sizeof_ffi_element() -> usize {
+#[ffi_export]
+pub fn sizeof_ffi_element() -> usize {
     core::mem::size_of::<FfiElement>()
 }
-#[allow(unsafe_code)]
-#[unsafe(no_mangle)]
-pub extern "C" fn sizeof_ffi_payload() -> usize {
+#[ffi_export]
+pub fn sizeof_ffi_payload() -> usize {
     core::mem::size_of::<FfiPayload>()
 }
-#[allow(unsafe_code)]
-#[unsafe(no_mangle)]
-pub extern "C" fn sizeof_ffi_arena() -> usize {
+#[ffi_export]
+pub fn sizeof_ffi_arena() -> usize {
     core::mem::size_of::<FfiArena>()
 }
-#[allow(unsafe_code)]
-#[unsafe(no_mangle)]
-pub extern "C" fn sizeof_ffi_error() -> usize {
+#[ffi_export]
+pub fn sizeof_ffi_error() -> usize {
     core::mem::size_of::<FfiError>()
 }
-#[allow(unsafe_code)]
-#[unsafe(no_mangle)]
-pub extern "C" fn sizeof_image_info() -> usize {
+#[ffi_export]
+pub fn sizeof_image_info() -> usize {
     core::mem::size_of::<ImageInformation>()
 }
 
@@ -212,44 +207,33 @@ fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + S
     write_panic_to_arena(arena, &msg).code
 }
 
+// PERMANENT EXCEPTIONS to #[ffi_export]:
+//
+// - `draw_elements`: takes `*const FfiElement` — safer_ffi 0.1.x cannot derive
+//   ReprC for #[repr(C, u8)] tagged-union enums. Tracked upstream.
+//
+// - `merge`: `ByteBuffer.data` is Rust-heap-allocated and freed via `libc::free`
+//   (not Rust Drop). safer_ffi's repr_c::Box assumes Rust allocator. Mismatch.
+//
+// - `ffi_arena_drop`, `free_byte_buffer`: drop hooks. Inherently unsafe by contract
+//   with NativeFinalizer. unsafe keyword is semantically correct here.
+
 /// Returns oriented dimensions and metadata for an image without decoding full pixel data.
 /// Returns a `u8` status code. Result info is written to `*out`.
-///
-/// # Safety
-///
-/// `path` must be a valid null-terminated C string. `arena` and `out` must be valid
-/// pointers for the duration of the call.
-// Safety: `#[unsafe(no_mangle)]` is used intentionally over `#[ffi_export]` for the entire
-// FFI surface. `safer_ffi` 0.2.0-rc1 cannot derive `ReprC` for `FfiArena` (contains raw
-// pointers) or `ByteBuffer` (returned by `merge`). Using `#[unsafe(no_mangle)]` uniformly
-// across all entry points (`get_image_info`, `merge`, `draw_elements`, test helpers) avoids
-// a split-convention API and keeps the Dart-side `@Native` bindings predictable.
-#[allow(unsafe_code)]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn get_image_info(
-    path: *const std::ffi::c_char,
-    arena: *mut FfiArena,
-    out: *mut ImageInformation,
+#[ffi_export]
+pub fn get_image_info(
+    path: Option<char_p::Ref<'_>>,
+    arena: Option<&mut FfiArena>,
+    out: &mut ImageInformation,
 ) -> u8 {
-    let mut arena_opt = unsafe { arena.as_mut() };
-
-    if out.is_null() {
-        return write_error_to_arena(
-            arena_opt.as_deref_mut(),
-            FfiErrorCode::InvalidArg,
-            "Missing output ImageInformation pointer",
-        )
-        .code;
-    }
+    let mut arena_opt = arena;
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let inner: Result<ImageInformation, (FfiErrorCode, String)> = (|| {
-            let p_str = if path.is_null() {
-                return Err((FfiErrorCode::InvalidArg, "Missing path".to_string()));
+            let p_str = if let Some(p) = path {
+                p.to_str()
             } else {
-                unsafe { std::ffi::CStr::from_ptr(path) }
-                    .to_str()
-                    .map_err(|_| (FfiErrorCode::Utf8, "Invalid UTF-8 in path".to_string()))?
+                return Err((FfiErrorCode::InvalidArg, "Missing path".to_string()));
             };
             let path_ref = Path::new(p_str);
 
@@ -298,15 +282,15 @@ pub unsafe extern "C" fn get_image_info(
 
     match result {
         Ok(Ok(info)) => {
-            unsafe { *out = info };
+            *out = info;
             FfiErrorCode::Success as u8
         }
         Ok(Err((code, msg))) => {
-            unsafe { *out = ImageInformation::default() };
+            *out = ImageInformation::default();
             write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code
         }
         Err(payload) => {
-            unsafe { *out = ImageInformation::default() };
+            *out = ImageInformation::default();
             handle_panic(arena_opt, payload)
         }
     }

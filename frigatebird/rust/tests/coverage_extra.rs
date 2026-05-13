@@ -8,32 +8,25 @@ fn test_get_image_info_errors() {
     let mut info = ImageInformation::default();
 
     // 1. Missing path
-    let status = unsafe { get_image_info(std::ptr::null(), std::ptr::null_mut(), &raw mut info) };
-    assert_eq!(status, FfiErrorCode::InvalidArg as u8);
-
-    // 2. Missing output pointer
-    let path = CString::new("tests/fixtures/orientation/exif_1.jpg").unwrap();
-    let status =
-        unsafe { get_image_info(path.as_ptr(), std::ptr::null_mut(), std::ptr::null_mut()) };
+    let status = get_image_info(None, None, &mut info);
     assert_eq!(status, FfiErrorCode::InvalidArg as u8);
 
     // 3. Non-existent file
-    let bad_path = CString::new("non_existent.jpg").unwrap();
-    let status = unsafe { get_image_info(bad_path.as_ptr(), std::ptr::null_mut(), &raw mut info) };
+    let bad_path = safer_ffi::char_p::new("non_existent.jpg");
+    let status = get_image_info(Some(bad_path.as_ref()), None, &mut info);
     assert_eq!(status, FfiErrorCode::Io as u8);
 
     // 4. Not an image (use a text file if available or just a random file)
-    let cargo_toml = CString::new("Cargo.toml").unwrap();
-    let status =
-        unsafe { get_image_info(cargo_toml.as_ptr(), std::ptr::null_mut(), &raw mut info) };
+    let cargo_toml = safer_ffi::char_p::new("Cargo.toml");
+    let status = get_image_info(Some(cargo_toml.as_ref()), None, &mut info);
     assert_eq!(status, FfiErrorCode::Decode as u8);
 }
 
 #[test]
 fn test_get_image_info_clears_out_on_error() {
     let mut info = ImageInformation::default();
-    let bad_path = CString::new("non_existent.jpg").unwrap();
-    let _ = unsafe { get_image_info(bad_path.as_ptr(), std::ptr::null_mut(), &raw mut info) };
+    let bad_path = safer_ffi::char_p::new("non_existent.jpg");
+    let _ = get_image_info(Some(bad_path.as_ref()), None, &mut info);
     let def = ImageInformation::default();
     assert_eq!(info.width, def.width);
     assert_eq!(info.height, def.height);
