@@ -137,7 +137,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
         backgroundPath: tempImageFile.path,
         elements: [
           TextElement(
-            fontSize: params.fontSize,
+            height: params.fontSize,
             rotation: params.rotation,
             text: params.text,
             x: 800 / 4,

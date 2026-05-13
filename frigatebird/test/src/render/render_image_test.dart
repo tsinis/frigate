@@ -21,7 +21,7 @@ void main() {
       const rect = RectElement(height: 100, outlineThickness: 4, width: 200, x: 100, y: 100);
       const text = TextElement(
         fillColor: FfiColor(0xFF00FF00),
-        fontSize: 48,
+        height: 48,
         text: 'Hi',
         x: 150,
         y: 250,
@@ -47,7 +47,7 @@ void main() {
 
       const text = TextElement(
         fillColor: FfiColor(0xFF00FF00),
-        fontSize: 48,
+        height: 48,
         text: 'Frigate',
         x: 50,
         y: 250,

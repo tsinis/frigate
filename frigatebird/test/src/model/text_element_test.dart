@@ -14,7 +14,7 @@ void main() => group(TextElement, () {
   });
 
   test('copyWith preserves unchanged fields', () {
-    const original = TextElement(fontSize: 32, rotation: 15, text: 'hello', x: 10, y: 20);
+    const original = TextElement(height: 32, rotation: 15, text: 'hello', x: 10, y: 20);
     final TextElement(:fontSize, :rotation, :text, :x, :y) = original.copyWith(x: 30);
     expect(text, 'hello', reason: 'text untouched');
     expect((x, y), (30.0, 20.0), reason: 'x replaced, y untouched');
@@ -36,7 +36,7 @@ void main() => group(TextElement, () {
   });
 
   test('no copy in isolates outside of the list', () async {
-    const element = TextElement(fontSize: 32, text: 'hi', x: 10, y: 20);
+    const element = TextElement(height: 32, text: 'hi', x: 10, y: 20);
 
     final receivePort = ReceivePort();
     final result = await Isolate.spawn(
@@ -53,7 +53,7 @@ void main() => group(TextElement, () {
   });
 
   test('no copy in isolates inside of the list', () async {
-    const element = TextElement(fontSize: 32, text: 'hi', x: 10, y: 20);
+    const element = TextElement(height: 32, text: 'hi', x: 10, y: 20);
     final list = [element];
 
     final receivePort = ReceivePort();
