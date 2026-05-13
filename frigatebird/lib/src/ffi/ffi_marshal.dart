@@ -257,7 +257,7 @@ sealed class FfiMarshal {
               blur: txt.blur,
               fillColor: FfiColor(txt.fillColorArgb),
               fontId: txt.fontId,
-              fontSize: txt.height,
+              height: txt.height,
               rotation: txt.rotationDeg,
               text: text,
               x: txt.x,

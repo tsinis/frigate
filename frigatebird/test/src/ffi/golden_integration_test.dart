@@ -29,7 +29,7 @@ void main() {
 
         final elements = [
           const RectElement(fillColor: FfiColor(0xFFFF0000), height: 100, width: 200, x: 10, y: 10),
-          const TextElement(fontSize: 40, text: 'Deterministic', x: 20, y: 120),
+          const TextElement(height: 40, text: 'Deterministic', x: 20, y: 120),
         ];
 
         await RenderImage.run(

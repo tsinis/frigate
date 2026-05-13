@@ -120,7 +120,7 @@ void main() => group(DrawPainter, () {
       // Rust's `draw_rect_on_pixmap` short-circuits on `width <= 0 || height <= 0`. Without
       // the matching guard in the painter, Flutter would happily render a flipped rect from
       // a negative-width `Rect.fromLTWH` — a preview-vs-export divergence the user would
-      // hit mid-drag. The original CodeRabbit hypothesis (that `clamp` would throw) is
+      // hit mid-drag. The original hypothesis (that `clamp` would throw) is
       // false because `Rect.shortestSide` is magnitude-based, but the divergence is real.
       final canvas = _RecordingCanvas();
       const cases = <RectElement>[
@@ -130,7 +130,7 @@ void main() => group(DrawPainter, () {
         RectElement(cornerRadius: 8, height: 10, width: 0, x: 0, y: 0),
         RectElement(height: 0, width: 0, x: 0, y: 0),
       ];
-      const DrawPainter(cases).paint(canvas, const Size(100, 100));
+      DrawPainter(cases).paint(canvas, const Size(100, 100));
       expect(
         (canvas.drawRectCount, canvas.drawRRectCount),
         (0, 0),
