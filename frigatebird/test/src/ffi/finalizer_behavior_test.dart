@@ -3,7 +3,6 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
-import 'package:frigatebird/src/ffi/ffi_arena_handle.dart';
 import 'package:frigatebird/src/ffi/native_image.dart';
 import 'package:test/test.dart';
 
@@ -56,30 +55,6 @@ void main() {
         expect(address, isNot(0));
       },
     );
-
-    test('FfiArenaHandle dropping wrapper triggers exact-count GC', () async {
-      final trackingAllocator = _TrackingAllocator(malloc);
-      final testFinalizer = Finalizer<int>(trackingAllocator.recordFinalizerFree);
-
-      _createAndDropArena(trackingAllocator, testFinalizer);
-
-      expect(trackingAllocator.outstandingCount, 2, reason: 'Arena and errorBuf allocated');
-
-      bool isFreed = false;
-      for (int i = 0; i < 20; i += 1) {
-        await _forceGC();
-
-        // Wait for finalizers to run.
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        if (trackingAllocator.outstandingCount == 0) {
-          isFreed = true;
-
-          break;
-        }
-      }
-
-      expect(isFreed, isTrue, reason: 'Dropping FfiArenaHandle frees all its buffers');
-    });
   });
 }
 
@@ -93,13 +68,6 @@ void main() {
   finalizer.attach(image, address, detach: image);
 
   return (address: address, wrapper: image);
-}
-
-void _createAndDropArena(_TrackingAllocator allocator, Finalizer<int> finalizer) {
-  final arena = FfiArenaHandle.allocate(allocator: allocator, errorCapacity: 128);
-  finalizer
-    ..attach(arena, arena.ptr.address)
-    ..attach(arena, arena.ptr.ref.errorBuf.address);
 }
 
 Future<void> _forceGC() async {

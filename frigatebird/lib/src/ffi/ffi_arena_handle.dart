@@ -4,7 +4,6 @@ import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 
 import 'bindings.dart' as ffi;
-import 'ffi_allocator_utils.dart';
 import 'ffi_arena.dart';
 import 'ffi_error.dart';
 import 'ffi_result_unit.dart';
@@ -23,49 +22,18 @@ import 'ffi_result_unit.dart';
 /// Do NOT pass [ptr] to code that outlives this handle — after [free] the
 /// pointer is dangling and its memory is unmapped/reused.
 final class FfiArenaHandle implements Finalizable {
-  FfiArenaHandle._(this.ptr, this._allocator);
+  FfiArenaHandle._(this.ptr);
 
-  /// Allocates a zero-initialized arena with an error buffer attached.
-  /// Text and image buffers stay `nullptr`/0 — callers that need them
-  /// should populate the fields before the FFI call and free them in [free]
-  /// (or extend this class).
-  ///
-  /// If a custom [allocator] is provided, the caller MUST either provide a
-  /// matching [finalizer] or call [free] manually to prevent leaks.
-  /// Standard [malloc] and [calloc] are handled automatically.
-  factory FfiArenaHandle.allocate({
-    int errorCapacity = defaultErrorCapacity,
-    Allocator allocator = calloc,
-    NativeFinalizer? finalizer,
-  }) {
+  /// Allocates an arena with an error buffer attached using Rust's allocator.
+  factory FfiArenaHandle.allocate({int errorCapacity = defaultErrorCapacity}) {
     assert(errorCapacity > 0, 'errorCapacity must be positive');
 
-    final arenaPtr = allocator<FfiArena>();
-    _initializeArena(arenaPtr, errorCapacity, allocator);
+    final arenaPtr = ffi.ffi_arena_create(errorCapacity);
+    final handle = FfiArenaHandle._(arenaPtr);
 
-    final handle = FfiArenaHandle._(arenaPtr, allocator);
-
-    if (finalizer != null) {
-      finalizer.attach(handle, arenaPtr.cast<Void>(), detach: handle);
-    } else if (isMallocCompatible(allocator)) {
-      _finalizer.attach(handle, arenaPtr.cast<Void>(), detach: handle);
-    }
+    _finalizer.attach(handle, arenaPtr.cast<Void>(), detach: handle);
 
     return handle;
-  }
-
-  static void _initializeArena(Pointer<FfiArena> arenaPtr, int errorCapacity, Allocator allocator) {
-    // Always zero the newly allocated memory for consistent behavior across allocators.
-    // asTypedList produces a zero-copy unowned view of the native memory.
-    final bytes = arenaPtr.cast<Uint8>().asTypedList(sizeOf<FfiArena>());
-    bytes.fillRange(0, bytes.length, 0);
-
-    final errorBuf = allocator<Uint8>(errorCapacity);
-    errorBuf.asTypedList(errorCapacity).fillRange(0, errorCapacity, 0);
-
-    arenaPtr.ref
-      ..errorBuf = errorBuf
-      ..errorCap = errorCapacity;
   }
 
   /// Default error-buffer capacity. 512 bytes covers every error message
@@ -75,30 +43,26 @@ final class FfiArenaHandle implements Finalizable {
   /// Pointer to the C-side struct. Pass to FFI calls as `arena.ptr`.
   final Pointer<FfiArena> ptr;
 
-  final Allocator _allocator;
-
   static final _finalizer = NativeFinalizer(
     Native.addressOf<NativeFunction<Void Function(Pointer<FfiArena>)>>(
-      ffi.ffi_arena_drop,
+      ffi.ffi_arena_free,
     ).cast<NativeFinalizerFunction>(),
   );
 
   bool _isFreed = false;
 
-  /// Reads the NUL-terminated UTF-8 message Rust wrote into `errorBuf`.
+  /// Reads the NUL-terminated UTF-8 message Rust wrote into `error.ptr`.
   /// Returns `null` if the buffer is missing, empty, or starts with NUL.
-  ///
-  /// `toDartString()` (without `length:`) scans for the first NUL byte and
-  /// stops there, which matches Rust's `write_error_to_arena` contract.
   String? get errorMessage {
     if (_isFreed) throw StateError('Cannot read from a freed FfiArenaHandle');
 
     final i = ptr.ref;
-    if (i.errorBuf == nullptr || i.errorCap == 0) return null;
+    final errorPointer = i.error.ptr;
+    if (errorPointer == nullptr || i.error.len == 0) return null;
     // Check first byte: if 0, Rust didn't write anything (or wrote an empty string).
-    if (i.errorBuf.value == 0) return null;
+    if (errorPointer.value == 0) return null;
 
-    return i.errorBuf.cast<Utf8>().toDartString();
+    return errorPointer.cast<Utf8>().toDartString();
   }
 
   /// Decodes a status code from Rust into a [FfiResultUnit] using this arena's error buffer.
@@ -110,21 +74,11 @@ final class FfiArenaHandle implements Finalizable {
   }
 
   /// Frees the error buffer and the arena struct itself.
-  ///
-  /// Idempotent — calling multiple times is safe and has no effect after the
-  /// first call.
   void free() {
     if (_isFreed) return;
     _isFreed = true;
 
-    if (isMallocCompatible(_allocator)) {
-      _finalizer.detach(this);
-      ffi.ffi_arena_drop(ptr);
-    } else {
-      // Custom allocator: free manually.
-      final ref = ptr.ref;
-      if (ref.errorBuf != nullptr) _allocator.free(ref.errorBuf);
-      _allocator.free(ptr);
-    }
+    _finalizer.detach(this);
+    ffi.ffi_arena_free(ptr);
   }
 }

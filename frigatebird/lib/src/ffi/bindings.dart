@@ -46,11 +46,14 @@ external int sizeof_image_info();
 
 // --- Drop Hooks ---.
 
-@Native<Void Function(Pointer<FfiArena>)>(isLeaf: true)
-external void ffi_arena_drop(Pointer<FfiArena> arena);
+@Native<Pointer<FfiArena> Function(Size)>(isLeaf: true)
+external Pointer<FfiArena> ffi_arena_create(int errorCap);
 
-@Native<Void Function(Pointer<ByteBuffer>)>(isLeaf: true)
-external void free_byte_buffer(Pointer<ByteBuffer> buf);
+@Native<Void Function(Pointer<FfiArena>)>(isLeaf: true)
+external void ffi_arena_free(Pointer<FfiArena> arena);
+
+@Native<Void Function(ByteBuffer)>(isLeaf: true)
+external void free_byte_buffer(ByteBuffer buf);
 
 /// Returns oriented dimensions and metadata for an image without decoding full pixel data.
 ///
@@ -69,8 +72,7 @@ external int get_image_info(
 @Native<
   Uint8 Function(
     Pointer<Utf8>,
-    Pointer<Uint8>,
-    Size,
+    ByteBuffer,
     Int32,
     Int32,
     Uint8,
@@ -81,10 +83,9 @@ external int get_image_info(
 >()
 external int merge(
   Pointer<Utf8> backgroundPath,
-  Pointer<Uint8> foregroundPngPtr,
-  int foregroundPngLen,
-  int offsetX,
-  int offsetY,
+  ByteBuffer foregroundPng,
+  int dx,
+  int dy,
   int outFormat,
   int imageQuality,
   Pointer<FfiArena> arena,
@@ -97,7 +98,7 @@ external int merge(
 /// [fontPath] may be null when no element has a text tag.
 /// Variable-length text and error data are exchanged through [arena]:
 ///   - `arena.text_buf` / `arena.text_len` — UTF-8 text sidecar (Dart-owned, read-only by Rust).
-///   - `arena.error_buf` / `arena.error_cap` — error message buffer (Dart-owned, Rust writes on err).
+///   - `arena.error` — error message buffer (Rust-owned `c_slice::Box<u8>`, Dart reads on err).
 ///
 /// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
 ///

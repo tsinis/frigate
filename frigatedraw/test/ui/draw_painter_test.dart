@@ -130,7 +130,7 @@ void main() => group(DrawPainter, () {
         RectElement(cornerRadius: 8, height: 10, width: 0, x: 0, y: 0),
         RectElement(height: 0, width: 0, x: 0, y: 0),
       ];
-      DrawPainter(cases).paint(canvas, const Size(100, 100));
+      const DrawPainter(cases).paint(canvas, const Size(100, 100));
       expect(
         (canvas.drawRectCount, canvas.drawRRectCount),
         (0, 0),

@@ -102,10 +102,14 @@ final class ExportBackendNative {
       // We need an arena for potential error messages.
       arenaHandle = FfiArenaHandle.allocate();
 
+      final fgBuf = calloc<ByteBuffer>();
+      fgBuf.ref
+        ..ptr = Pointer<Uint8>.fromAddress(foregroundAddress)
+        ..len = foregroundLen;
+
       final code = ffi.merge(
         bgCStr,
-        Pointer<Uint8>.fromAddress(foregroundAddress),
-        foregroundLen,
+        fgBuf.ref,
         offsetX,
         offsetY,
         outFormatWire,
@@ -114,6 +118,8 @@ final class ExportBackendNative {
         outPtr,
       );
 
+      calloc.free(fgBuf);
+
       final result = arenaHandle.readResult(code);
 
       if (result is ErrUnit) {
@@ -121,14 +127,16 @@ final class ExportBackendNative {
       }
 
       final out = outPtr.ref;
-      if (out.data == nullptr) throw StateError('Rust merge failed (null output buffer)');
+      if (out.ptr == nullptr) throw StateError('Rust merge failed (null output buffer)');
 
-      return Uint8List.fromList(out.data.asTypedList(out.length));
+      return Uint8List.fromList(out.ptr.asTypedList(out.len));
     } finally {
       if (bgCStr != nullptr) calloc.free(bgCStr);
       // Rust-owned buffer must be freed eagerly before isolate exits.
-      // `free_byte_buffer` frees both outPtr.data AND outPtr.
-      if (outPtr != nullptr) ffi.free_byte_buffer(outPtr);
+      if (outPtr != nullptr) {
+        ffi.free_byte_buffer(outPtr.ref);
+        calloc.free(outPtr);
+      }
       arenaHandle?.free();
     }
   }

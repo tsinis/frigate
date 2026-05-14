@@ -6,6 +6,7 @@ import 'dart:ffi';
 import 'dart:typed_data' show BytesBuilder, Uint8List;
 
 import 'package:ffi/ffi.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 
 import '../model/draw_element.dart';
 import '../model/ffi_color.dart';
@@ -142,7 +143,7 @@ sealed class FfiMarshal {
         }
       }
 
-      final arena = FfiArenaHandle.allocate(allocator: allocator, errorCapacity: errorCap);
+      final arena = FfiArenaHandle.allocate(errorCapacity: errorCap);
       arena.ptr.ref
         ..textBuf = textBufferPtr
         ..textLen = payloadTotal;
@@ -176,6 +177,7 @@ sealed class FfiMarshal {
   ///
   /// Returns a record with the successfully decoded `elements` and any `unknownTags`
   /// encountered (typically from a newer Rust binary).
+  @visibleForTesting
   static ({List<DrawElement> elements, List<int> unknownTags}) decodeElements(
     Pointer<FfiElement> inElementsPtr,
     int count,

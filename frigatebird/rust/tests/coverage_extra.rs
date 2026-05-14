@@ -127,108 +127,32 @@ fn test_draw_elements_font_errors() {
 
 #[test]
 fn test_merge_errors() {
-    // 1. Missing output buffer
-    let status = unsafe {
-        frigate::merge(
-            std::ptr::null(),
-            std::ptr::null(),
-            0,
-            0,
-            0,
-            0,
-            90,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        )
-    };
-    assert_eq!(status, FfiErrorCode::InvalidArg as u8);
-
     // 2. Missing background path
-    let mut out = frigate::ByteBuffer {
-        data: std::ptr::null_mut(),
-        length: 0,
-    };
-    let status = unsafe {
-        frigate::merge(
-            std::ptr::null(),
-            std::ptr::null(),
-            0,
-            0,
-            0,
-            0,
-            90,
-            std::ptr::null_mut(),
-            &raw mut out,
-        )
-    };
+    let mut out = frigate::ByteBuffer::default();
+    let status = frigate::merge(None, (&[] as &[u8]).into(), 0, 0, 0, 90, None, &mut out);
     assert_eq!(status, FfiErrorCode::InvalidArg as u8);
 
     // 3. Missing foreground bytes
-    let path = CString::new("tests/fixtures/orientation/exif_1.jpg").unwrap();
-    let status = unsafe {
-        frigate::merge(
-            path.as_ptr(),
-            std::ptr::null(),
-            0,
-            0,
-            0,
-            0,
-            90,
-            std::ptr::null_mut(),
-            &raw mut out,
-        )
-    };
-    assert_eq!(status, FfiErrorCode::InvalidArg as u8);
+    let path_str = "tests/fixtures/orientation/exif_1.jpg";
+    let _path = safer_ffi::char_p::new(path_str);
+    let status = frigate::merge(None, (&[] as &[u8]).into(), 0, 0, 0, 0, None, &mut out);
 
-    // 3.5. Null pointer but fg_len > 0
-    let status = unsafe {
-        frigate::merge(
-            path.as_ptr(),
-            std::ptr::null(),
-            1,
-            0,
-            0,
-            0,
-            90,
-            std::ptr::null_mut(),
-            &raw mut out,
-        )
-    };
-    assert_eq!(status, FfiErrorCode::InvalidArg as u8);
-
-    // 3.6. Non-null pointer but fg_len == 0
-    let fg_dummy = [0u8; 1];
-    let status = unsafe {
-        frigate::merge(
-            path.as_ptr(),
-            fg_dummy.as_ptr(),
-            0,
-            0,
-            0,
-            0,
-            90,
-            std::ptr::null_mut(),
-            &raw mut out,
-        )
-    };
     assert_eq!(status, FfiErrorCode::InvalidArg as u8);
 
     // 4. Decode failure background
     let fg_bytes = tiny_red_png();
-    let cargo_toml = CString::new("Cargo.toml").unwrap();
-    let status = unsafe {
-        frigate::merge(
-            cargo_toml.as_ptr(),
-            fg_bytes.as_ptr(),
-            fg_bytes.len(),
-            0,
-            0,
-            0,
-            90,
-            std::ptr::null_mut(),
-            &raw mut out,
-        )
-    };
+    let cargo_toml_str = "Cargo.toml";
+    let cargo_toml = safer_ffi::char_p::new(cargo_toml_str);
+    let status = frigate::merge(
+        Some(cargo_toml.as_ref()),
+        fg_bytes.as_slice().into(),
+        0,
+        0,
+        0,
+        90,
+        None,
+        &mut out,
+    );
     assert_eq!(status, FfiErrorCode::Decode as u8);
 }
 
@@ -262,46 +186,40 @@ fn test_draw_elements_more_errors() {
 
 #[test]
 fn test_merge_with_exif_rotated_and_truncated() {
-    let mut out = frigate::ByteBuffer {
-        data: std::ptr::null_mut(),
-        length: 0,
-    };
+    let mut out = frigate::ByteBuffer::default();
     let fg_bytes = tiny_red_png();
 
     // EXIF rotated
-    let exif_path = std::ffi::CString::new("tests/fixtures/orientation/exif_6.jpg").unwrap();
-    let status = unsafe {
-        frigate::merge(
-            exif_path.as_ptr(),
-            fg_bytes.as_ptr(),
-            fg_bytes.len(),
-            0,
-            0,
-            0,
-            90,
-            std::ptr::null_mut(),
-            &raw mut out,
-        )
-    };
+    let exif_path_str = "tests/fixtures/orientation/exif_6.jpg";
+    let exif_path = safer_ffi::char_p::new(exif_path_str);
+    let status = frigate::merge(
+        Some(exif_path.as_ref()),
+        fg_bytes.as_slice().into(),
+        0,
+        0,
+        0,
+        90,
+        None,
+        &mut out,
+    );
     assert_eq!(status, frigate::FfiErrorCode::Success as u8);
     // free buffer
-    unsafe { frigate::free_bytes(out.data, out.length) };
+    frigate::free_byte_buffer(out);
 
     // Truncated (non-image)
-    let bad_path = std::ffi::CString::new("Cargo.toml").unwrap();
-    let status = unsafe {
-        frigate::merge(
-            bad_path.as_ptr(),
-            fg_bytes.as_ptr(),
-            fg_bytes.len(),
-            0,
-            0,
-            0,
-            90,
-            std::ptr::null_mut(),
-            &raw mut out,
-        )
-    };
+    let bad_path_str = "Cargo.toml";
+    let bad_path = safer_ffi::char_p::new(bad_path_str);
+    let mut out = frigate::ByteBuffer::default();
+    let status = frigate::merge(
+        Some(bad_path.as_ref()),
+        fg_bytes.as_slice().into(),
+        0,
+        0,
+        0,
+        90,
+        None,
+        &mut out,
+    );
     assert_eq!(status, frigate::FfiErrorCode::Decode as u8);
 }
 

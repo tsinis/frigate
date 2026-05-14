@@ -17,8 +17,7 @@ fn get_image_info_missing_path() {
         text_len: 0,
         image_buf: std::ptr::null(),
         image_len: 0,
-        error_buf: std::ptr::null_mut(),
-        error_cap: 0,
+        error: vec![0u8; 0].into_boxed_slice().into(),
     };
     let status = get_image_info(Some(path.as_ref()), Some(&mut arena), &mut out);
     assert_eq!(status, FfiErrorCode::Io as u8);
@@ -44,8 +43,7 @@ fn get_image_info_truncated() {
         text_len: 0,
         image_buf: std::ptr::null(),
         image_len: 0,
-        error_buf: std::ptr::null_mut(),
-        error_cap: 0,
+        error: vec![0u8; 0].into_boxed_slice().into(),
     };
     let status = get_image_info(Some(path.as_ref()), Some(&mut arena), &mut out);
     assert_eq!(status, FfiErrorCode::Decode as u8);
@@ -83,51 +81,23 @@ fn test_sizeof_oracles() {
 
 #[test]
 fn test_ffi_arena_drop_null() {
-    unsafe { ffi_arena_drop(std::ptr::null_mut()) }; // Should not panic
+    frigate::ffi_arena_free(Box::new(FfiArena::default()).into()); // should not panic but is effectively doing nothing
 }
 
 #[test]
 fn test_ffi_arena_drop_valid() {
-    unsafe {
-        let arena = libc::calloc(1, std::mem::size_of::<FfiArena>()).cast::<FfiArena>();
-        assert!(!arena.is_null());
-        (*arena).error_buf = libc::calloc(1, 100).cast::<u8>();
-        (*arena).error_cap = 100;
-
-        ffi_arena_drop(arena); // Should free error_buf and arena
-    }
+    let arena = frigate::ffi_arena_create(100);
+    frigate::ffi_arena_free(arena); // Should free error_buf and arena
 }
 
 #[test]
-fn test_free_byte_buffer_null() {
-    unsafe { free_byte_buffer(std::ptr::null_mut()) }; // Should not panic
+fn test_free_byte_buffer_empty() {
+    free_byte_buffer(ByteBuffer::default()); // Should not panic
 }
 
 #[test]
 fn test_free_byte_buffer_valid() {
-    unsafe {
-        let buf = libc::calloc(1, std::mem::size_of::<ByteBuffer>()).cast::<ByteBuffer>();
-        assert!(!buf.is_null());
-
-        let data = vec![1u8, 2, 3].into_boxed_slice();
-        (*buf).length = data.len();
-        (*buf).data = Box::into_raw(data).cast::<u8>();
-        free_byte_buffer(buf); // Should free data and buf
-    }
-}
-
-#[test]
-fn test_free_bytes_null() {
-    unsafe { free_bytes(std::ptr::null_mut(), 0) }; // Should not panic
-    unsafe { free_bytes(std::ptr::null_mut(), 10) }; // Should not panic
-}
-
-#[test]
-fn test_free_bytes_valid() {
-    unsafe {
-        let data = vec![1u8, 2, 3].into_boxed_slice();
-        let len = data.len();
-        let ptr = Box::into_raw(data).cast::<u8>();
-        free_bytes(ptr, len); // Should free data
-    }
+    let data = vec![1u8, 2, 3].into_boxed_slice();
+    let buf = ByteBuffer::from(data);
+    free_byte_buffer(buf); // Should free data
 }
