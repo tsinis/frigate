@@ -9,7 +9,7 @@ final class OvalElement extends DrawElement {
     required super.y,
     super.blur,
     super.rotation,
-    super.fillColor,
+    super.fillColor = FfiColor.transparent,
     super.outlineColor,
     super.outlineThickness,
   });
