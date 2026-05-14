@@ -134,7 +134,7 @@ final class ExportBackendNative {
       if (fgBuf != nullptr) calloc.free(fgBuf);
       // Rust-owned buffer must be freed eagerly before isolate exits.
       if (outPtr != nullptr) {
-        ffi.free_byte_buffer(outPtr.ref);
+        if (outPtr.ref.ptr != nullptr) ffi.free_byte_buffer(outPtr.ref);
         calloc.free(outPtr);
       }
       arenaHandle?.free();

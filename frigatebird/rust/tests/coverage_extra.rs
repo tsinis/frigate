@@ -134,9 +134,9 @@ fn test_merge_errors() {
 
     // 3. Missing foreground bytes
     let path_str = "tests/fixtures/orientation/exif_1.jpg";
-    let _path = safer_ffi::char_p::new(path_str);
+    let path = safer_ffi::char_p::new(path_str);
     let status = frigate::merge(
-        Some(_path.as_ref()),
+        Some(path.as_ref()),
         (&[] as &[u8]).into(),
         0,
         0,

@@ -155,7 +155,7 @@ fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + S
 
 // PERMANENT EXCEPTIONS to #[ffi_export]:
 //
-// - `draw_elements`: takes `*const FfiElement` — safer_ffi 0.1.x cannot derive
+// - `draw_elements`: takes `*const FfiElement` — safer_ffi 0.2.0-rc1 cannot derive
 //   ReprC for #[repr(C, u8)] tagged-union enums. Tracked upstream.
 
 /// Returns oriented dimensions and metadata for an image without decoding full pixel data.
@@ -241,12 +241,6 @@ pub fn get_image_info(
 ///
 /// Returns a `u8` status code (`FfiErrorCode` cast to `u8`). Result buffer is written to `*out`.
 /// (Previously returned i32; now returns u8/FfiErrorCode.)
-///
-/// # Safety
-///
-/// `background_path` must be a valid null-terminated C string. `foreground_png_ptr` must
-/// point to at least `foreground_png_len` bytes. `arena` and `out` must be valid
-/// pointers for the duration of the call.
 #[ffi_export]
 pub fn merge(
     background_path: Option<char_p::Ref<'_>>,
@@ -870,14 +864,14 @@ mod merge_tests {
     #[test]
     #[cfg(not(miri))]
     fn merge_handles_invalid_png_foreground() {
-        let path_str = "fake.jpg";
+        let path_str = "tests/fixtures/orientation/exif_1.jpg";
         let path = safer_ffi::char_p::new(path_str);
-        let _fg = [1u8, 2, 3, 4, 5]; // invalid PNG
+        let fg = [1u8, 2, 3, 4, 5]; // invalid PNG
         let mut out = Default::default();
 
         let status = merge(
             Some(path.as_ref()),
-            (&_fg as &[u8]).into(),
+            (&fg as &[u8]).into(),
             0,
             0,
             0,
@@ -886,8 +880,7 @@ mod merge_tests {
             &mut out,
         );
 
-        // "fake.jpg" does not exist so read_image fails with Decode or Io error
-        assert!(status != FfiErrorCode::Success as u8);
+        assert_eq!(status, FfiErrorCode::Decode as u8);
     }
 
     #[test]
