@@ -113,7 +113,7 @@ final class ExportBackendNative {
         offsetX,
         offsetY,
         outFormatWire,
-        imageQuality.clamp(0, 100),
+        imageQuality,
         arenaHandle.ptr,
         outPtr,
       );

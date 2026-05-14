@@ -241,6 +241,7 @@ pub fn get_image_info(
 ///
 /// Returns a `u8` status code (`FfiErrorCode` cast to `u8`). Result buffer is written to `*out`.
 /// (Previously returned i32; now returns u8/FfiErrorCode.)
+#[allow(unsafe_code)]
 #[ffi_export]
 pub fn merge(
     background_path: Option<char_p::Ref<'_>>,
@@ -311,15 +312,15 @@ pub fn merge(
 
     match result {
         Ok(Ok(bytes)) => {
-            *out = bytes.into_boxed_slice().into();
+            unsafe { std::ptr::write(out, bytes.into_boxed_slice().into()) };
             FfiErrorCode::Success as u8
         }
         Ok(Err((code, msg))) => {
-            *out = Vec::new().into_boxed_slice().into();
+            unsafe { std::ptr::write(out, Vec::new().into_boxed_slice().into()) };
             write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code
         }
         Err(payload) => {
-            *out = Vec::new().into_boxed_slice().into();
+            unsafe { std::ptr::write(out, Vec::new().into_boxed_slice().into()) };
             handle_panic(arena_opt, payload)
         }
     }
@@ -843,12 +844,12 @@ mod merge_tests {
     #[test]
     #[cfg(not(miri))]
     fn merge_rejects_empty_foreground_bytes() {
-        let _path_str = "fake.jpg";
-        let _path = safer_ffi::char_p::new(_path_str);
+        let path_str = "tests/fixtures/orientation/exif_1.jpg";
+        let path = safer_ffi::char_p::new(path_str);
         let mut out = Default::default();
 
         let status = merge(
-            Some(_path.as_ref()),
+            Some(path.as_ref()),
             (&[] as &[u8]).into(),
             0,
             0,
