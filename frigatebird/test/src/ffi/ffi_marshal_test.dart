@@ -58,7 +58,7 @@ void main() {
         blur: 1,
         fillColor: FfiColor(0xFF0000FF),
         fontId: 42,
-        fontSize: 32,
+        height: 32,
         rotation: -45,
         text: 'Hello FFI',
         x: 5,
@@ -97,7 +97,7 @@ void main() {
         const RectElement(height: 10, width: 10, x: 0, y: 0),
         const TextElement(text: 'A', x: 1, y: 1),
         const RectElement(cornerRadius: 2, height: 5, width: 5, x: 2, y: 2),
-        const TextElement(fontSize: 40, text: 'Longer string', x: 3, y: 3),
+        const TextElement(height: 40, text: 'Longer string', x: 3, y: 3),
       ];
 
       final bundle = FfiMarshal.encodeElements(elements, malloc);

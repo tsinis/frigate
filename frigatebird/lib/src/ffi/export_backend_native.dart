@@ -92,6 +92,7 @@ final class ExportBackendNative {
 
     Pointer<Utf8> bgCStr = nullptr;
     Pointer<ByteBuffer> outPtr = nullptr;
+    Pointer<ByteBuffer> fgBuf = nullptr;
     FfiArenaHandle? arenaHandle;
 
     try {
@@ -99,13 +100,16 @@ final class ExportBackendNative {
       assert(bgCStr != nullptr, 'Failed to convert backgroundPath to C string');
 
       outPtr = calloc<ByteBuffer>();
-      // We need an arena for potential error messages.
-      arenaHandle = FfiArenaHandle.allocate();
+      arenaHandle = FfiArenaHandle.allocate(); // We need an arena for potential error messages.
+
+      fgBuf = calloc<ByteBuffer>();
+      fgBuf.ref
+        ..ptr = Pointer<Uint8>.fromAddress(foregroundAddress)
+        ..len = foregroundLen;
 
       final code = ffi.merge(
         bgCStr,
-        Pointer<Uint8>.fromAddress(foregroundAddress),
-        foregroundLen,
+        fgBuf.ref,
         offsetX,
         offsetY,
         outFormatWire,
@@ -121,14 +125,17 @@ final class ExportBackendNative {
       }
 
       final out = outPtr.ref;
-      if (out.data == nullptr) throw StateError('Rust merge failed (null output buffer)');
+      if (out.ptr == nullptr) throw StateError('Rust merge failed (null output buffer)');
 
-      return Uint8List.fromList(out.data.asTypedList(out.length));
+      return Uint8List.fromList(out.ptr.asTypedList(out.len));
     } finally {
       if (bgCStr != nullptr) calloc.free(bgCStr);
+      if (fgBuf != nullptr) calloc.free(fgBuf);
       // Rust-owned buffer must be freed eagerly before isolate exits.
-      // `free_byte_buffer` frees both outPtr.data AND outPtr.
-      if (outPtr != nullptr) ffi.free_byte_buffer(outPtr);
+      if (outPtr != nullptr) {
+        if (outPtr.ref.ptr != nullptr) ffi.free_byte_buffer(outPtr.ref);
+        calloc.free(outPtr);
+      }
       arenaHandle?.free();
     }
   }

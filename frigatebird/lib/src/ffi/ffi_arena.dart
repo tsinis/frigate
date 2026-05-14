@@ -1,5 +1,7 @@
 import 'dart:ffi';
 
+import 'byte_buffer.dart';
+
 /// Mirrors Rust `#[repr(C)] FfiArena`.
 ///
 /// Layout MUST match `crates/<...>/src/ffi.rs::FfiArena`. If the Rust struct
@@ -17,8 +19,5 @@ final class FfiArena extends Struct {
   @Size()
   external int imageLen;
 
-  external Pointer<Uint8> errorBuf;
-
-  @Size()
-  external int errorCap;
+  external ByteBuffer error;
 }

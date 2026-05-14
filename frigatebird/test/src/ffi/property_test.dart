@@ -120,7 +120,7 @@ List<TextElement> _generateTexts(int count, Random random) => .generate(count, (
     blur: random.nextInt(256),
     fillColor: FfiColor(random.nextInt(colorMax)),
     fontId: random.nextInt(65536),
-    fontSize: randDouble * 100,
+    height: randDouble * 100,
     rotation: random.nextInt(360) - 180,
     text: 'Rand: ${random.nextInt(1_000_000)}',
     x: randDouble * 1000 - 500,

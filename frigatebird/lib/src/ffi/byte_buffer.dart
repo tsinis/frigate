@@ -1,12 +1,9 @@
 import 'dart:ffi';
 
-/// Native finalizer signature for freeing a [ByteBuffer].
-typedef ByteBufferFinalizerFunc = Void Function(Pointer<ByteBuffer>);
-
 /// Matches Rust `#[repr(C)] ByteBuffer` exactly.
 final class ByteBuffer extends Struct {
-  external Pointer<Uint8> data;
+  external Pointer<Uint8> ptr;
 
   @Size()
-  external int length;
+  external int len;
 }

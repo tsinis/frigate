@@ -9,18 +9,12 @@ final class RectElement extends DrawElement {
     required super.y,
     super.blur,
     super.rotation,
-    this.cornerRadius = 0,
     super.fillColor = FfiColor.transparent,
-    this.outlineColor = FfiColor.black,
-    this.outlineThickness = 2,
-  }) : assert(
-         outlineThickness >= 0 && outlineThickness <= 255,
-         'outlineThickness must be in 0..255',
-       ),
-       assert(cornerRadius >= 0 && cornerRadius <= 65535, 'cornerRadius must be in 0..65535');
+    super.outlineColor,
+    super.outlineThickness,
+    this.cornerRadius = 0,
+  }) : assert(cornerRadius >= 0 && cornerRadius <= 65535, 'cornerRadius must be in 0..65535');
 
-  final FfiColor outlineColor;
-  final int outlineThickness;
   final int cornerRadius;
 
   @override

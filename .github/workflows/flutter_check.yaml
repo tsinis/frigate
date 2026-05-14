@@ -9,7 +9,6 @@ on:
       - "frigatedraw/pubspec.yaml"
       - "frigatebird/lib/**"
       - "frigatebird/hook/**"
-      - "frigatebird/rust/**"
       - "frigatebird/pubspec.yaml"
   pull_request:
     paths:
@@ -18,7 +17,6 @@ on:
       - "frigatedraw/pubspec.yaml"
       - "frigatebird/lib/**"
       - "frigatebird/hook/**"
-      - "frigatebird/rust/**"
       - "frigatebird/pubspec.yaml"
 
 concurrency:

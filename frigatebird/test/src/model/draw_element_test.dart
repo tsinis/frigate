@@ -51,14 +51,14 @@ void main() {
 
   group('TextElement.fontSize', () {
     test('is an alias for the inherited height field', () {
-      const text = TextElement(fontSize: 42, text: 'q', x: 0, y: 0);
+      const text = TextElement(height: 42, text: 'q', x: 0, y: 0);
       expect(text.fontSize, text.height, reason: 'fontSize and height are the same storage');
       expect(text.fontSize, 42);
     });
 
     test(
       'hides width at zero',
-      () => expect(const TextElement(fontSize: 42, text: 'q', x: 0, y: 0).width, 0),
+      () => expect(const TextElement(height: 42, text: 'q', x: 0, y: 0).width, 0),
     );
 
     test(

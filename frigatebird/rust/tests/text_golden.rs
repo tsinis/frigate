@@ -147,14 +147,12 @@ fn render_image_end_to_end_writes_jpeg() {
     let elements = [frigate::FfiElement::Text(TextPayload::new(
         10.0, 10.0, 24.0, 0xFFFF0000, 0, 0, 8,
     ))];
-    let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
         text_buf: text.as_ptr(),
         text_len: text.len(),
         image_buf: std::ptr::null(),
         image_len: 0,
-        error_buf: error_buf.as_mut_ptr(),
-        error_cap: error_buf.len(),
+        error: vec![0u8; 256].into_boxed_slice().into(),
     };
 
     let code = call_draw(
@@ -170,7 +168,7 @@ fn render_image_end_to_end_writes_jpeg() {
             unsafe_code,
             reason = "Reading arena error buffer for test diagnostics"
         )]
-        let msg = unsafe { std::ffi::CStr::from_ptr(arena.error_buf as *const _) };
+        let msg = unsafe { std::ffi::CStr::from_ptr(arena.error.as_ptr().cast()) };
         panic!("FFI call failed with code {code}: {:?}", msg);
     }
     assert!(out.exists(), "expected output file {out:?} to exist");
@@ -194,14 +192,12 @@ fn render_image_rejects_text_without_font() {
     let elements = [frigate::FfiElement::Text(TextPayload::new(
         10.0, 10.0, 24.0, 0xFFFF0000, 0, 0, 7,
     ))];
-    let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
         text_buf: text.as_ptr(),
         text_len: text.len(),
         image_buf: std::ptr::null(),
         image_len: 0,
-        error_buf: error_buf.as_mut_ptr(),
-        error_cap: error_buf.len(),
+        error: vec![0u8; 256].into_boxed_slice().into(),
     };
 
     let code = call_draw(
@@ -220,14 +216,12 @@ fn render_image_rejects_null_image_path() {
     let out = std::env::temp_dir().join("test_out_null.jpg");
     let out_cs = safer_ffi::char_p::new(out.to_str().unwrap());
 
-    let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
         text_buf: std::ptr::null(),
         text_len: 0,
         image_buf: std::ptr::null(),
         image_len: 0,
-        error_buf: error_buf.as_mut_ptr(),
-        error_cap: error_buf.len(),
+        error: vec![0u8; 256].into_boxed_slice().into(),
     };
 
     let code = call_draw(None, Some(&out_cs), None, &[], &mut arena, 100);
@@ -241,14 +235,12 @@ fn render_image_rejects_nonexistent_source_image() {
     let bad_img = std::env::temp_dir().join("definitely_not_here_12345.jpg");
     let bad_img_cs = safer_ffi::char_p::new(bad_img.to_str().unwrap());
 
-    let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
         text_buf: std::ptr::null(),
         text_len: 0,
         image_buf: std::ptr::null(),
         image_len: 0,
-        error_buf: error_buf.as_mut_ptr(),
-        error_cap: error_buf.len(),
+        error: vec![0u8; 256].into_boxed_slice().into(),
     };
 
     let code = call_draw(Some(&bad_img_cs), Some(&out_cs), None, &[], &mut arena, 80);
@@ -263,14 +255,12 @@ fn render_image_rejects_unsupported_output_extension() {
     let img_cs = safer_ffi::char_p::new(img_path.to_str().unwrap());
     let out_cs = safer_ffi::char_p::new(out.to_str().unwrap());
 
-    let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
         text_buf: std::ptr::null(),
         text_len: 0,
         image_buf: std::ptr::null(),
         image_len: 0,
-        error_buf: error_buf.as_mut_ptr(),
-        error_cap: error_buf.len(),
+        error: vec![0u8; 256].into_boxed_slice().into(),
     };
 
     let code = call_draw(Some(&img_cs), Some(&out_cs), None, &[], &mut arena, 80);
@@ -279,7 +269,7 @@ fn render_image_rejects_unsupported_output_extension() {
             unsafe_code,
             reason = "Reading arena error buffer for test diagnostics"
         )]
-        let msg = unsafe { std::ffi::CStr::from_ptr(arena.error_buf as *const _) };
+        let msg = unsafe { std::ffi::CStr::from_ptr(arena.error.as_ptr().cast()) };
         panic!("FFI call failed with code {code} (wanted 5): {:?}", msg);
     }
     assert!(
@@ -307,14 +297,12 @@ fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
             50.0, 50.0, 100.0, 100.0, 0xFF0000FF,
         )),
     ];
-    let mut error_buf = [0u8; 256];
     let mut arena = FfiArena {
         text_buf: text.as_ptr(),
         text_len: text.len(),
         image_buf: std::ptr::null(),
         image_len: 0,
-        error_buf: error_buf.as_mut_ptr(),
-        error_cap: error_buf.len(),
+        error: vec![0u8; 256].into_boxed_slice().into(),
     };
 
     let code = call_draw(
@@ -330,7 +318,7 @@ fn render_image_mixed_rect_text_rect_does_not_panic_and_decodes() {
             unsafe_code,
             reason = "Reading arena error buffer for test diagnostics"
         )]
-        let msg = unsafe { std::ffi::CStr::from_ptr(arena.error_buf as *const _) };
+        let msg = unsafe { std::ffi::CStr::from_ptr(arena.error.as_ptr().cast()) };
         panic!("FFI call failed with code {code}: {:?}", msg);
     }
     assert!(out.exists());

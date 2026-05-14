@@ -6,18 +6,18 @@ import 'package:frigatebird/src/ffi/ffi_result_unit.dart';
 import 'package:test/test.dart';
 
 void main() => group(FfiArenaHandle, () {
-  test('allocate sets up arena pointers and zero-initializes errorBuf', () {
+  test('allocate sets up arena pointers and zero-initializes error', () {
     final arena = FfiArenaHandle.allocate();
     try {
       final ptr = arena.ptr;
       final ref = ptr.ref;
       final isNotZero = isNot(0);
       expect(ptr.address, isNotZero);
-      expect(ref.errorBuf.address, isNotZero);
-      expect(ref.errorCap, FfiArenaHandle.defaultErrorCapacity);
+      expect(ref.error.ptr.address, isNotZero);
+      expect(ref.error.len, FfiArenaHandle.defaultErrorCapacity);
 
       // Assert zero-initialized.
-      expect(ref.errorBuf[0], 0);
+      expect(ref.error.ptr[0], isZero);
     } finally {
       arena.free();
     }
@@ -29,7 +29,7 @@ void main() => group(FfiArenaHandle, () {
       const msg = 'Some error';
       final encoded = msg.toNativeUtf8();
       try {
-        final errorBuf = arena.ptr.ref.errorBuf;
+        final errorBuf = arena.ptr.ref.error.ptr;
         final source = encoded.cast<Uint8>();
 
         // Manually write into the buffer.
@@ -55,13 +55,5 @@ void main() => group(FfiArenaHandle, () {
   test('errorMessage throws if freed', () {
     final arena = FfiArenaHandle.allocate()..free();
     expect(() => arena.errorMessage, throwsStateError);
-  });
-
-  test('allocate with custom finalizer', () {
-    // ignore: prefer-explicit-type-arguments, it's a test.
-    final finalizer = NativeFinalizer(calloc.nativeFree.cast());
-    final arena = FfiArenaHandle.allocate(finalizer: finalizer);
-    expect(arena.ptr.address, isNot(0));
-    // Smoke test: ensure allocation with custom finalizer succeeds; finalizer behavior not asserted here.
   });
 });
