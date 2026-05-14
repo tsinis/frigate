@@ -39,6 +39,8 @@ sealed class DrawElement {
     int? blur,
     FfiColor? fillColor,
     double? height,
+    FfiColor? outlineColor,
+    int? outlineThickness,
     int? rotation,
     double? width,
     double? x,

@@ -29,6 +29,8 @@ final class FfiArenaHandle implements Finalizable {
     assert(errorCapacity > 0, 'errorCapacity must be positive');
 
     final arenaPtr = ffi.ffi_arena_create(errorCapacity);
+    if (arenaPtr == nullptr) throw const OutOfMemoryError();
+
     final handle = FfiArenaHandle._(arenaPtr);
 
     _finalizer.attach(handle, arenaPtr.cast<Void>(), detach: handle);
@@ -79,6 +81,6 @@ final class FfiArenaHandle implements Finalizable {
     _isFreed = true;
 
     _finalizer.detach(this);
-    ffi.ffi_arena_free(ptr);
+    if (ptr != nullptr) ffi.ffi_arena_free(ptr);
   }
 }

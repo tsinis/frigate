@@ -155,16 +155,6 @@ pub fn write_error_to_arena(
 mod tests {
     use super::*;
 
-    fn make_arena(buf: &mut [u8]) -> FfiArena {
-        FfiArena {
-            text_buf: ptr::null(),
-            text_len: 0,
-            image_buf: ptr::null(),
-            image_len: 0,
-            error: buf.to_owned().into_boxed_slice().into(),
-        }
-    }
-
     // ── write_error_to_arena ──────────────────────────────────────────────────────────────────────
 
     #[test]
@@ -179,49 +169,61 @@ mod tests {
 
     #[test]
     fn write_error_cap_one_only_writes_null_terminator() {
-        let mut buf = vec![0xFFu8; 1];
-        let mut arena = make_arena(&mut buf);
+        let mut arena = ffi_arena_create(1);
         let err = write_error_to_arena(Some(&mut arena), FfiErrorCode::Render, "hello");
         assert_eq!(err.message_len, 0);
-        // We can't easily check the internal buffer of c_slice::Box from here if we moved it.
-        // But we can check that it didn't panic and returned 0 length.
+        assert_eq!(arena.error.as_slice()[0], 0);
+        ffi_arena_free(arena);
     }
 
     #[test]
     fn write_error_ascii_fits_exactly() {
-        let mut buf = vec![0u8; 6];
-        let mut arena = make_arena(&mut buf);
+        let mut arena = ffi_arena_create(6);
         let err = write_error_to_arena(Some(&mut arena), FfiErrorCode::Io, "hello");
         assert_eq!(err.message_len, 5);
+        assert_eq!(
+            std::str::from_utf8(&arena.error.as_slice()[..5]).unwrap(),
+            "hello"
+        );
+        ffi_arena_free(arena);
     }
 
     #[test]
     fn write_error_truncates_at_utf8_boundary_not_mid_codepoint() {
-        let mut buf = vec![0u8; 2];
-        let mut arena = make_arena(&mut buf);
+        let mut arena = ffi_arena_create(2);
         let err = write_error_to_arena(Some(&mut arena), FfiErrorCode::Decode, "aé");
         assert_eq!(
             err.message_len, 1,
             "must stop before the 2-byte 'é', not mid-codepoint"
         );
+        assert_eq!(
+            std::str::from_utf8(&arena.error.as_slice()[..1]).unwrap(),
+            "a"
+        );
+        ffi_arena_free(arena);
     }
 
     #[test]
     fn write_error_multibyte_fits_completely() {
-        let mut buf = vec![0u8; 7];
-        let mut arena = make_arena(&mut buf);
+        let mut arena = ffi_arena_create(7);
         let err = write_error_to_arena(Some(&mut arena), FfiErrorCode::Font, "éàü");
         assert_eq!(err.message_len, 6);
+        assert_eq!(
+            std::str::from_utf8(&arena.error.as_slice()[..6]).unwrap(),
+            "éàü"
+        );
+        ffi_arena_free(arena);
     }
 
     #[test]
     fn write_error_four_byte_codepoint_truncated_cleanly() {
-        let mut buf = vec![0u8; 3];
-        let mut arena = make_arena(&mut buf);
+        let mut arena = ffi_arena_create(3);
         let err = write_error_to_arena(Some(&mut arena), FfiErrorCode::Render, "𝄞");
         assert_eq!(
             err.message_len, 0,
             "4-byte codepoint must not be written into a 3-byte buffer"
         );
+        assert_eq!(arena.error.as_slice()[0], 0);
+        ffi_arena_free(arena);
     }
 }

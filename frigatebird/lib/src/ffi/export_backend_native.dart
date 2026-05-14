@@ -92,6 +92,7 @@ final class ExportBackendNative {
 
     Pointer<Utf8> bgCStr = nullptr;
     Pointer<ByteBuffer> outPtr = nullptr;
+    Pointer<ByteBuffer> fgBuf = nullptr;
     FfiArenaHandle? arenaHandle;
 
     try {
@@ -102,7 +103,7 @@ final class ExportBackendNative {
       // We need an arena for potential error messages.
       arenaHandle = FfiArenaHandle.allocate();
 
-      final fgBuf = calloc<ByteBuffer>();
+      fgBuf = calloc<ByteBuffer>();
       fgBuf.ref
         ..ptr = Pointer<Uint8>.fromAddress(foregroundAddress)
         ..len = foregroundLen;
@@ -113,12 +114,10 @@ final class ExportBackendNative {
         offsetX,
         offsetY,
         outFormatWire,
-        imageQuality,
+        imageQuality.clamp(0, 100),
         arenaHandle.ptr,
         outPtr,
       );
-
-      calloc.free(fgBuf);
 
       final result = arenaHandle.readResult(code);
 
@@ -132,6 +131,7 @@ final class ExportBackendNative {
       return Uint8List.fromList(out.ptr.asTypedList(out.len));
     } finally {
       if (bgCStr != nullptr) calloc.free(bgCStr);
+      if (fgBuf != nullptr) calloc.free(fgBuf);
       // Rust-owned buffer must be freed eagerly before isolate exits.
       if (outPtr != nullptr) {
         ffi.free_byte_buffer(outPtr.ref);

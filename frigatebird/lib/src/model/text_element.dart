@@ -8,6 +8,8 @@ final class TextElement extends DrawElement {
     required super.y,
     super.blur, // Is in the wire struct (TextPayload.blur) but not yet applied at render time.
     super.fillColor,
+    super.outlineColor,
+    super.outlineThickness,
     super.rotation,
     super.height = defaultFontSize, // A.K.A fontSize.
     this.fontId = 0,
@@ -29,15 +31,20 @@ final class TextElement extends DrawElement {
     FfiColor? fillColor,
     int? fontId,
     double? height, // A.K.A fontSize.
+    FfiColor? outlineColor,
+    int? outlineThickness,
     int? rotation,
     String? text,
     double? width, // Ignored right now since TextElement computes width dynamically.
     double? x,
     double? y,
   }) => .new(
+    blur: blur ?? this.blur,
     fillColor: fillColor ?? this.fillColor,
     fontId: fontId ?? this.fontId,
     height: height ?? this.height,
+    outlineColor: outlineColor ?? this.outlineColor,
+    outlineThickness: outlineThickness ?? this.outlineThickness,
     rotation: rotation ?? this.rotation,
     text: text ?? this.text,
     x: x ?? this.x,

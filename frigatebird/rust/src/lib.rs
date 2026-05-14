@@ -157,11 +157,6 @@ fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + S
 //
 // - `draw_elements`: takes `*const FfiElement` — safer_ffi 0.1.x cannot derive
 //   ReprC for #[repr(C, u8)] tagged-union enums. Tracked upstream.
-//
-// - `merge`: `ByteBuffer.data` is Rust-heap-allocated and freed via `libc::free`
-//   (not Rust Drop). safer_ffi's repr_c::Box assumes Rust allocator. Mismatch.
-//
-// - `ffi_arena_drop` is removed as `ffi_arena_free` now handles FfiArena deallocation.
 
 /// Returns oriented dimensions and metadata for an image without decoding full pixel data.
 /// Returns a `u8` status code. Result info is written to `*out`.
@@ -252,11 +247,6 @@ pub fn get_image_info(
 /// `background_path` must be a valid null-terminated C string. `foreground_png_ptr` must
 /// point to at least `foreground_png_len` bytes. `arena` and `out` must be valid
 /// pointers for the duration of the call.
-// Safety: `#[unsafe(no_mangle)]` is used intentionally over `#[ffi_export]` for the entire
-// FFI surface. `safer_ffi` 0.2.0-rc1 cannot derive `ReprC` for `FfiArena` (contains raw
-// pointers) or `ByteBuffer` (returned by `merge`). Using `#[unsafe(no_mangle)]` uniformly
-// across all entry points (`get_image_info`, `merge`, `draw_elements`, test helpers) avoids
-// a split-convention API and keeps the Dart-side `@Native` bindings predictable.
 #[ffi_export]
 pub fn merge(
     background_path: Option<char_p::Ref<'_>>,
@@ -863,7 +853,16 @@ mod merge_tests {
         let _path = safer_ffi::char_p::new(_path_str);
         let mut out = Default::default();
 
-        let status = merge(None, (&[] as &[u8]).into(), 0, 0, 1, 90, None, &mut out);
+        let status = merge(
+            Some(_path.as_ref()),
+            (&[] as &[u8]).into(),
+            0,
+            0,
+            1,
+            90,
+            None,
+            &mut out,
+        );
 
         assert_eq!(status, FfiErrorCode::InvalidArg as u8);
     }

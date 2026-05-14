@@ -80,14 +80,14 @@ fn test_sizeof_oracles() {
 }
 
 #[test]
-fn test_ffi_arena_drop_null() {
-    frigate::ffi_arena_free(Box::new(FfiArena::default()).into()); // should not panic but is effectively doing nothing
+fn test_ffi_arena_drop_default() {
+    frigate::ffi_arena_free(Box::new(FfiArena::default()).into()); // should not panic but is effectively freeing a default heap arena
 }
 
 #[test]
 fn test_ffi_arena_drop_valid() {
     let arena = frigate::ffi_arena_create(100);
-    frigate::ffi_arena_free(arena); // Should free error_buf and arena
+    frigate::ffi_arena_free(arena); // Should free error and arena
 }
 
 #[test]

@@ -135,7 +135,16 @@ fn test_merge_errors() {
     // 3. Missing foreground bytes
     let path_str = "tests/fixtures/orientation/exif_1.jpg";
     let _path = safer_ffi::char_p::new(path_str);
-    let status = frigate::merge(None, (&[] as &[u8]).into(), 0, 0, 0, 0, None, &mut out);
+    let status = frigate::merge(
+        Some(_path.as_ref()),
+        (&[] as &[u8]).into(),
+        0,
+        0,
+        0,
+        0,
+        None,
+        &mut out,
+    );
 
     assert_eq!(status, FfiErrorCode::InvalidArg as u8);
 
