@@ -14,7 +14,6 @@ Future<void> _buildRust(BuildInput input, BuildOutputBuilder output) async {
 
     await RustBuilder(
       assetName: 'src/ffi/bindings.dart',
-      cratePath: 'rust',
       // `ffi-echo` and `ffi-test-helpers` export test-only symbols.
       features: isDebugFfi ? const ['ffi-echo', 'ffi-test-helpers'] : const [],
     ).run(input: input, output: output);
