@@ -116,5 +116,4 @@ class _TrackingAllocator implements Allocator {
 }
 
 @pragma('vm:never-inline')
-// ignore: no-empty-block, avoid-unnecessary-nullable-parameters, it's a test.
-void _reachabilityFence(Object? _) {}
+void _reachabilityFence(Object _) {} // ignore: no-empty-block, it's a test.

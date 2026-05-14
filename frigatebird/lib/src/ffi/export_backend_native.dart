@@ -100,8 +100,7 @@ final class ExportBackendNative {
       assert(bgCStr != nullptr, 'Failed to convert backgroundPath to C string');
 
       outPtr = calloc<ByteBuffer>();
-      // We need an arena for potential error messages.
-      arenaHandle = FfiArenaHandle.allocate();
+      arenaHandle = FfiArenaHandle.allocate(); // We need an arena for potential error messages.
 
       fgBuf = calloc<ByteBuffer>();
       fgBuf.ref

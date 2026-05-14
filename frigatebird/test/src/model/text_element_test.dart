@@ -86,7 +86,7 @@ final class _TextElementTest {
   /// Payload deliberately accepts either a [TextElement] or a `List<TextElement>` so a single
   /// isolate-helper covers both transfer-shape tests.
   // ignore: no-object-declaration, see doc comment above.
-  final Object? payload;
+  final Object payload;
   final SendPort sendPort;
 }
 

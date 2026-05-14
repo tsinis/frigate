@@ -12,7 +12,7 @@ final class RenderImageArgs {
     required this.elements,
     required this.fontPath,
     required this.imageQuality,
-    this.outputPath,
+    required this.outputPath,
   });
 
   final String backgroundPath;
