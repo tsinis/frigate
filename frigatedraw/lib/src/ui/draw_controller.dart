@@ -3,7 +3,6 @@
 // ignore_for_file: avoid-collection-mutating-methods
 
 import 'package:flutter/foundation.dart' show ChangeNotifier;
-
 import 'package:frigatebird/frigatebird.dart';
 
 class DrawController extends ChangeNotifier {
@@ -35,6 +34,25 @@ class DrawController extends ChangeNotifier {
 
   void updateElement(DrawElement element, int index) {
     _elements[index] = element;
+    notifyListeners();
+  }
+
+  void deleteSelectedElement() {
+    final index = _selectedIndex;
+    if (index == null) return;
+
+    final element = _elements.elementAtOrNull(index);
+    if (element == null) return;
+
+    commandStack.execute(
+      DeleteElementCommand(
+        _elements,
+        element: element,
+        index: index,
+        onExecute: () => selectedIndex = null,
+        onUndo: () => selectedIndex = index,
+      ),
+    );
     notifyListeners();
   }
 

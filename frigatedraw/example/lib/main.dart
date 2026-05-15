@@ -237,8 +237,9 @@ class _DrawingScreenState extends State<DrawingScreen> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       actions: [
-        IconButton(icon: const Icon(Icons.undo), onPressed: _controller.undo, tooltip: 'Undo'),
-        IconButton(icon: const Icon(Icons.redo), onPressed: _controller.redo, tooltip: 'Redo'),
+        DrawUndoButton(_controller),
+        DrawRedoButton(_controller),
+        DrawDeleteButton(_controller),
         if (_isExporting)
           const Padding(
             padding: .all(12),

@@ -119,6 +119,9 @@ dart_code_metrics:
     - prefer-static-method: true
     # With configs:
     - avoid-collection-equality-checks: true
+    - avoid-ignoring-return-values:
+        exclude:
+          - "**/**_test.dart"
     - avoid-high-cyclomatic-complexity:
         threshold: 40
     - avoid-long-functions:
@@ -212,7 +215,6 @@ dart_code_metrics:
     - prefer-shorthands-with-static-fields: true
     - avoid-long-files: true
     - avoid-duplicate-collection-elements: true
-    - avoid-ignoring-return-values: true
     - avoid-nullable-interpolation: true
     - avoid-unnecessary-nullable-fields: true
     - avoid-unsafe-collection-methods: true

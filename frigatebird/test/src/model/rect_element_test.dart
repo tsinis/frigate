@@ -20,7 +20,7 @@ class _RectElementTest extends AsyncBenchmarkBase {
   @override
   Future<void> run() async {
     final port = ReceivePort();
-    //ignore:avoid-ignoring-return-values,avoid-type-casts,avoid-unsafe-collection-methods, a test.
+    // ignore: avoid-type-casts,avoid-unsafe-collection-methods, a test.
     await Isolate.spawn((args) => (args.first as SendPort).send(true), [port.sendPort, _rects]);
     final _ = await port.first;
     port.close();
@@ -172,7 +172,7 @@ void main() => group(RectElement, () {
       final thousand = _RectElementTest(1000);
       final hundredThousand = _RectElementTest(100_000);
 
-      await ten.measure(); //ignore:avoid-ignoring-return-values, handles warm-up, averaging intern.
+      await ten.measure();
       final thousandMeasure = await thousand.measure();
       final hundredKMeasure = await hundredThousand.measure();
 
