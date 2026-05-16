@@ -1,4 +1,4 @@
-// ignore_for_file: diagnostic_describe_all_properties, prefer-single-declaration-per-file, prefer-single-widget-per-file, prefer-static-class
+// ignore_for_file: diagnostic_describe_all_properties, prefer-single-declaration-per-file, prefer-single-widget-per-file, prefer-static-class, avoid-nested-assignments
 
 import 'dart:async';
 import 'dart:io' show Directory, File, Platform;
@@ -94,31 +94,18 @@ class DrawingScreen extends StatefulWidget {
 
 class _DrawingScreenState extends State<DrawingScreen> {
   final _controller = DrawController();
-
-  bool _isExporting = false;
-
-  void _handleAddOval() => _controller.addElement(
-    const OvalElement(height: 100, width: 150, x: 800 / 2 - 75, y: 600 / 2 - 50),
-  );
-
-  void _handleAddRect() => _controller.addElement(
-    const RectElement(fillColor: .black, height: 100, width: 100, x: 800 / 2 - 50, y: 600 / 2 - 50),
-  );
-
-  void _handleAddRoundedRect() => _controller.addElement(
-    const RectElement(cornerRadius: 16, height: 100, width: 100, x: 800 / 2 - 50, y: 600 / 2 - 50),
-  );
+  final _isExporting = ValueNotifier<bool>(false);
 
   Future<void> _handleRenderText() async {
-    if (_isExporting) return;
+    _controller.creationTemplate = null;
+    if (_isExporting.value) return;
 
     final params = await showDialog<_TextAnnotationParams>(
       builder: (_) => const _TextAnnotationDialog(),
       context: context,
     );
     if (params == null || !mounted) return;
-
-    setState(() => _isExporting = true);
+    _isExporting.value = true;
 
     try {
       final directory = widget.destination;
@@ -155,7 +142,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
     } on Object catch (error, stackTrace) {
       _showSnackBar('Render failed: $error, $stackTrace');
     } finally {
-      if (mounted) setState(() => _isExporting = false);
+      if (mounted) _isExporting.value = false;
     }
   }
 
@@ -165,8 +152,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
 
       return;
     }
-
-    setState(() => _isExporting = true);
+    _isExporting.value = true;
 
     try {
       final tempDir = widget.tempDir;
@@ -200,7 +186,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
       if (!mounted) return;
       _showSnackBar('Failed: $error');
     } finally {
-      if (mounted) setState(() => _isExporting = false);
+      if (mounted) _isExporting.value = false;
     }
   }
 
@@ -230,6 +216,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
   @override
   void dispose() {
     _controller.dispose();
+    _isExporting.dispose();
     super.dispose();
   }
 
@@ -240,61 +227,103 @@ class _DrawingScreenState extends State<DrawingScreen> {
         DrawUndoButton(_controller),
         DrawRedoButton(_controller),
         DrawDeleteButton(_controller),
-        if (_isExporting)
-          const Padding(
-            padding: .all(12),
-            child: SizedBox.square(dimension: 24, child: CircularProgressIndicator(strokeWidth: 2)),
-          )
-        else
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: _handleSavePressed,
-            tooltip: 'Export composition',
-          ),
+        ValueListenableBuilder<bool>(
+          builder: (context, isExporting, _) => isExporting
+              ? const Padding(
+                  padding: .all(12),
+                  child: SizedBox.square(
+                    dimension: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : IconButton(
+                  icon: const Icon(Icons.save),
+                  onPressed: _handleSavePressed,
+                  tooltip: 'Export composition',
+                ),
+          valueListenable: _isExporting,
+        ),
       ],
       title: const Text('Frigate Draw'),
     ),
     body: DrawEditor(widget.imageFile, controller: _controller),
     bottomNavigationBar: BottomAppBar(
       child: Center(
-        child: SegmentedButton<_DrawingTool>(
-          emptySelectionAllowed: true,
-          onSelectionChanged: (select) => switch (select.firstOrNull) {
-            .text => unawaited(_handleRenderText()),
-            .rounded => _handleAddRoundedRect(),
-            .oval => _handleAddOval(),
-            _ => _handleAddRect(), // ignore: avoid-wildcard-cases-with-enums, just an example.
-          },
-          segments: const [
-            ButtonSegment(
-              icon: Icon(Icons.crop_square),
-              label: Text('Rect'),
-              value: _DrawingTool.rect,
-            ),
-            ButtonSegment(
-              icon: Icon(Icons.rounded_corner),
-              label: Text('Rounded'),
-              value: _DrawingTool.rounded,
-            ),
-            ButtonSegment(
-              icon: Icon(Icons.circle_outlined),
-              label: Text('Oval'),
-              value: _DrawingTool.oval,
-            ),
-            ButtonSegment(
-              icon: Icon(Icons.text_fields),
-              label: Text('Text'),
-              value: _DrawingTool.text,
-            ),
-          ],
-          selected: const {},
+        child: ListenableBuilder(
+          builder: (context, _) => SegmentedButton<_DrawingTool>(
+            emptySelectionAllowed: true,
+            onSelectionChanged: (select) => switch (select.firstOrNull) {
+              .text => unawaited(_handleRenderText()),
+              .rounded => _controller.creationTemplate = const RectElement(
+                cornerRadius: 16,
+                height: 0,
+                width: 0,
+                x: 0,
+                y: 0,
+              ),
+              .oval => _controller.creationTemplate = const OvalElement(
+                height: 0,
+                width: 0,
+                x: 0,
+                y: 0,
+              ),
+              .rect => _controller.creationTemplate = const RectElement(
+                height: 0,
+                width: 0,
+                x: 0,
+                y: 0,
+              ),
+              // ignore: avoid-wildcard-cases-with-enums, covers selection and null.
+              _ => _controller.creationTemplate = null,
+            },
+            segments: const [
+              ButtonSegment(
+                icon: Icon(Icons.pan_tool_alt),
+                label: Text('Select'),
+                value: _DrawingTool.selection,
+              ),
+              ButtonSegment(
+                icon: Icon(Icons.crop_square),
+                label: Text('Rect'),
+                value: _DrawingTool.rect,
+              ),
+              ButtonSegment(
+                icon: Icon(Icons.rounded_corner),
+                label: Text('Rounded'),
+                value: _DrawingTool.rounded,
+              ),
+              ButtonSegment(
+                icon: Icon(Icons.circle_outlined),
+                label: Text('Oval'),
+                value: _DrawingTool.oval,
+              ),
+              ButtonSegment(
+                icon: Icon(Icons.text_fields),
+                label: Text('Text'),
+                value: _DrawingTool.text,
+              ),
+            ],
+            selected: {
+              if (_controller.creationTemplate == null)
+                _DrawingTool.selection
+              else if (_controller.creationTemplate is OvalElement)
+                _DrawingTool.oval
+              else if (_controller.creationTemplate is RectElement &&
+                  // ignore: cast_nullable_to_non_nullable, avoid-type-casts, just an example app.
+                  (_controller.creationTemplate as RectElement).cornerRadius > 0)
+                _DrawingTool.rounded
+              else if (_controller.creationTemplate is RectElement)
+                _DrawingTool.rect, // Text remains stateless in _DrawingTool as it triggers a popup.
+            },
+          ),
+          listenable: _controller,
         ),
       ),
     ),
   );
 }
 
-enum _DrawingTool { oval, rect, rounded, text }
+enum _DrawingTool { oval, rect, rounded, selection, text }
 
 class _TextAnnotationDialog extends StatefulWidget {
   const _TextAnnotationDialog();

@@ -8,6 +8,7 @@ import 'package:frigatebird/frigatebird.dart';
 class DrawController extends ChangeNotifier {
   final commandStack = CommandStack();
   final _elements = <DrawElement>[];
+  DrawElement? _creationTemplate;
   int? _selectedIndex;
 
   List<DrawElement> get elements => List<DrawElement>.unmodifiable(_elements);
@@ -20,6 +21,14 @@ class DrawController extends ChangeNotifier {
     notifyListeners();
   }
 
+  DrawElement? get creationTemplate => _creationTemplate;
+
+  set creationTemplate(DrawElement? value) {
+    if (_creationTemplate == value) return;
+    _creationTemplate = value;
+    notifyListeners();
+  }
+
   DrawElement? get selectedElement {
     final index = _selectedIndex;
 
@@ -29,6 +38,26 @@ class DrawController extends ChangeNotifier {
   void addElement(DrawElement element) {
     _elements.add(element);
     _selectedIndex = _elements.length - 1;
+    notifyListeners();
+  }
+
+  void removeLastElement() {
+    if (_elements.isEmpty) return;
+    _elements.removeLast(); // ignore: avoid-ignoring-return-values, we don't need it's result.
+    notifyListeners();
+  }
+
+  void commitAdd(DrawElement element) {
+    final index = _elements.length;
+    commandStack.execute(
+      AddElementCommand(
+        _elements,
+        element: element,
+        index: index,
+        onExecute: () => selectedIndex = index,
+        onUndo: () => selectedIndex = null,
+      ),
+    );
     notifyListeners();
   }
 
