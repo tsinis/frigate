@@ -156,19 +156,12 @@ class DrawPainter extends CustomPainter {
     if (element.width <= 0 || element.height <= 0) return false;
 
     final rect = element.rect;
-    final outlineThickness = switch (element) {
-      RectElement() => element.outlineThickness.toDouble(),
-      OvalElement() => element.outlineThickness.toDouble(),
-      TextElement() => 0.0,
-    };
-
-    final half = outlineThickness / 2 + _hitSlop;
+    final half = element.outlineThickness.toDouble() / 2 + _hitSlop;
     final outer = rect.inflate(half);
-    final inner = rect.deflate(half);
 
     return switch (element) {
-      OvalElement() => _isPointInEllipse(point, outer) && !_isPointInEllipse(point, inner),
-      RectElement() || TextElement() => outer.contains(point) && !inner.contains(point),
+      OvalElement() => _isPointInEllipse(point, outer),
+      RectElement() || TextElement() => outer.contains(point),
     };
   }
 

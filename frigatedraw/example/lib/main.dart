@@ -102,7 +102,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
   );
 
   void _handleAddRect() => _controller.addElement(
-    const RectElement(height: 100, width: 100, x: 800 / 2 - 50, y: 600 / 2 - 50),
+    const RectElement(fillColor: .black, height: 100, width: 100, x: 800 / 2 - 50, y: 600 / 2 - 50),
   );
 
   void _handleAddRoundedRect() => _controller.addElement(

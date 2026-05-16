@@ -210,14 +210,22 @@ void main() => group(DrawPainter, () {
       expect(DrawPainter.isPointOnShape(const Offset(50, 0), element: oval), isFalse);
     });
 
-    test('is false in the interior of a shape', () {
+    test('is true in the interior of a shape without fill', () {
       expect(
         DrawPainter.isPointOnShape(const Offset(150, 80), element: hitRect),
-        isFalse,
-        reason: 'shape center is hollow',
+        isTrue,
+        reason: 'shape center is clickable even when transparent',
       );
     });
 
+    test('is true in the interior of a shape with fill', () {
+      const filledRect = RectElement(fillColor: .black, height: 100, width: 200, x: 50, y: 30);
+      expect(
+        DrawPainter.isPointOnShape(const Offset(150, 80), element: filledRect),
+        isTrue,
+        reason: 'shape center is clickable when filled',
+      );
+    });
     test('is false far outside the shape', () {
       expect(
         DrawPainter.isPointOnShape(const Offset(500, 500), element: hitRect),
