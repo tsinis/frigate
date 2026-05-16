@@ -310,6 +310,48 @@ void main() => group(DrawEditor, () {
       expect(controller.creationTemplate, isNull);
     });
 
+    testWidgets('resolves correct preview index if background element is deleted during creation', (
+      tester,
+    ) async {
+      final controller = DrawController()
+        ..addElement(const RectElement(height: 10, width: 10, x: 0, y: 0)) // Index 0.
+        ..creationTemplate = const RectElement(height: 0, width: 0, x: 0, y: 0);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final ivFinder = find.byType(InteractiveViewer);
+      final topLeft = tester.getTopLeft(ivFinder);
+
+      final gesture = await tester.startGesture(topLeft + const Offset(100, 100)); // Start create.
+      await tester.pump();
+
+      // Now there are 2 elements. index 0 is the old one, index 1 is the preview.
+      expect(controller.elements.length, 2);
+
+      // Mutate list: delete the background element (index 0).
+      // The preview element shifts to index 0.
+      controller.dropElementAt(0);
+      expect(controller.elements.length, 1);
+
+      // Continue the gesture. It should resolve the new index and update the size without aborting.
+      await gesture.moveBy(const Offset(50, 50));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      // The creation template should be cleared, and we should have a sized element.
+      expect(controller.creationTemplate, isNull);
+      final created = controller.elements.singleOrNull;
+      expect(created?.width, 50.0);
+      expect(created?.height, 50.0);
+    });
+
     testWidgets('handleMove skips TextElement', (tester) async {
       final controller = DrawController();
       const rect = RectElement(height: 100, width: 100, x: 50, y: 50);
