@@ -30,7 +30,7 @@ const _fontAsset = 'assets/RobotoMono.ttf';
 const _sampleAsset = 'assets/sample.png';
 
 Directory? get _exportDestination {
-  if (Platform.isIOS) {
+  if (Platform.isIOS || Platform.isAndroid) {
     final documents = getApplicationDocumentsDirectory();
 
     return Directory('${documents.path}/Frigatedraw');

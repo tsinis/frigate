@@ -257,20 +257,25 @@ class _DrawEditorState extends State<DrawEditor> {
       child: FfiImageFile(
         widget.image,
         builder: (_, image) => ListenableBuilder(
-          builder: (_, child) => GestureDetector(
-            // Absorb scale/pan gestures that start on an element so the
-            // InteractiveViewer doesn't try to pan the canvas while we drag.
-            onScaleStart: (_) {},
-            onScaleUpdate: (_) {},
-            child: CustomPaint(
-              foregroundPainter: DrawPainter(
-                _controller.elements,
-                selectedIndex: _controller.selectedIndex,
+          builder: (_, child) {
+            final isInteracting =
+                _isDragging.value || _isCreating || _controller.creationTemplate != null;
+
+            return GestureDetector(
+              // Absorb scale/pan gestures that start on an element so the
+              // InteractiveViewer doesn't try to pan the canvas while we drag.
+              onScaleStart: isInteracting ? (_) {} : null, // ignore: no-empty-block, see comment.
+              onScaleUpdate: isInteracting ? (_) {} : null, // ignore: no-empty-block, see comment.
+              child: CustomPaint(
+                foregroundPainter: DrawPainter(
+                  _controller.elements,
+                  selectedIndex: _controller.selectedIndex,
+                ),
+                willChange: _isDragging.value || _isCreating,
+                child: child,
               ),
-              willChange: _isDragging.value || _isCreating,
-              child: child,
-            ),
-          ),
+            );
+          },
           listenable: Listenable.merge([_controller, _isDragging]),
           child: image,
         ),
