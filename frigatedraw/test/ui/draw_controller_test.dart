@@ -109,7 +109,7 @@ void main() {
       controller
         ..addElement(rect)
         ..addListener(_handleNotification)
-        ..removeElementAt(0);
+        ..dropElementAt(0);
       expect(controller.elements, isEmpty);
       expect(_wasNotified, isTrue);
     });
@@ -117,8 +117,37 @@ void main() {
     test('removeElementAt ignores out of bounds index', () {
       controller
         ..addListener(_handleNotification)
-        ..removeElementAt(0);
+        ..dropElementAt(0);
       expect(_wasNotified, isFalse);
+    });
+
+    test('dropElementAt clears selection if target is selected', () {
+      controller
+        ..addElement(rect)
+        ..dropElementAt(0);
+      expect(controller.selectedIndex, isNull);
+    });
+
+    test('dropElementAt decrements selection if target is before selected', () {
+      controller.addElement(rect);
+      expect(controller.elements, hasLength(1));
+      controller.addElement(rect);
+      expect(controller.elements, hasLength(2));
+      controller.selectedIndex = 1;
+      expect(controller.elements.length, 2);
+      controller.dropElementAt(0);
+      expect(controller.selectedIndex, isZero);
+    });
+
+    test('dropElementAt leaves selection alone if target is after selected', () {
+      controller.addElement(rect);
+      expect(controller.elements, hasLength(1));
+      controller.addElement(rect);
+      expect(controller.elements, hasLength(2));
+      controller.selectedIndex = 0;
+      expect(controller.elements.length, 2);
+      controller.dropElementAt(1);
+      expect(controller.selectedIndex, isZero);
     });
 
     test('commitAdd adds element and is undoable', () {

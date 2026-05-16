@@ -1,11 +1,3 @@
-// Test inlines short closures inside `expect` / iteration helpers — extracting them named
-// would make the cases harder to read at a glance.
-// ignore_for_file: prefer-extracting-callbacks, prefer-extracting-function-callbacks
-// _RecordingCanvas is a test-only stub that lives at file bottom; main() is the entry point.
-// ignore_for_file: prefer-match-file-name
-// noSuchMethod requires a dynamic return per the Object contract.
-// ignore_for_file: avoid-dynamic
-
 import 'dart:ui' show Canvas, Offset, Paint, RRect, Rect;
 
 import 'package:flutter/rendering.dart' show Size;
@@ -79,7 +71,7 @@ void main() => group(DrawPainter, () {
 
   group('paint', () {
     test('uses drawRect for rectangles with cornerRadius=0', () {
-      final canvas = _RecordingCanvas();
+      final canvas = _DrawPainterTest();
       const sharp = RectElement(height: 50, width: 100, x: 10, y: 20);
       const DrawPainter([sharp]).paint(canvas, const Size(200, 200));
       expect(canvas.drawRectCount, 1, reason: 'sharp rect should hit drawRect once');
@@ -87,7 +79,7 @@ void main() => group(DrawPainter, () {
     });
 
     test('uses drawRRect for rectangles with cornerRadius>0', () {
-      final canvas = _RecordingCanvas();
+      final canvas = _DrawPainterTest();
       const rounded = RectElement(cornerRadius: 8, height: 50, width: 100, x: 10, y: 20);
       const DrawPainter([rounded]).paint(canvas, const Size(200, 200));
       expect(canvas.drawRRectCount, 1, reason: 'rounded rect must take the drawRRect path');
@@ -95,7 +87,7 @@ void main() => group(DrawPainter, () {
     });
 
     test('paint.isAntiAlias is FALSE for sharp-corner rects (matches Rust contract)', () {
-      final canvas = _RecordingCanvas();
+      final canvas = _DrawPainterTest();
       const sharp = RectElement(height: 50, width: 100, x: 10, y: 20);
       const DrawPainter([sharp]).paint(canvas, const Size(200, 200));
       expect(
@@ -106,7 +98,7 @@ void main() => group(DrawPainter, () {
     });
 
     test('paint.isAntiAlias is TRUE for rounded-corner rects (curves need AA)', () {
-      final canvas = _RecordingCanvas();
+      final canvas = _DrawPainterTest();
       const rounded = RectElement(cornerRadius: 8, height: 50, width: 100, x: 10, y: 20);
       const DrawPainter([rounded]).paint(canvas, const Size(200, 200));
       expect(
@@ -122,7 +114,7 @@ void main() => group(DrawPainter, () {
       // a negative-width `Rect.fromLTWH` — a preview-vs-export divergence the user would
       // hit mid-drag. The original hypothesis (that `clamp` would throw) is
       // false because `Rect.shortestSide` is magnitude-based, but the divergence is real.
-      final canvas = _RecordingCanvas();
+      final canvas = _DrawPainterTest();
       const cases = <RectElement>[
         RectElement(cornerRadius: 8, height: 10, width: -10, x: 0, y: 0),
         RectElement(cornerRadius: 8, height: -10, width: 10, x: 0, y: 0),
@@ -139,7 +131,7 @@ void main() => group(DrawPainter, () {
     });
 
     test('drawRRect radius is clamped to half the shortest side (preview matches export)', () {
-      final canvas = _RecordingCanvas();
+      final canvas = _DrawPainterTest();
       // Rect is 100x40, so the largest visually-meaningful radius is 20. We pass 9999 to
       // verify the preview clamps just like Rust does.
       const rounded = RectElement(cornerRadius: 9999, height: 40, width: 100, x: 0, y: 0);
@@ -154,7 +146,7 @@ void main() => group(DrawPainter, () {
     });
 
     test('uses drawOval for OvalElement', () {
-      final canvas = _RecordingCanvas();
+      final canvas = _DrawPainterTest();
       const oval = OvalElement(
         fillColor: .black, // Explicitly > 0 alpha for fill.
         height: 50,
@@ -173,7 +165,7 @@ void main() => group(DrawPainter, () {
     });
 
     test('non-positive width or height is silently skipped for ovals', () {
-      final canvas = _RecordingCanvas();
+      final canvas = _DrawPainterTest();
       const oval = OvalElement(height: 0, width: 100, x: 0, y: 0);
       const DrawPainter([oval]).paint(canvas, const Size(100, 100));
       expect(canvas.drawOvalCount, isZero);
@@ -249,7 +241,7 @@ void main() => group(DrawPainter, () {
     test('DrawPainter paints OvalElement', () {
       const oval = OvalElement(fillColor: .black, height: 100, width: 200, x: 50, y: 50);
       const painter = DrawPainter([oval]);
-      final recorder = _RecordingCanvas();
+      final recorder = _DrawPainterTest();
       painter.paint(recorder, const Size(800, 600));
 
       expect(recorder.drawOvalCount, greaterThan(0));
@@ -265,7 +257,7 @@ void main() => group(DrawPainter, () {
         y: 50,
       );
       const painter = DrawPainter([roundedRect]);
-      final recorder = _RecordingCanvas();
+      final recorder = _DrawPainterTest();
       painter.paint(recorder, const Size(800, 600));
 
       expect(recorder.drawRRectCount, greaterThan(0));
@@ -274,7 +266,7 @@ void main() => group(DrawPainter, () {
     test('DrawPainter paints RectElement with fill', () {
       const rectangle = RectElement(fillColor: .black, height: 100, width: 100, x: 50, y: 50);
       const painter = DrawPainter([rectangle]);
-      final recorder = _RecordingCanvas();
+      final recorder = _DrawPainterTest();
       painter.paint(recorder, const Size(800, 600));
 
       expect(recorder.drawRectCount, greaterThan(0));
@@ -283,7 +275,7 @@ void main() => group(DrawPainter, () {
     test('DrawPainter gracefully handles TextElement without crashing', () {
       const text = TextElement(text: 'Hello', x: 50, y: 50);
       const painter = DrawPainter([text]);
-      final recorder = _RecordingCanvas();
+      final recorder = _DrawPainterTest();
       expect(
         () => painter.paint(recorder, const Size(800, 600)),
         returnsNormally,
@@ -307,7 +299,7 @@ void main() => group(DrawPainter, () {
 /// Stub [Canvas] that counts the draw operations DrawPainter cares about. We can't subclass
 /// Canvas directly (its constructor needs a PictureRecorder) so we implement the interface and
 /// route all the `void` API surface through `noSuchMethod`.
-class _RecordingCanvas implements Canvas {
+class _DrawPainterTest implements Canvas {
   int drawRectCount = 0;
   int drawRRectCount = 0;
   int drawOvalCount = 0;
@@ -343,5 +335,6 @@ class _RecordingCanvas implements Canvas {
   /// Catch-all: every other Canvas method the painter happens to call (drawCircle for handles,
   /// saveLayer, etc.) is a silent no-op for our recording purposes.
   @override
+  // ignore: avoid-dynamic, signature must match dart:ui Canvas.
   dynamic noSuchMethod(Invocation invocation) => null;
 }

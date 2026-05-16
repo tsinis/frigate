@@ -275,7 +275,7 @@ void main() => group(DrawEditor, () {
       await tester.pump();
       expect(controller.elements.length, 1);
 
-      controller.removeElementAt(0); // Mutate list from underneath!
+      controller.dropElementAt(0); // Mutate list from underneath!
       expect(controller.elements, isEmpty);
 
       await gesture.moveBy(const Offset(50, 50)); // Move should trigger abortCreation.
@@ -306,7 +306,7 @@ void main() => group(DrawEditor, () {
       final gesture = await tester.startGesture(topLeft + const Offset(100, 100)); // Start create.
       await tester.pump();
 
-      controller.removeElementAt(0); // Mutate list just before release.
+      controller.dropElementAt(0); // Mutate list just before release.
 
       await gesture.up();
       await tester.pump();
@@ -345,7 +345,6 @@ void main() => group(DrawEditor, () {
       expect(controller.elements.firstOrNull?.x, 50.0, reason: 'Should not have moved');
       await gesture.up();
     });
-
     testWidgets('resizing explicit hit', (tester) async {
       final controller = DrawController();
       const rect = RectElement(height: 100, width: 100, x: 100, y: 100);
@@ -371,6 +370,46 @@ void main() => group(DrawEditor, () {
       await tester.pump();
       expect(controller.elements.firstOrNull?.width, 90.0);
       await gesture.up();
+    });
+
+    testWidgets('snaps matrix back during single-pointer drag (jitter prevention)', (tester) async {
+      final controller = DrawController();
+      const rect = RectElement(height: 100, width: 100, x: 50, y: 50);
+      controller
+        ..addElement(rect)
+        ..selectedIndex = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final interactiveViewerFinder = find.byType(InteractiveViewer);
+      final viewerTopLeft = tester.getTopLeft(interactiveViewerFinder);
+      final interactViewer = tester.widget<InteractiveViewer>(interactiveViewerFinder);
+      final transformationController = interactViewer.transformationController;
+
+      // 1. Start a drag on the element center (100, 100) document space.
+      final dragGesture = await tester.startGesture(viewerTopLeft + const Offset(100, 100));
+      await tester.pump();
+      expect(controller.selectedIndex, 0);
+
+      // 2. While drag is active, manually nudge the matrix (simulating IV jitter).
+      final jitterMatrix = Matrix4.identity()..translateByDouble(10, 10, 0, 1);
+      transformationController?.value = jitterMatrix;
+
+      // 3. Verify it snapped back IMMEDIATELY (synchronously).
+      expect(
+        transformationController?.value,
+        Matrix4.identity(),
+        reason: 'Matrix must snap back to identity during drag',
+      );
+
+      await dragGesture.up();
     });
   });
 
