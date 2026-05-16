@@ -82,6 +82,7 @@ class _DrawEditorState extends State<DrawEditor> {
   HandlePosition? _activeHandle;
   DrawElement? _dragSnapshot;
   Offset? _creationStartPoint;
+  DrawElement? _previewElement;
   int? _previewIndex;
 
   /// Tracks the number of active pointers to distinguish between 1-finger dragging
@@ -114,6 +115,19 @@ class _DrawEditorState extends State<DrawEditor> {
     }
   }
 
+  int? get _resolvePreviewIndex {
+    final idx = _previewIndex;
+    final token = _previewElement;
+    if (idx != null) {
+      final atIdx = _controller.elements.elementAtOrNull(idx);
+      if (token != null && identical(atIdx, token)) return idx;
+    }
+    if (token == null) return null;
+    final resolved = _controller.elements.indexWhere((e) => identical(e, token));
+
+    return resolved.isNegative ? null : resolved;
+  }
+
   void _handlePointerDown(PointerDownEvent event) {
     _pointerCount += 1;
     // If a second finger lands, we are likely zooming, so stop locking the board.
@@ -133,6 +147,7 @@ class _DrawEditorState extends State<DrawEditor> {
       final element = template.copyWith(height: 0, width: 0, x: point.dx, y: point.dy);
       _controller.addElement(element);
       _previewIndex = _controller.elements.length - 1;
+      _previewElement = element;
 
       return;
     }
@@ -178,16 +193,17 @@ class _DrawEditorState extends State<DrawEditor> {
     if (_activePointerId != null && event.pointer != _activePointerId) return;
 
     final start = _creationStartPoint;
-    final pIndex = _previewIndex;
+    final pIndex = _resolvePreviewIndex;
 
-    if (_isCreating && start != null && pIndex != null) {
-      final elements = _controller.elements;
-      final current = elements.elementAtOrNull(pIndex);
+    if (_isCreating && start != null) {
+      final current = pIndex == null ? null : _controller.elements.elementAtOrNull(pIndex);
       // ignore: avoid-returning-void, Element missing, abort creation to avoid getting stuck.
-      if (current == null) return _abortCreation();
+      if (current == null || pIndex == null) return _abortCreation();
 
       final currentPoint = _transformController.toScene(event.localPosition);
-      _controller.updateElement(current.copyWithDrag(start, currentPoint), pIndex);
+      final updated = current.copyWithDrag(start, currentPoint);
+      _controller.updateElement(updated, pIndex);
+      _previewElement = updated;
 
       return;
     }
@@ -219,6 +235,7 @@ class _DrawEditorState extends State<DrawEditor> {
     _isCreating = false;
     _creationStartPoint = null;
     _previewIndex = null;
+    _previewElement = null;
     _controller.creationTemplate = null;
     _dragStartMatrix = null;
     _activePointerId = null;
@@ -227,12 +244,14 @@ class _DrawEditorState extends State<DrawEditor> {
   void _handlePointerUp(PointerUpEvent event) {
     _pointerCount = max(0, _pointerCount - 1);
     if (_pointerCount == 0) _dragStartMatrix = null;
+
     if (_activePointerId != null && event.pointer != _activePointerId) return;
 
-    final pIndex = _previewIndex;
-    if (_isCreating && pIndex != null) {
-      final current = _controller.elements.elementAtOrNull(pIndex);
-      if (current == null) return _abortCreation(); // ignore: avoid-returning-void, same as other.
+    final pIndex = _resolvePreviewIndex;
+    if (_isCreating) {
+      final current = pIndex == null ? null : _controller.elements.elementAtOrNull(pIndex);
+      // ignore: avoid-returning-void, same reason as one above.
+      if (current == null || pIndex == null) return _abortCreation();
 
       // If it's too small, just drop it. We consider < 10px as an accidental press.
       if (current.width >= _minSize && current.height >= _minSize) {
@@ -263,11 +282,12 @@ class _DrawEditorState extends State<DrawEditor> {
   void _handlePointerCancel(PointerCancelEvent event) {
     _pointerCount = max(0, _pointerCount - 1);
     if (_pointerCount == 0) _dragStartMatrix = null;
+
     if (_activePointerId != null && event.pointer != _activePointerId) return;
 
-    final pIndex = _previewIndex;
-    if (_isCreating && pIndex != null) {
-      _controller.dropElementAt(pIndex);
+    final pIndex = _resolvePreviewIndex;
+    if (_isCreating) {
+      if (pIndex != null) _controller.dropElementAt(pIndex);
       _abortCreation();
     } else if (_isDragging.value) {
       _resetDragState();
