@@ -92,6 +92,9 @@ class _DrawEditorState extends State<DrawEditor> {
   /// jitter in InteractiveViewer.
   Matrix4? _dragStartMatrix;
 
+  /// The ID of the pointer currently owning the drag/creation interaction.
+  int? _activePointerId;
+
   DrawController get _controller => widget.controller;
 
   @override
@@ -115,6 +118,7 @@ class _DrawEditorState extends State<DrawEditor> {
     _pointerCount += 1;
     // If a second finger lands, we are likely zooming, so stop locking the board.
     if (_pointerCount > 1) _dragStartMatrix = null;
+    if (_activePointerId != null) return;
 
     final point = _transformController.toScene(event.localPosition);
     final template = _controller.creationTemplate;
@@ -123,6 +127,7 @@ class _DrawEditorState extends State<DrawEditor> {
       _isCreating = true;
       _creationStartPoint = point;
       _controller.selectedIndex = null;
+      _activePointerId = event.pointer;
 
       if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
       final element = template.copyWith(height: 0, width: 0, x: point.dx, y: point.dy);
@@ -140,6 +145,7 @@ class _DrawEditorState extends State<DrawEditor> {
       };
       if (handle != null) {
         if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
+        _activePointerId = event.pointer;
         _startDrag(handle: handle);
 
         return;
@@ -156,6 +162,7 @@ class _DrawEditorState extends State<DrawEditor> {
         };
         if (isHit) {
           if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
+          _activePointerId = event.pointer;
           _controller.selectedIndex = i;
           _startDrag();
 
@@ -168,6 +175,8 @@ class _DrawEditorState extends State<DrawEditor> {
   }
 
   void _handlePointerMove(PointerMoveEvent event) {
+    if (_activePointerId != null && event.pointer != _activePointerId) return;
+
     final start = _creationStartPoint;
     final pIndex = _previewIndex;
 
@@ -212,11 +221,13 @@ class _DrawEditorState extends State<DrawEditor> {
     _previewIndex = null;
     _controller.creationTemplate = null;
     _dragStartMatrix = null;
+    _activePointerId = null;
   }
 
   void _handlePointerUp(PointerUpEvent event) {
     _pointerCount = max(0, _pointerCount - 1);
     if (_pointerCount == 0) _dragStartMatrix = null;
+    if (_activePointerId != null && event.pointer != _activePointerId) return;
 
     final pIndex = _previewIndex;
     if (_isCreating && pIndex != null) {
@@ -227,7 +238,7 @@ class _DrawEditorState extends State<DrawEditor> {
       if (current.width >= _minSize && current.height >= _minSize) {
         _controller.replacePreviewAndCommit(current, pIndex);
       } else {
-        _controller.removeElementAt(pIndex);
+        _controller.dropElementAt(pIndex);
       }
       _abortCreation();
 
@@ -249,13 +260,14 @@ class _DrawEditorState extends State<DrawEditor> {
   /// `_isDragging` stays `true` forever, pan/zoom is permanently disabled, and `_dragSnapshot`
   /// pins a stale element reference. Mid-drag mutations are kept (user already saw them) but no
   /// command is committed, so the partial drag isn't pushed onto the undo stack.
-  void _handlePointerCancel(PointerCancelEvent _) {
+  void _handlePointerCancel(PointerCancelEvent event) {
     _pointerCount = max(0, _pointerCount - 1);
     if (_pointerCount == 0) _dragStartMatrix = null;
+    if (_activePointerId != null && event.pointer != _activePointerId) return;
 
     final pIndex = _previewIndex;
     if (_isCreating && pIndex != null) {
-      _controller.removeElementAt(pIndex);
+      _controller.dropElementAt(pIndex);
       _abortCreation();
     } else if (_isDragging.value) {
       _resetDragState();
@@ -273,6 +285,7 @@ class _DrawEditorState extends State<DrawEditor> {
     _dragSnapshot = null;
     _isDragging.value = false;
     _dragStartMatrix = null;
+    _activePointerId = null;
   }
 
   @override

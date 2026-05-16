@@ -43,9 +43,22 @@ class DrawController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void removeElementAt(int index) {
-    if (index.isNegative || index >= _elements.length) return;
+  /// Removes an element at [index] without pushing a command to the stack.
+  ///
+  /// Used primarily for tearing down temporary preview elements. Updates [_selectedIndex]
+  /// to remain consistent with the new list size.
+  void dropElementAt(int index) {
+    if (index < 0 || index >= _elements.length) return;
     _elements.removeAt(index);
+
+    final selected = _selectedIndex;
+    if (selected != null) {
+      if (selected == index) {
+        _selectedIndex = null;
+      } else if (selected > index) {
+        _selectedIndex = selected - 1;
+      }
+    }
     notifyListeners();
   }
 
