@@ -82,6 +82,7 @@ class _DrawEditorState extends State<DrawEditor> {
   HandlePosition? _activeHandle;
   DrawElement? _dragSnapshot;
   Offset? _creationStartPoint;
+  int? _previewIndex;
 
   DrawController get _controller => widget.controller;
 
@@ -96,6 +97,7 @@ class _DrawEditorState extends State<DrawEditor> {
 
       final element = template.copyWith(height: 0, width: 0, x: point.dx, y: point.dy);
       _controller.addElement(element);
+      _previewIndex = _controller.elements.length - 1;
 
       return;
     }
@@ -135,14 +137,16 @@ class _DrawEditorState extends State<DrawEditor> {
 
   void _handlePointerMove(PointerMoveEvent event) {
     final start = _creationStartPoint;
-    if (_isCreating && start != null) {
-      final current = _controller.elements.lastOrNull;
-      if (current == null) return;
+    final pIndex = _previewIndex;
+
+    if (_isCreating && start != null && pIndex != null) {
+      final elements = _controller.elements;
+      final current = elements.elementAtOrNull(pIndex);
+      // ignore: avoid-returning-void, Element missing, abort creation to avoid getting stuck.
+      if (current == null) return _abortCreation();
 
       final currentPoint = _transformController.toScene(event.localPosition);
-      final index = _controller.elements.length - 1;
-
-      _controller.updateElement(current.copyWithDrag(start, currentPoint), index);
+      _controller.updateElement(current.copyWithDrag(start, currentPoint), pIndex);
 
       return;
     }
@@ -170,16 +174,26 @@ class _DrawEditorState extends State<DrawEditor> {
     _controller.updateElement(updated, index);
   }
 
+  void _abortCreation() {
+    _isCreating = false;
+    _creationStartPoint = null;
+    _previewIndex = null;
+    _controller.creationTemplate = null;
+  }
+
   void _handlePointerUp(PointerUpEvent event) {
-    if (_isCreating) {
-      final current = _controller.elements.lastOrNull;
-      if (current == null) return;
-      _controller.removeLastElement(); // Remove the preview.
+    final pIndex = _previewIndex;
+    if (_isCreating && pIndex != null) {
+      final current = _controller.elements.elementAtOrNull(pIndex);
+      if (current == null) return _abortCreation(); // ignore: avoid-returning-void, same as other.
+
       // If it's too small, just drop it. We consider < 10px as an accidental press.
-      if (current.width >= _minSize && current.height >= _minSize) _controller.commitAdd(current);
-      _isCreating = false;
-      _creationStartPoint = null;
-      _controller.creationTemplate = null;
+      if (current.width >= _minSize && current.height >= _minSize) {
+        _controller.replacePreviewAndCommit(current);
+      } else {
+        _controller.removeLastElement(); // Assuming the preview is always at the end during create.
+      }
+      _abortCreation();
 
       return;
     }
@@ -201,10 +215,8 @@ class _DrawEditorState extends State<DrawEditor> {
   /// command is committed, so the partial drag isn't pushed onto the undo stack.
   void _handlePointerCancel(PointerCancelEvent _) {
     if (_isCreating) {
-      _controller.removeLastElement();
-      _isCreating = false;
-      _creationStartPoint = null;
-      _controller.creationTemplate = null;
+      _controller.removeLastElement(); // Assumes preview is the last element.
+      _abortCreation();
     } else if (_isDragging.value) {
       _resetDragState();
     }

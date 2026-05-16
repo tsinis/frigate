@@ -1,6 +1,5 @@
-import 'dart:ui' show Color, Rect;
+import 'dart:ui' show Color, Offset, Rect;
 
-import 'package:flutter/services.dart' show Offset;
 import 'package:frigatebird/frigatebird.dart';
 
 extension DrawElementExtension on DrawElement {

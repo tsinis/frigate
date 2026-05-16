@@ -2,6 +2,8 @@
 // `_elements` list and notifying listeners. External reads return an unmodifiable view.
 // ignore_for_file: avoid-collection-mutating-methods
 
+import 'dart:collection' show UnmodifiableListView;
+
 import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:frigatebird/frigatebird.dart';
 
@@ -11,7 +13,7 @@ class DrawController extends ChangeNotifier {
   DrawElement? _creationTemplate;
   int? _selectedIndex;
 
-  List<DrawElement> get elements => List<DrawElement>.unmodifiable(_elements);
+  List<DrawElement> get elements => UnmodifiableListView(_elements);
 
   int? get selectedIndex => _selectedIndex;
 
@@ -47,6 +49,21 @@ class DrawController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Removes the temporary preview element and commits it as an undoable action in a single transaction.
+  void replacePreviewAndCommit(DrawElement element) {
+    if (_elements.isNotEmpty) _elements.removeLast(); //ignore:avoid-ignoring-return-values,not need
+    final index = _elements.length;
+    commandStack.execute(
+      AddElementCommand(
+        _elements,
+        element: element,
+        index: index,
+        onExecute: () => selectedIndex = index,
+        onUndo: () => selectedIndex = null,
+      ),
+    );
+  }
+
   void commitAdd(DrawElement element) {
     final index = _elements.length;
     commandStack.execute(
@@ -58,7 +75,6 @@ class DrawController extends ChangeNotifier {
         onUndo: () => selectedIndex = null,
       ),
     );
-    notifyListeners();
   }
 
   void updateElement(DrawElement element, int index) {
@@ -82,7 +98,6 @@ class DrawController extends ChangeNotifier {
         onUndo: () => selectedIndex = index,
       ),
     );
-    notifyListeners();
   }
 
   void commitCommand(int index, {required DrawElement after, required DrawElement before}) {
@@ -90,7 +105,6 @@ class DrawController extends ChangeNotifier {
     // `copyWith` to swap the list slot. Pushing a no-op command would silently eat a Ctrl-Z.
     if (identical(before, after)) return;
     commandStack.execute(ElementCommand(_elements, after: after, before: before, index: index));
-    notifyListeners();
   }
 
   void undo() {
