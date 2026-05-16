@@ -26,9 +26,9 @@ void main() {
       }
     });
 
-    test('ImageInformation.probe handles non-existent file gracefully', () async {
-      // ignore: avoid-ignoring-return-values, description: verifying exception.
-      await expectLater(ImageInformation.probe('non_existent.jpg'), throwsException);
-    });
+    test(
+      'ImageInformation.probe handles non-existent file gracefully',
+      () => expectLater(ImageInformation.probe('non_existent.jpg'), throwsException),
+    );
   });
 }

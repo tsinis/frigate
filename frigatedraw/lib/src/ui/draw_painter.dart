@@ -141,8 +141,28 @@ class DrawPainter extends CustomPainter {
   bool shouldRepaint(covariant DrawPainter oldDelegate) =>
       !identical(oldDelegate.elements, elements) || oldDelegate.selectedIndex != selectedIndex;
 
-  static HandlePosition? hitTestHandle(Offset point, {required DrawElement element}) {
-    if (element.width <= 0 || element.height <= 0) return null;
+  @override
+  bool hitTest(Offset position) {
+    final index = selectedIndex;
+    if (index != null && index >= 0 && index < elements.length) {
+      final select = elements.elementAtOrNull(index);
+      if (select is! TextElement && hitTestHandle(position, element: select) != null) return true;
+    }
+
+    for (int i = elements.length - 1; i >= 0; i -= 1) {
+      final target = elements.elementAtOrNull(i);
+      final isHit = switch (target) {
+        RectElement() || OvalElement() => isPointOnShape(position, element: target),
+        _ => false, // ignore: avoid-wildcard-cases-with-sealed-classes, covers text and null.
+      };
+      if (isHit) return true;
+    }
+
+    return false;
+  }
+
+  static HandlePosition? hitTestHandle(Offset point, {DrawElement? element}) {
+    if (element == null || element.width <= 0 || element.height <= 0) return null;
 
     for (final handle in HandlePosition.values) {
       final center = _handleCenter(element: element, handle: handle);
@@ -152,23 +172,16 @@ class DrawPainter extends CustomPainter {
     return null;
   }
 
-  static bool isPointOnShape(Offset point, {required DrawElement element}) {
-    if (element.width <= 0 || element.height <= 0) return false;
+  static bool isPointOnShape(Offset point, {DrawElement? element}) {
+    if (element == null || element.width <= 0 || element.height <= 0) return false;
 
     final rect = element.rect;
-    final outlineThickness = switch (element) {
-      RectElement() => element.outlineThickness.toDouble(),
-      OvalElement() => element.outlineThickness.toDouble(),
-      TextElement() => 0.0,
-    };
-
-    final half = outlineThickness / 2 + _hitSlop;
+    final half = element.outlineThickness.toDouble() / 2 + _hitSlop;
     final outer = rect.inflate(half);
-    final inner = rect.deflate(half);
 
     return switch (element) {
-      OvalElement() => _isPointInEllipse(point, outer) && !_isPointInEllipse(point, inner),
-      RectElement() || TextElement() => outer.contains(point) && !inner.contains(point),
+      OvalElement() => _isPointInEllipse(point, outer),
+      RectElement() || TextElement() => outer.contains(point),
     };
   }
 

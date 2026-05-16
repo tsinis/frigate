@@ -104,5 +104,80 @@ void main() {
       );
       expect(_wasNotified, isFalse, reason: 'no state changed, listeners should stay quiet');
     });
+
+    test('commitCommand notifies listeners so undo/redo UI updates', () {
+      const moved = RectElement(height: 50, width: 100, x: 30, y: 40);
+      controller.addElement(rect);
+
+      _wasNotified = false;
+      controller
+        ..addListener(_handleNotification)
+        ..commitCommand(0, after: moved, before: rect);
+
+      expect(
+        _wasNotified,
+        isTrue,
+        reason: 'commitCommand pushed to stack and must notify listeners to rebuild UI',
+      );
+    });
+
+    test('removeElementAt removes element and notifies', () {
+      controller
+        ..addElement(rect)
+        ..addListener(_handleNotification)
+        ..dropElementAt(0);
+      expect(controller.elements, isEmpty);
+      expect(_wasNotified, isTrue);
+    });
+
+    test('dropElementAt ignores out of bounds index', () {
+      controller
+        ..addListener(_handleNotification)
+        ..dropElementAt(0);
+      expect(_wasNotified, isFalse);
+    });
+
+    test('dropElementAt clears selection if target is selected', () {
+      controller
+        ..addElement(rect)
+        ..dropElementAt(0);
+      expect(controller.selectedIndex, isNull);
+    });
+
+    test('dropElementAt decrements selection if target is before selected', () {
+      controller.addElement(rect);
+      expect(controller.elements, hasLength(1));
+      controller.addElement(rect);
+      expect(controller.elements, hasLength(2));
+      controller.selectedIndex = 1;
+      expect(controller.elements.length, 2);
+      controller.dropElementAt(0);
+      expect(controller.selectedIndex, isZero);
+    });
+
+    test('dropElementAt leaves selection alone if target is after selected', () {
+      controller.addElement(rect);
+      expect(controller.elements, hasLength(1));
+      controller.addElement(rect);
+      expect(controller.elements, hasLength(2));
+      controller.selectedIndex = 0;
+      expect(controller.elements.length, 2);
+      controller.dropElementAt(1);
+      expect(controller.selectedIndex, isZero);
+    });
+
+    test('commitAdd adds element and is undoable', () {
+      controller.commitAdd(rect);
+      expect(controller.elements.length, 1);
+      expect(controller.selectedIndex, isZero);
+
+      controller.undo();
+      expect(controller.elements, isEmpty);
+      expect(controller.selectedIndex, isNull);
+
+      controller.redo();
+      expect(controller.elements, hasLength(1));
+      expect(controller.selectedIndex, 0);
+    });
   });
 }
