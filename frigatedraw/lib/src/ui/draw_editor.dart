@@ -201,7 +201,7 @@ class _DrawEditorState extends State<DrawEditor> {
       if (current == null || pIndex == null) return _abortCreation();
 
       final currentPoint = _transformController.toScene(event.localPosition);
-      final updated = current.copyWithDrag(start, currentPoint);
+      final updated = current.copyWithDrag(a: currentPoint, b: start);
       _controller.updateElement(updated, pIndex);
       _previewElement = updated;
 

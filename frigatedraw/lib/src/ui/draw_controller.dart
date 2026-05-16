@@ -119,6 +119,7 @@ class DrawController extends ChangeNotifier {
     // `copyWith` to swap the list slot. Pushing a no-op command would silently eat a Ctrl-Z.
     if (identical(before, after)) return;
     commandStack.execute(ElementCommand(_elements, after: after, before: before, index: index));
+    notifyListeners();
   }
 
   void undo() {

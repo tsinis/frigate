@@ -20,8 +20,8 @@ extension DrawElementExtension on DrawElement {
 
   @pragma('dart2js:tryInline')
   @pragma('vm:prefer-inline')
-  DrawElement copyWithDrag(Offset end, Offset start) {
-    final shape = Rect.fromPoints(start, end);
+  DrawElement copyWithDrag({required Offset a, required Offset b}) {
+    final shape = Rect.fromPoints(a, b);
 
     // ignore: prefer-class-destructuring, readability creating a new object just for destructuring.
     return copyWith(height: shape.height, width: shape.width, x: shape.left, y: shape.top);
