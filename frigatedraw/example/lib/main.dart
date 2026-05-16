@@ -14,7 +14,11 @@ Future<void> main() async {
   final directory = _exportDestination;
 
   if (directory == null) {
-    runApp(const MaterialApp(home: Scaffold(body: Text('Failed to initialize local directories'))));
+    runApp(
+      const MaterialApp(
+        home: Scaffold(body: Center(child: Text('Failed to initialize local directories'))),
+      ),
+    );
 
     return;
   }

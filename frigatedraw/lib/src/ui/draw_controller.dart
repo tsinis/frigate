@@ -1,6 +1,6 @@
 // ChangeNotifier-backed controller: the whole class is built around mutating an internal
 // `_elements` list and notifying listeners. External reads return an unmodifiable view.
-// ignore_for_file: avoid-collection-mutating-methods
+// ignore_for_file: avoid-collection-mutating-methods, avoid-ignoring-return-values
 
 import 'dart:collection' show UnmodifiableListView;
 
@@ -43,22 +43,23 @@ class DrawController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void removeLastElement() {
-    if (_elements.isEmpty) return;
-    _elements.removeLast(); // ignore: avoid-ignoring-return-values, we don't need it's result.
+  void removeElementAt(int index) {
+    if (index.isNegative || index >= _elements.length) return;
+    _elements.removeAt(index);
     notifyListeners();
   }
 
   /// Removes the temporary preview element and commits it as an undoable action in a single transaction.
-  void replacePreviewAndCommit(DrawElement element) {
-    if (_elements.isNotEmpty) _elements.removeLast(); //ignore:avoid-ignoring-return-values,not need
-    final index = _elements.length;
+  void replacePreviewAndCommit(DrawElement element, int index) {
+    if (index >= 0 && index < _elements.length) _elements.removeAt(index);
+
+    final insertIndex = index.clamp(0, _elements.length);
     commandStack.execute(
       AddElementCommand(
         _elements,
         element: element,
-        index: index,
-        onExecute: () => selectedIndex = index,
+        index: insertIndex,
+        onExecute: () => selectedIndex = insertIndex,
         onUndo: () => selectedIndex = null,
       ),
     );

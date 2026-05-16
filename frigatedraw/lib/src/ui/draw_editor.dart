@@ -84,9 +84,38 @@ class _DrawEditorState extends State<DrawEditor> {
   Offset? _creationStartPoint;
   int? _previewIndex;
 
+  /// Tracks the number of active pointers to distinguish between 1-finger dragging
+  /// and multi-finger pinch-zooming.
+  int _pointerCount = 0;
+
+  /// Stores the matrix at the exact moment a drag starts, used to block the 1-frame
+  /// jitter in InteractiveViewer.
+  Matrix4? _dragStartMatrix;
+
   DrawController get _controller => widget.controller;
 
+  @override
+  void initState() {
+    super.initState();
+    _transformController.addListener(_onTransformationChanged);
+  }
+
+  /// Synchronously snaps the matrix back to its starting value if we are dragging
+  /// an element with a single finger. This prevents the "panning jitter" that occurs
+  /// between the `onPointerDown` event and the subsequent UI rebuild.
+  void _onTransformationChanged() {
+    final startMatrix = _dragStartMatrix;
+    if ((startMatrix != null && _pointerCount == 1 && (_isDragging.value || _isCreating)) &&
+        (_transformController.value != startMatrix)) {
+      _transformController.value = startMatrix;
+    }
+  }
+
   void _handlePointerDown(PointerDownEvent event) {
+    _pointerCount += 1;
+    // If a second finger lands, we are likely zooming, so stop locking the board.
+    if (_pointerCount > 1) _dragStartMatrix = null;
+
     final point = _transformController.toScene(event.localPosition);
     final template = _controller.creationTemplate;
 
@@ -95,6 +124,7 @@ class _DrawEditorState extends State<DrawEditor> {
       _creationStartPoint = point;
       _controller.selectedIndex = null;
 
+      if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
       final element = template.copyWith(height: 0, width: 0, x: point.dx, y: point.dy);
       _controller.addElement(element);
       _previewIndex = _controller.elements.length - 1;
@@ -109,6 +139,7 @@ class _DrawEditorState extends State<DrawEditor> {
         TextElement() => null,
       };
       if (handle != null) {
+        if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
         _startDrag(handle: handle);
 
         return;
@@ -124,6 +155,7 @@ class _DrawEditorState extends State<DrawEditor> {
           TextElement() => false,
         };
         if (isHit) {
+          if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
           _controller.selectedIndex = i;
           _startDrag();
 
@@ -179,9 +211,13 @@ class _DrawEditorState extends State<DrawEditor> {
     _creationStartPoint = null;
     _previewIndex = null;
     _controller.creationTemplate = null;
+    _dragStartMatrix = null;
   }
 
   void _handlePointerUp(PointerUpEvent event) {
+    _pointerCount = max(0, _pointerCount - 1);
+    if (_pointerCount == 0) _dragStartMatrix = null;
+
     final pIndex = _previewIndex;
     if (_isCreating && pIndex != null) {
       final current = _controller.elements.elementAtOrNull(pIndex);
@@ -189,9 +225,9 @@ class _DrawEditorState extends State<DrawEditor> {
 
       // If it's too small, just drop it. We consider < 10px as an accidental press.
       if (current.width >= _minSize && current.height >= _minSize) {
-        _controller.replacePreviewAndCommit(current);
+        _controller.replacePreviewAndCommit(current, pIndex);
       } else {
-        _controller.removeLastElement(); // Assuming the preview is always at the end during create.
+        _controller.removeElementAt(pIndex);
       }
       _abortCreation();
 
@@ -214,8 +250,12 @@ class _DrawEditorState extends State<DrawEditor> {
   /// pins a stale element reference. Mid-drag mutations are kept (user already saw them) but no
   /// command is committed, so the partial drag isn't pushed onto the undo stack.
   void _handlePointerCancel(PointerCancelEvent _) {
-    if (_isCreating) {
-      _controller.removeLastElement(); // Assumes preview is the last element.
+    _pointerCount = max(0, _pointerCount - 1);
+    if (_pointerCount == 0) _dragStartMatrix = null;
+
+    final pIndex = _previewIndex;
+    if (_isCreating && pIndex != null) {
+      _controller.removeElementAt(pIndex);
       _abortCreation();
     } else if (_isDragging.value) {
       _resetDragState();
@@ -232,12 +272,15 @@ class _DrawEditorState extends State<DrawEditor> {
     _activeHandle = null;
     _dragSnapshot = null;
     _isDragging.value = false;
+    _dragStartMatrix = null;
   }
 
   @override
   void dispose() {
     _isDragging.dispose();
-    _transformController.dispose();
+    _transformController
+      ..removeListener(_onTransformationChanged)
+      ..dispose();
     super.dispose();
   }
 
@@ -258,7 +301,6 @@ class _DrawEditorState extends State<DrawEditor> {
             maxScale: 5,
             minScale: 0.5,
             panEnabled: !isInteracting,
-            scaleEnabled: !isInteracting,
             transformationController: _transformController,
             child: child ?? const SizedBox.shrink(),
           );
@@ -269,25 +311,14 @@ class _DrawEditorState extends State<DrawEditor> {
       child: FfiImageFile(
         widget.image,
         builder: (_, image) => ListenableBuilder(
-          builder: (_, child) {
-            final isInteracting =
-                _isDragging.value || _isCreating || _controller.creationTemplate != null;
-
-            return GestureDetector(
-              // Absorb scale/pan gestures that start on an element so the
-              // InteractiveViewer doesn't try to pan the canvas while we drag.
-              onScaleStart: isInteracting ? (_) {} : null, // ignore: no-empty-block, see comment.
-              onScaleUpdate: isInteracting ? (_) {} : null, // ignore: no-empty-block, see comment.
-              child: CustomPaint(
-                foregroundPainter: DrawPainter(
-                  _controller.elements,
-                  selectedIndex: _controller.selectedIndex,
-                ),
-                willChange: _isDragging.value || _isCreating,
-                child: child,
-              ),
-            );
-          },
+          builder: (_, child) => CustomPaint(
+            foregroundPainter: DrawPainter(
+              _controller.elements,
+              selectedIndex: _controller.selectedIndex,
+            ),
+            willChange: _isDragging.value || _isCreating,
+            child: child,
+          ),
           listenable: Listenable.merge([_controller, _isDragging]),
           child: image,
         ),
