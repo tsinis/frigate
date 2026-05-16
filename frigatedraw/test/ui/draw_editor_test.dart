@@ -9,10 +9,6 @@ import 'package:frigatedraw/frigatedraw.dart';
 void main() => group(DrawEditor, () {
   final file = File('test.jpg');
 
-  setUp(
-    () => FfiImageFile.setInfoBuilder((_) async => const ImageInformation(height: 600, width: 800)),
-  );
-
   testWidgets('renders image and CustomPaint', (tester) async {
     final controller = DrawController();
     await tester.pumpWidget(
