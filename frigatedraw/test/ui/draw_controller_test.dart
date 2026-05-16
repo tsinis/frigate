@@ -104,5 +104,35 @@ void main() {
       );
       expect(_wasNotified, isFalse, reason: 'no state changed, listeners should stay quiet');
     });
+
+    test('removeElementAt removes element and notifies', () {
+      controller
+        ..addElement(rect)
+        ..addListener(_handleNotification)
+        ..removeElementAt(0);
+      expect(controller.elements, isEmpty);
+      expect(_wasNotified, isTrue);
+    });
+
+    test('removeElementAt ignores out of bounds index', () {
+      controller
+        ..addListener(_handleNotification)
+        ..removeElementAt(0);
+      expect(_wasNotified, isFalse);
+    });
+
+    test('commitAdd adds element and is undoable', () {
+      controller.commitAdd(rect);
+      expect(controller.elements.length, 1);
+      expect(controller.selectedIndex, isZero);
+
+      controller.undo();
+      expect(controller.elements, isEmpty);
+      expect(controller.selectedIndex, isNull);
+
+      controller.redo();
+      expect(controller.elements, hasLength(1));
+      expect(controller.selectedIndex, 0);
+    });
   });
 }

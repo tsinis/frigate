@@ -233,6 +233,74 @@ void main() => group(DrawPainter, () {
         reason: 'well outside the shape and its hit-slop',
       );
     });
+
+    test('OvalElement isPointOnShape works correctly', () {
+      const oval = OvalElement(height: 100, width: 200, x: 50, y: 50);
+      expect(DrawPainter.isPointOnShape(const Offset(150, 100), element: oval), isTrue);
+      expect(
+        DrawPainter.isPointOnShape(const Offset(50, 50), element: oval),
+        isFalse,
+        reason: 'Top left corner of bounding box, outside ellipse',
+      );
+    });
+  });
+
+  group('Rendering', () {
+    test('DrawPainter paints OvalElement', () {
+      const oval = OvalElement(fillColor: .black, height: 100, width: 200, x: 50, y: 50);
+      const painter = DrawPainter([oval]);
+      final recorder = _RecordingCanvas();
+      painter.paint(recorder, const Size(800, 600));
+
+      expect(recorder.drawOvalCount, greaterThan(0));
+    });
+
+    test('DrawPainter paints rounded RectElement', () {
+      const roundedRect = RectElement(
+        cornerRadius: 16,
+        fillColor: .black,
+        height: 100,
+        width: 200,
+        x: 50,
+        y: 50,
+      );
+      const painter = DrawPainter([roundedRect]);
+      final recorder = _RecordingCanvas();
+      painter.paint(recorder, const Size(800, 600));
+
+      expect(recorder.drawRRectCount, greaterThan(0));
+    });
+
+    test('DrawPainter paints RectElement with fill', () {
+      const rectangle = RectElement(fillColor: .black, height: 100, width: 100, x: 50, y: 50);
+      const painter = DrawPainter([rectangle]);
+      final recorder = _RecordingCanvas();
+      painter.paint(recorder, const Size(800, 600));
+
+      expect(recorder.drawRectCount, greaterThan(0));
+    });
+
+    test('DrawPainter gracefully handles TextElement without crashing', () {
+      const text = TextElement(text: 'Hello', x: 50, y: 50);
+      const painter = DrawPainter([text]);
+      final recorder = _RecordingCanvas();
+      expect(
+        () => painter.paint(recorder, const Size(800, 600)),
+        returnsNormally,
+        reason: "Doesn't do anything yet, but should not crash",
+      );
+    });
+
+    test('shouldRepaint returns true if elements or selectedIndex differ', () {
+      const rectangle = RectElement(height: 100, width: 100, x: 50, y: 50);
+      const painterFirst = DrawPainter([rectangle], selectedIndex: 0);
+      const painterSecond = DrawPainter([rectangle]);
+      const painterThird = DrawPainter([], selectedIndex: 0);
+
+      expect(painterFirst.shouldRepaint(painterSecond), isTrue);
+      expect(painterFirst.shouldRepaint(painterThird), isTrue);
+      expect(painterFirst.shouldRepaint(painterFirst), isFalse);
+    });
   });
 });
 

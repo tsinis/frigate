@@ -50,4 +50,57 @@ void main() => group('Drag to Create Flow', () {
     await tester.pump();
     expect(controller.elements.length, 1);
   });
+
+  testWidgets('Drag too small shape drops it', (tester) async {
+    final controller = DrawController()
+      ..creationTemplate = const RectElement(height: 0, width: 0, x: 0, y: 0);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final ivFinder = find.byType(InteractiveViewer);
+    final topLeft = tester.getTopLeft(ivFinder);
+    final gesture = await tester.startGesture(topLeft + const Offset(100, 100)); // Start drag.
+    await tester.pump();
+
+    await gesture.moveBy(const Offset(4, 4)); // Move by only 4 pixels (below threshold of 10).
+    await tester.pump();
+
+    await gesture.up(); // End drag.
+    await tester.pump();
+
+    expect(controller.elements.isEmpty, isTrue); // Should be dropped.
+    expect(controller.creationTemplate, isNull);
+  });
+
+  testWidgets('Pointer cancel aborts creation', (tester) async {
+    final controller = DrawController()
+      ..creationTemplate = const RectElement(height: 0, width: 0, x: 0, y: 0);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final ivFinder = find.byType(InteractiveViewer);
+    final topLeft = tester.getTopLeft(ivFinder);
+    final gesture = await tester.startGesture(topLeft + const Offset(100, 100)); // Start drag.
+    await tester.pump();
+
+    await gesture.cancel(); // Cancel drag.
+    await tester.pump();
+
+    expect(controller.elements.isEmpty, isTrue); // Should be removed.
+    expect(controller.creationTemplate, isNull);
+  });
 });

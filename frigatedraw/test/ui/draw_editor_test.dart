@@ -32,7 +32,9 @@ void main() => group(DrawEditor, () {
   testWidgets('selects element on tap on outline', (tester) async {
     final controller = DrawController();
     const rect = RectElement(height: 100, width: 100, x: 50, y: 50);
-    controller.addElement(rect);
+    controller
+      ..addElement(rect)
+      ..selectedIndex = null; // Ensure not already selected.
 
     await tester.pumpWidget(
       MaterialApp(
@@ -82,8 +84,8 @@ void main() => group(DrawEditor, () {
     final ivFinder = find.byType(InteractiveViewer);
     final topLeft = tester.getTopLeft(ivFinder);
 
-    // Start drag from top-left corner (50, 50).
-    final gesture = await tester.startGesture(topLeft + const Offset(50, 50));
+    // Start drag from center (100, 100).
+    final gesture = await tester.startGesture(topLeft + const Offset(100, 100));
     await tester.pump();
 
     // Move by 50, 50.
@@ -139,6 +141,237 @@ void main() => group(DrawEditor, () {
     await tester.pump();
     expect(controller.elements.firstOrNull?.width, closeTo(130.0, 0.1));
     expect(controller.elements.firstOrNull?.height, closeTo(130.0, 0.1));
+
+    gesture = await tester.startGesture(topLeft + const Offset(145, 80)); // 3. Top-center handle.
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, -10));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+    expect(controller.elements.firstOrNull?.y, closeTo(70.0, 0.1));
+    expect(controller.elements.firstOrNull?.height, closeTo(140.0, 0.1));
+
+    gesture = await tester.startGesture(topLeft + const Offset(80, 140)); // 4. Center-left handle.
+    await tester.pump();
+    await gesture.moveBy(const Offset(-10, 0));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+    expect(controller.elements.firstOrNull?.x, closeTo(70.0, 0.1));
+    expect(controller.elements.firstOrNull?.width, closeTo(140.0, 0.1));
+  });
+
+  testWidgets('cancels drag on pointer cancel', (tester) async {
+    final controller = DrawController();
+    const rect = RectElement(height: 100, width: 100, x: 50, y: 50);
+    controller
+      ..addElement(rect)
+      ..selectedIndex = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            width: 800,
+            child: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final ivFinder = find.byType(InteractiveViewer);
+    final topLeft = tester.getTopLeft(ivFinder);
+
+    final gesture = await tester.startGesture(topLeft + const Offset(50, 50));
+    await tester.pump();
+    await gesture.moveBy(const Offset(50, 50));
+    await tester.pump();
+
+    expect(
+      controller.elements.firstOrNull?.x,
+      closeTo(100.0, 0.1),
+      reason: 'The element moved mid-drag',
+    );
+
+    await gesture.cancel(); // Cancel the gesture!
+    await tester.pump();
+
+    expect(
+      controller.commandStack.canUndo,
+      isFalse,
+      reason: 'Undo stack was NOT populated because commitCommand never ran',
+    );
+  });
+
+  testWidgets('ignores drag on TextElement', (tester) async {
+    final controller = DrawController();
+    const text = TextElement(text: 'Hello', x: 50, y: 50);
+    controller.addElement(text);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            width: 800,
+            child: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final ivFinder = find.byType(InteractiveViewer);
+    final topLeft = tester.getTopLeft(ivFinder);
+
+    await tester.tapAt(topLeft + const Offset(50, 50)); // Try clicking on the text coordinates.
+    await tester.pump();
+
+    expect(
+      controller.selectedIndex,
+      isNull,
+      reason: 'Should NOT be selected because hitTest for TextElement returns false',
+    );
+
+    controller.selectedIndex = 0; // Force selection to try dragging.
+
+    final gesture = await tester.startGesture(topLeft + const Offset(50, 50));
+    await tester.pump();
+    await gesture.moveBy(const Offset(50, 50));
+    await tester.pump();
+
+    expect(controller.elements.firstOrNull?.x, 50.0);
+    expect(
+      controller.elements.firstOrNull?.y,
+      50.0,
+      reason: 'Should NOT move because canMove = false for TextElement',
+    );
+
+    await gesture.up();
+  });
+
+  group('Edge Cases', () {
+    testWidgets('aborts creation if element is removed mid-drag', (tester) async {
+      final controller = DrawController()
+        ..creationTemplate = const RectElement(height: 0, width: 0, x: 0, y: 0);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final ivFinder = find.byType(InteractiveViewer);
+      final topLeft = tester.getTopLeft(ivFinder);
+
+      final gesture = await tester.startGesture(topLeft + const Offset(100, 100)); // Start create.
+      await tester.pump();
+      expect(controller.elements.length, 1);
+
+      controller.removeElementAt(0); // Mutate list from underneath!
+      expect(controller.elements, isEmpty);
+
+      await gesture.moveBy(const Offset(50, 50)); // Move should trigger abortCreation.
+      await tester.pump();
+
+      await gesture.up(); // Release should also handle it gracefully.
+      await tester.pump();
+
+      expect(controller.creationTemplate, isNull);
+    });
+
+    testWidgets('aborts creation if element is removed just before pointer up', (tester) async {
+      final controller = DrawController()
+        ..creationTemplate = const RectElement(height: 0, width: 0, x: 0, y: 0);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final ivFinder = find.byType(InteractiveViewer);
+      final topLeft = tester.getTopLeft(ivFinder);
+
+      final gesture = await tester.startGesture(topLeft + const Offset(100, 100)); // Start create.
+      await tester.pump();
+
+      controller.removeElementAt(0); // Mutate list just before release.
+
+      await gesture.up();
+      await tester.pump();
+
+      expect(controller.creationTemplate, isNull);
+    });
+
+    testWidgets('handleMove skips TextElement', (tester) async {
+      final controller = DrawController();
+      const rect = RectElement(height: 100, width: 100, x: 50, y: 50);
+      controller
+        ..addElement(rect)
+        ..selectedIndex = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final ivFinder = find.byType(InteractiveViewer);
+      final topLeft = tester.getTopLeft(ivFinder);
+
+      // Start dragging the rect center (100, 100).
+      final gesture = await tester.startGesture(topLeft + const Offset(100, 100));
+      await tester.pump();
+
+      // SWAP it for a text element mid-drag!
+      controller.updateElement(const TextElement(text: 'hi', x: 50, y: 50), 0);
+
+      await gesture.moveBy(const Offset(10, 10)); // Move should.
+      await tester.pump();
+
+      expect(controller.elements.firstOrNull?.x, 50.0, reason: 'Should not have moved');
+      await gesture.up();
+    });
+
+    testWidgets('resizing explicit hit', (tester) async {
+      final controller = DrawController();
+      const rect = RectElement(height: 100, width: 100, x: 100, y: 100);
+      controller
+        ..addElement(rect)
+        ..selectedIndex = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final ivFinder = find.byType(InteractiveViewer);
+      final topLeft = tester.getTopLeft(ivFinder);
+
+      // Top-left handle is at (100, 100) document space.
+      final gesture = await tester.startGesture(topLeft + const Offset(100, 100));
+      await tester.pump();
+      await gesture.moveBy(const Offset(10, 10));
+      await tester.pump();
+      expect(controller.elements.firstOrNull?.width, 90.0);
+      await gesture.up();
+    });
   });
 
   test('debugFillProperties coverage', () {

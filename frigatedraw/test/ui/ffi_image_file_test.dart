@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frigatedraw/frigatedraw.dart';
@@ -251,6 +252,16 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(Image), findsOneWidget);
+    });
+
+    test('debugFillProperties covers builder property', () {
+      final file = File('test.jpg');
+      final image = FfiImageFile(file, builder: (context, img) => const SizedBox());
+      final propertiesBuilder = DiagnosticPropertiesBuilder();
+      image.debugFillProperties(propertiesBuilder);
+
+      final props = propertiesBuilder.properties.map((i) => i.name).toList(growable: false);
+      expect(props, contains('builder'));
     });
   });
 }
