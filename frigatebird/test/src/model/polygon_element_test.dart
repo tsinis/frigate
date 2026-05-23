@@ -45,12 +45,12 @@ void main() => group(PolygonElement, () {
   });
 
   test('boundingBoxOf', () {
-    final verts = Float64x2List.fromList([
+    final vertices = Float64x2List.fromList([
       Float64x2(10, 50),
       Float64x2(100, 20),
       Float64x2(50, 150),
     ]);
-    final box = PolygonElement.boundingBoxOf(verts);
+    final box = PolygonElement.boundingBoxOf(vertices);
     expect(box.x, 10);
     expect(box.y, 20);
     expect(box.width, 90);
@@ -95,12 +95,32 @@ void main() => group(PolygonElement, () {
     );
   });
 
-  test('boundingBoxOf clamps zero dimensions to 1.0', () {
-    final verts = Float64x2List.fromList([Float64x2(10, 20), Float64x2(10, 20), Float64x2(10, 20)]);
-    final box = PolygonElement.boundingBoxOf(verts);
+  test('boundingBoxOf handles degenerate polygons without clamping', () {
+    final vertices = Float64x2List.fromList([
+      Float64x2(10, 20),
+      Float64x2(10, 20),
+      Float64x2(10, 20),
+    ]);
+    final box = PolygonElement.boundingBoxOf(vertices);
     expect(box.x, 10);
     expect(box.y, 20);
-    expect(box.width, 1.0);
-    expect(box.height, 1.0);
+    expect(box.width, isZero);
+    expect(box.height, isZero);
+  });
+
+  test('copyWith with vertices only recalculates bounds', () {
+    final poly = PolygonElement(height: 100, vertices: triangle, width: 100, x: 0, y: 0);
+    final newVerts = Float64x2List.fromList([
+      Float64x2(10, 50),
+      Float64x2(100, 20),
+      Float64x2(50, 150),
+    ]);
+    final updated = poly.copyWith(vertices: newVerts);
+
+    expect(updated.x, 10);
+    expect(updated.y, 20);
+    expect(updated.width, 90);
+    expect(updated.height, 130);
+    expect(updated.vertices, newVerts);
   });
 });

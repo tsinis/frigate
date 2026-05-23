@@ -327,6 +327,33 @@ void main() {
         bundle.free();
       }
     });
+
+    test('null vertices pointer with polyCount > 0 throws ArgumentError', () {
+      final poly = PolygonElement(
+        height: 10,
+        vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(10, 0), Float64x2(5, 10)]),
+        width: 10,
+        x: 0,
+        y: 0,
+      );
+      final bundle = FfiMarshal.encodeElements([poly], malloc);
+      try {
+        // Force the vertices pointer to nullptr.
+        bundle.elementsPtr.ref.payload.polygon.verticesPtr = nullptr;
+        expect(
+          () => FfiMarshal.decodeElements(
+            bundle.elementsPtr,
+            1,
+            bundle.textBufferPtr,
+            payloadBufferLen: bundle.arena.ptr.ref.textLen,
+          ),
+          throwsArgumentError,
+          reason: 'null verticesPtr with polyCount > 0 must throw ArgumentError',
+        );
+      } finally {
+        bundle.free();
+      }
+    });
   });
 }
 

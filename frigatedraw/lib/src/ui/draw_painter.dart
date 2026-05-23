@@ -38,6 +38,29 @@ class DrawPainter extends CustomPainter {
     ..style = .stroke
     ..strokeWidth = 2;
 
+  static final _polygonPathCache = Expando<Path>();
+
+  static Path _getPathForPolygon(PolygonElement element) {
+    final cached = _polygonPathCache[element.vertices];
+    if (cached == null) {
+      final path = Path();
+      final first = element.vertices.firstOrNull;
+      if (first == null) return path;
+
+      path.moveTo(first.x, first.y);
+      for (int index = 1; index < element.vertices.length; index += 1) {
+        path.lineTo(element.vertices[index].x, element.vertices[index].y);
+      }
+      path.close();
+      // ignore: avoid-collection-mutating-methods, Expando operates as a lookup map, not an in-place collection mutation.
+      _polygonPathCache[element.vertices] = path;
+
+      return path;
+    }
+
+    return cached;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     for (final element in elements) {
@@ -95,9 +118,7 @@ class DrawPainter extends CustomPainter {
     double thickness,
   ) {
     final first = pending.firstOrNull;
-    if (first == null) {
-      return;
-    }
+    if (first == null) return;
 
     final path = Path()..moveTo(first.x, first.y);
     for (int i = 1; i < pending.length; i += 1) {
@@ -119,14 +140,9 @@ class DrawPainter extends CustomPainter {
     List<Float64x2> pending,
     double thickness,
   ) {
-    if (cursor == null || pending.isEmpty) {
-      return;
-    }
-
+    if (cursor == null || pending.isEmpty) return;
     final lastVertex = pending.lastOrNull;
-    if (lastVertex == null) {
-      return;
-    }
+    if (lastVertex == null) return;
 
     _drawDashedLine(
       canvas,
@@ -145,15 +161,11 @@ class DrawPainter extends CustomPainter {
     List<Float64x2> pending,
     double thickness,
   ) {
-    if (pending.length < 2) {
-      return;
-    }
+    if (pending.length < 2) return;
 
     final firstVertex = pending.firstOrNull;
     final lastVertex = pending.lastOrNull;
-    if (firstVertex == null || lastVertex == null) {
-      return;
-    }
+    if (firstVertex == null || lastVertex == null) return;
 
     _drawDashedLine(
       canvas,
@@ -180,9 +192,7 @@ class DrawPainter extends CustomPainter {
     double zoneRadius,
   ) {
     final firstVertex = pending.firstOrNull;
-    if (firstVertex == null) {
-      return;
-    }
+    if (firstVertex == null) return;
 
     canvas.drawCircle(
       Offset(firstVertex.x, firstVertex.y),
@@ -227,14 +237,7 @@ class DrawPainter extends CustomPainter {
 
   static void _paintPolygon(Canvas canvas, PolygonElement element) {
     if (element.vertices.length < 3) return;
-
-    final first = element.vertices.firstOrNull;
-    if (first == null) return;
-    final path = Path()..moveTo(first.x, first.y);
-    for (int index = 1; index < element.vertices.length; index += 1) {
-      path.lineTo(element.vertices[index].x, element.vertices[index].y);
-    }
-    path.close();
+    final path = _getPathForPolygon(element);
 
     if (element.uiFillColor.a > 0) {
       canvas.drawPath(
@@ -340,12 +343,28 @@ class DrawPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant DrawPainter oldDelegate) =>
-      !identical(oldDelegate.elements, elements) ||
-      oldDelegate.selectedIndex != selectedIndex ||
-      !identical(oldDelegate.pendingVertices, pendingVertices) ||
-      oldDelegate.cursorPosition != cursorPosition ||
-      oldDelegate.activeTool != activeTool;
+  bool shouldRepaint(covariant DrawPainter oldDelegate) {
+    final DrawPainter(
+      activeTool: oldActiveTool,
+      creationTemplate: oldCreationTemplate,
+      cursorPosition: oldCursorPosition,
+      elements: oldElements,
+      pendingVertices: oldPendingVertices,
+      selectedIndex: oldSelectedIndex,
+      tolerance: oldTolerance,
+    ) = oldDelegate;
+
+    final isSame =
+        identical(oldElements, elements) &&
+        oldSelectedIndex == selectedIndex &&
+        identical(oldPendingVertices, pendingVertices) &&
+        oldCursorPosition == cursorPosition &&
+        oldActiveTool == activeTool &&
+        identical(oldCreationTemplate, creationTemplate) &&
+        oldTolerance == tolerance;
+
+    return !isSame;
+  }
 
   @override
   bool hitTest(Offset position) {
@@ -396,15 +415,11 @@ class DrawPainter extends CustomPainter {
   }
 
   static bool _isPointInPolygon(PolygonElement element, Offset point) {
-    if (element.vertices.length < 3) return false;
-
-    final first = element.vertices.firstOrNull;
-    if (first == null) return false;
-    final path = Path()..moveTo(first.x, first.y);
-    for (int index = 1; index < element.vertices.length; index += 1) {
-      path.lineTo(element.vertices[index].x, element.vertices[index].y);
+    if (element.vertices.length < 3) {
+      return false;
     }
-    path.close();
+
+    final path = _getPathForPolygon(element);
 
     return path.contains(point);
   }

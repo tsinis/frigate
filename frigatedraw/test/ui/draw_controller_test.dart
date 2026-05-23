@@ -3,6 +3,8 @@
 // ignore_for_file: prefer-extracting-callbacks, prefer-extracting-function-callbacks
 // ignore_for_file: prefer-class-destructuring, unnecessary-trailing-comma
 
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frigatedraw/frigatedraw.dart';
 
@@ -178,6 +180,26 @@ void main() {
       controller.redo();
       expect(controller.elements, hasLength(1));
       expect(controller.selectedIndex, 0);
+    });
+
+    test('canUndo and undo with pending polygon vertices', () {
+      expect(controller.canUndo, isFalse, reason: 'initially false');
+
+      controller.creationTemplate = PolygonElement(
+        height: 0,
+        vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(0, 0), Float64x2(0, 0)]),
+        width: 0,
+        x: 0,
+        y: 0,
+      );
+      expect(controller.canUndo, isFalse, reason: 'still false with 0 pending vertices');
+
+      controller.addPendingVertex(const Offset(10, 20));
+      expect(controller.canUndo, isTrue);
+
+      controller.undo();
+      expect(controller.pendingVertices, isEmpty);
+      expect(controller.canUndo, isFalse, reason: 'false after undoing last pending vertex');
     });
   });
 }

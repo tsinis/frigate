@@ -85,8 +85,9 @@ class _DrawEditorState extends State<DrawEditor> {
     };
 
     if (shape is PolygonElement) {
-      final horizontalScale = newWidth / width;
-      final verticalScale = newHeight / height;
+      final horizontalScale = width == 0.0 ? 1.0 : newWidth / width;
+      final verticalScale = height == 0.0 ? 1.0 : newHeight / height;
+
       final newVerts = Float64x2List(shape.vertices.length);
       for (int index = 0; index < shape.vertices.length; index += 1) {
         final v = shape.vertices[index];
@@ -197,16 +198,17 @@ class _DrawEditorState extends State<DrawEditor> {
         if (template is PolygonElement) {
           final vertices = Float64x2List.fromList(pending);
           final box = PolygonElement.boundingBoxOf(vertices);
-          final element = template.copyWith(
-            height: box.height,
-            vertices: vertices,
-            width: box.width,
-            x: box.x,
-            y: box.y,
-          );
-          _controller
-            ..commitAdd(element)
-            ..creationTemplate = null;
+          if (box.width > 0.0 && box.height > 0.0) {
+            final element = template.copyWith(
+              height: box.height,
+              vertices: vertices,
+              width: box.width,
+              x: box.x,
+              y: box.y,
+            );
+            _controller.commitAdd(element);
+          }
+          _controller.creationTemplate = null;
           _previewIndex = null;
         }
         _controller.updateCursorPosition(null);
@@ -476,7 +478,7 @@ class _DrawEditorState extends State<DrawEditor> {
             willChange: _isDragging.value || _isCreating,
             child: child,
           ),
-          listenable: Listenable.merge([_controller, _isDragging]),
+          listenable: Listenable.merge([_controller, _isDragging, _transformController]),
           child: image,
         ),
         fit: .fill,

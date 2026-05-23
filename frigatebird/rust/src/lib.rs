@@ -761,12 +761,19 @@ fn draw_polygon_on_pixmap(
         ));
     }
 
-    // SAFETY: Dart guarantees vertices_ptr points to vertex_count*2 valid f64s
-    // for the duration of the draw_elements call.
-    let verts: &[f64] =
-        unsafe { std::slice::from_raw_parts(p.vertices_ptr, p.vertex_count as usize * 2) };
+    let len = (p.vertex_count as usize).checked_mul(2).ok_or_else(|| {
+        (
+            FfiErrorCode::InvalidArg,
+            "Polygon vertex count calculation overflowed".into(),
+        )
+    })?;
+
+    // SAFETY: Dart guarantees vertices_ptr points to the checked, safe length
+    // of valid f64s for the duration of the draw_elements call.
+    let verts: &[f64] = unsafe { std::slice::from_raw_parts(p.vertices_ptr, len) };
 
     let mut pb = PathBuilder::new();
+    // tiny-skia uses f32; coordinates beyond ±16M lose sub-pixel precision
     pb.move_to(verts[0] as f32, verts[1] as f32);
     for pair in verts[2..].chunks_exact(2) {
         pb.line_to(pair[0] as f32, pair[1] as f32);
@@ -1019,6 +1026,58 @@ mod polygon_tests {
             thickness: 0.0,
         };
         // Should return Ok(()) without doing anything
+        assert!(draw_polygon_on_pixmap(&mut pixmap, &p, &style).is_ok());
+    }
+
+    #[test]
+    fn empty_polygon_skipped() {
+        let mut pixmap = Pixmap::new(10, 10).unwrap();
+        let p = PolygonPayload {
+            x: 0.0,
+            y: 0.0,
+            width: 10.0,
+            height: 10.0,
+            vertices_ptr: std::ptr::null(),
+            vertex_count: 0,
+            fill_color_argb: 0xFFFF0000,
+            outline_color_argb: 0,
+            outline_thickness: 0,
+            blur: 0,
+            _pad1: 0,
+            rotation_deg: 0,
+            _pad2: 0,
+        };
+        let style = ShapeStyle {
+            fill_color: Some(tiny_skia::Color::from_rgba8(255, 0, 0, 255)),
+            outline_color: None,
+            thickness: 0.0,
+        };
+        assert!(draw_polygon_on_pixmap(&mut pixmap, &p, &style).is_ok());
+    }
+
+    #[test]
+    fn single_vertex_polygon_skipped() {
+        let mut pixmap = Pixmap::new(10, 10).unwrap();
+        let p = PolygonPayload {
+            x: 0.0,
+            y: 0.0,
+            width: 10.0,
+            height: 10.0,
+            vertices_ptr: std::ptr::null(),
+            vertex_count: 1,
+            fill_color_argb: 0xFFFF0000,
+            outline_color_argb: 0,
+            outline_thickness: 0,
+            blur: 0,
+            _pad1: 0,
+            rotation_deg: 0,
+            _pad2: 0,
+        };
+        let style = ShapeStyle {
+            fill_color: Some(tiny_skia::Color::from_rgba8(255, 0, 0, 255)),
+            outline_color: None,
+            thickness: 0.0,
+        };
         assert!(draw_polygon_on_pixmap(&mut pixmap, &p, &style).is_ok());
     }
 

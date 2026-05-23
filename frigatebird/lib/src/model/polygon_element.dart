@@ -3,6 +3,7 @@ part of 'draw_element.dart';
 // No @pragma('vm:deeply-immutable') — Float64x2List is not a deeply-immutable type.
 // PolygonElement extends DrawElement directly, bypassing ImmutableDrawElement.
 final class PolygonElement extends DrawElement {
+  // Not const: Float64x2List is a mutable typed-data buffer that cannot be constructed as a const.
   PolygonElement({
     required super.height,
     required this.vertices,
@@ -34,19 +35,15 @@ final class PolygonElement extends DrawElement {
     double minY = first.y;
     double maxY = first.y;
 
-    for (final v in vertices.skip(1)) {
+    for (int i = 1; i < vertices.length; i += 1) {
+      final v = vertices[i];
       if (v.x < minX) minX = v.x;
       if (v.x > maxX) maxX = v.x;
       if (v.y < minY) minY = v.y;
       if (v.y > maxY) maxY = v.y;
     }
 
-    return (
-      height: (maxY - minY).clamp(1.0, double.infinity),
-      width: (maxX - minX).clamp(1.0, double.infinity),
-      x: minX,
-      y: minY,
-    );
+    return (height: maxY - minY, width: maxX - minX, x: minX, y: minY);
   }
 
   @override
@@ -61,18 +58,22 @@ final class PolygonElement extends DrawElement {
     double? width,
     double? x,
     double? y,
-  }) => .new(
-    blur: blur ?? this.blur,
-    fillColor: fillColor ?? this.fillColor,
-    height: height ?? this.height,
-    outlineColor: outlineColor ?? this.outlineColor,
-    outlineThickness: outlineThickness ?? this.outlineThickness,
-    rotation: rotation ?? this.rotation,
-    vertices: vertices ?? this.vertices,
-    width: width ?? this.width,
-    x: x ?? this.x,
-    y: y ?? this.y,
-  );
+  }) {
+    final computed = vertices == null ? null : boundingBoxOf(vertices);
+
+    return PolygonElement(
+      blur: blur ?? this.blur,
+      fillColor: fillColor ?? this.fillColor,
+      height: height ?? (computed == null ? this.height : computed.height),
+      outlineColor: outlineColor ?? this.outlineColor,
+      outlineThickness: outlineThickness ?? this.outlineThickness,
+      rotation: rotation ?? this.rotation,
+      vertices: vertices ?? this.vertices,
+      width: width ?? (computed == null ? this.width : computed.width),
+      x: x ?? (computed == null ? this.x : computed.x),
+      y: y ?? (computed == null ? this.y : computed.y),
+    );
+  }
 
   @override
   String toString() =>

@@ -241,4 +241,57 @@ void main() {
     expect(controller.pendingVertices.isEmpty, isTrue);
     expect(controller.cursorPosition, isNull);
   });
+
+  testWidgets('Polygon tool toggle transitions canUndo correctly', (tester) async {
+    final file = File('test.jpg');
+    final controller = DrawController()
+      ..creationTemplate = PolygonElement(
+        height: 0,
+        vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(0, 0), Float64x2(0, 0)]),
+        width: 0,
+        x: 0,
+        y: 0,
+      );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(controller.canUndo, isFalse);
+
+    final ivFinder = find.byType(InteractiveViewer);
+    final topLeft = tester.getTopLeft(ivFinder);
+
+    // Add first point under polygon tool.
+    await tester.tapAt(topLeft + const Offset(100, 100));
+    await tester.pump();
+
+    expect(controller.canUndo, isTrue);
+
+    // Toggle tool to pointer/select — canUndo should become false.
+    controller.creationTemplate = null;
+    await tester.pump();
+    expect(controller.canUndo, isFalse);
+
+    // Toggle back to polygon — canUndo should be false since switching tools cleared pending vertices.
+    controller.creationTemplate = PolygonElement(
+      height: 0,
+      vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(0, 0), Float64x2(0, 0)]),
+      width: 0,
+      x: 0,
+      y: 0,
+    );
+    await tester.pump();
+    expect(controller.canUndo, isFalse);
+
+    // Adding a point under polygon tool again should make canUndo true.
+    await tester.tapAt(topLeft + const Offset(100, 100));
+    await tester.pump();
+    expect(controller.canUndo, isTrue);
+  });
 }

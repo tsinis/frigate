@@ -276,6 +276,10 @@ impl ShapeBuilder for TextPayload {
     }
 }
 
+/// Represents the FFI layout for a polygon payload.
+/// Note: Manual padding fields (_pad1, _pad2) are explicitly specified here instead of
+/// #[repr(C, align(8))] to ensure a mechanical, 1-to-1 match with the Dart FFI Struct definition
+/// without depending on compiler-specific alignment behavior for composite fields.
 #[derive_ReprC]
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]

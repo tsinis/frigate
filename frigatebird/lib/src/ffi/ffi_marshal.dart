@@ -55,38 +55,6 @@ final class FfiElementsHandle implements Finalizable {
   }
 }
 
-/// Handle for a single polygon's vertex buffer.
-final class PolygonFfiHandle implements Finalizable {
-  PolygonFfiHandle._(this.ptr);
-
-  factory PolygonFfiHandle.allocate(Float64x2List vertices) => _allocatePolygonFfiHandle(vertices);
-
-  final Pointer<Double> ptr;
-  bool _freed = false;
-
-  static final _finalizer = NativeFinalizer(malloc.nativeFree);
-
-  void free() {
-    if (_freed) return;
-    _freed = true;
-    _finalizer.detach(this);
-    if (ptr != nullptr) calloc.free(ptr);
-  }
-}
-
-PolygonFfiHandle _allocatePolygonFfiHandle(Float64x2List vertices) {
-  final ptr = calloc<Double>(vertices.length * 2);
-  final view = ptr.asTypedList(vertices.length * 2);
-  final raw = vertices.buffer.asFloat64List();
-  final offset = vertices.offsetInBytes ~/ 8;
-  view.setRange(0, vertices.length * 2, raw, offset);
-
-  final handle = PolygonFfiHandle._(ptr);
-  PolygonFfiHandle._finalizer.attach(handle, ptr.cast<Void>(), detach: handle);
-
-  return handle;
-}
-
 /// Marshaller to convert between domain [DrawElement]s and raw [FfiElement]s.
 sealed class FfiMarshal {
   /// Encodes a list of [DrawElement]s into native memory and builds a ready-to-use [FfiElementsHandle].
@@ -346,7 +314,15 @@ sealed class FfiMarshal {
         case .polygon:
           final poly = element.payload.polygon;
           final polyCount = poly.vertexCount;
+          if (polyCount > 0 && poly.verticesPtr == nullptr) {
+            throw ArgumentError(
+              'Malformed FFI polygon buffer: verticesPtr is null for polyCount=$polyCount',
+            );
+          }
+
           // Reconstruct Float64x2List by copying the raw f64 pairs from the FFI buffer.
+          // NOTE: The reconstructed vertex list views coordinates directly from polyRaw.
+          // This buffer is owned by the native handle and MUST be copied before the handle is freed.
           final polyRaw = poly.verticesPtr.asTypedList(polyCount * 2);
           final verts = Float64x2List(polyCount);
           // NOTE: This assumes Float64x2List layout is [x0, y0, x1, y1, ...] in double representation.
