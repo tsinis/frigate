@@ -6,6 +6,7 @@ pub union FfiPayload {
     pub rectangle: RectanglePayload,
     pub text: TextPayload,
     pub oval: OvalPayload,
+    pub polygon: PolygonPayload,
 }
 
 impl std::fmt::Debug for FfiPayload {
@@ -24,6 +25,7 @@ pub enum FfiElement {
     Rectangle(RectanglePayload) = 0,
     Text(TextPayload) = 1,
     Oval(OvalPayload) = 2,
+    Polygon(PolygonPayload) = 3,
 }
 
 pub trait Shape {
@@ -274,15 +276,67 @@ impl ShapeBuilder for TextPayload {
     }
 }
 
+#[derive_ReprC]
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct PolygonPayload {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub vertices_ptr: *const f64,
+    pub vertex_count: u32,
+    pub fill_color_argb: u32,
+    pub outline_color_argb: u32,
+    pub outline_thickness: u8,
+    pub blur: u8,
+    pub _pad1: u16,
+    pub rotation_deg: i32,
+    pub _pad2: u32,
+}
+
+impl Shape for PolygonPayload {
+    fn x(&self) -> f64 {
+        self.x
+    }
+    fn y(&self) -> f64 {
+        self.y
+    }
+    fn width(&self) -> f64 {
+        self.width
+    }
+    fn height(&self) -> f64 {
+        self.height
+    }
+    fn rotation(&self) -> i32 {
+        self.rotation_deg
+    }
+    fn fill_color_argb(&self) -> u32 {
+        self.fill_color_argb
+    }
+    fn blur(&self) -> u8 {
+        self.blur
+    }
+}
+
+impl ShapeBuilder for PolygonPayload {
+    fn set_rotation(&mut self, deg: i32) {
+        self.rotation_deg = deg;
+    }
+    fn set_blur(&mut self, blur: u8) {
+        self.blur = blur;
+    }
+}
+
 // Layout assertions to freeze the wire contract.
 // Dart side MUST match these exactly using Struct + Union + padding.
 const _: () = assert!(std::mem::size_of::<RectanglePayload>() == 48);
 const _: () = assert!(std::mem::size_of::<OvalPayload>() == 48);
 const _: () = assert!(std::mem::size_of::<TextPayload>() == 48);
-const _: () = assert!(std::mem::size_of::<FfiPayload>() == 48);
-const _: () =
-    assert!(std::mem::align_of::<FfiPayload>() == std::mem::align_of::<RectanglePayload>());
-const _: () = assert!(std::mem::size_of::<FfiElement>() == 56); // Tag(1) + Pad(7) + Payload(48)
+const _: () = assert!(std::mem::size_of::<PolygonPayload>() == 64);
+const _: () = assert!(std::mem::size_of::<FfiPayload>() == 64);
+const _: () = assert!(std::mem::align_of::<FfiPayload>() == 8);
+const _: () = assert!(std::mem::size_of::<FfiElement>() == 72); // Tag(1) + Pad(7) + Payload(64)
 const _: () = assert!(std::mem::align_of::<FfiElement>() == 8);
 
 #[cfg(test)]
@@ -294,12 +348,10 @@ mod tests {
         assert_eq!(std::mem::size_of::<RectanglePayload>(), 48);
         assert_eq!(std::mem::size_of::<OvalPayload>(), 48);
         assert_eq!(std::mem::size_of::<TextPayload>(), 48);
-        assert_eq!(std::mem::size_of::<FfiPayload>(), 48);
-        assert_eq!(
-            std::mem::align_of::<FfiPayload>(),
-            std::mem::align_of::<RectanglePayload>()
-        );
-        assert_eq!(std::mem::size_of::<FfiElement>(), 56);
+        assert_eq!(std::mem::size_of::<PolygonPayload>(), 64);
+        assert_eq!(std::mem::size_of::<FfiPayload>(), 64);
+        assert_eq!(std::mem::align_of::<FfiPayload>(), 8);
+        assert_eq!(std::mem::size_of::<FfiElement>(), 72);
         assert_eq!(std::mem::align_of::<FfiElement>(), 8);
     }
 }
