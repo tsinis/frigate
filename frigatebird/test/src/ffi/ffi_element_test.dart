@@ -7,8 +7,8 @@ import 'package:test/test.dart';
 void main() {
   group('FfiElement layout', () {
     test(
-      'struct is 56 bytes (tag(1)+pad(7)+payload(48))',
-      () => expect(sizeOf<FfiElement>(), 56, reason: 'wire-size contract'),
+      'struct is 72 bytes (tag(8)+payload(64))',
+      () => expect(sizeOf<FfiElement>(), 72, reason: 'wire-size contract'),
     );
 
     test(
@@ -28,6 +28,11 @@ void main() {
         reason: '3*f64(24)+i32(4)+u32(4)+u8+pad(3)+u32+u32+u32 = 48',
       ),
     );
+
+    test(
+      'PolygonPayload is 64 bytes',
+      () => expect(sizeOf<PolygonPayload>(), 64, reason: '8*usize = 64'),
+    );
   });
 
   group('FfiElementType', () {
@@ -39,6 +44,16 @@ void main() {
     test(
       'text has wire value 1',
       () => expect(FfiElementType.text.value, 1, reason: 'text discriminator'),
+    );
+
+    test(
+      'oval has wire value 2',
+      () => expect(FfiElementType.oval.value, 2, reason: 'oval discriminator'),
+    );
+
+    test(
+      'polygon has wire value 3',
+      () => expect(FfiElementType.polygon.value, 3, reason: 'polygon discriminator'),
     );
   });
 }
