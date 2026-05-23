@@ -12,6 +12,8 @@ miri
 misalign
 multibyte
 nonoverlapping
+ptrs
 safepoint
 safepoints
 unrecognised
+verts
