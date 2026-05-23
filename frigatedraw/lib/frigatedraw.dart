@@ -10,4 +10,5 @@ export 'src/ui/buttons/draw_undo_button.dart';
 export 'src/ui/draw_controller.dart';
 export 'src/ui/draw_editor.dart';
 export 'src/ui/draw_painter.dart';
+export 'src/ui/draw_tool.dart';
 export 'src/ui/ffi_image_file.dart';

@@ -4,6 +4,7 @@
 
 import 'dart:io' show File;
 import 'dart:math';
+import 'dart:typed_data' show Float64x2, Float64x2List;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -39,6 +40,17 @@ class _DrawEditorState extends State<DrawEditor> {
   /// Floor for rect width/height while the user is resizing via a handle. Below ~10 px the rect
   /// becomes impossible to grab again because the 8 handles start overlapping each other.
   static const _minSize = 10.0;
+  static const _closeTolerance = 20.0;
+
+  static PolygonElement _movePolygon(Offset delta, PolygonElement element) {
+    final newVerts = Float64x2List(element.vertices.length);
+    for (int index = 0; index < element.vertices.length; index += 1) {
+      final v = element.vertices[index];
+      newVerts[index] = Float64x2(v.x + delta.dx, v.y + delta.dy);
+    }
+
+    return element.copyWith(vertices: newVerts, x: element.x + delta.dx, y: element.y + delta.dy);
+  }
 
   static DrawElement _resizedShape({
     required Offset delta,
@@ -71,6 +83,27 @@ class _DrawEditorState extends State<DrawEditor> {
       .topLeft || .topCenter || .topRight => y - appliedHeightDelta,
       .centerLeft || .centerRight || .bottomLeft || .bottomCenter || .bottomRight => y,
     };
+
+    if (shape is PolygonElement) {
+      final horizontalScale = newWidth / width;
+      final verticalScale = newHeight / height;
+      final newVerts = Float64x2List(shape.vertices.length);
+      for (int index = 0; index < shape.vertices.length; index += 1) {
+        final v = shape.vertices[index];
+        newVerts[index] = Float64x2(
+          newX + (v.x - x) * horizontalScale,
+          newY + (v.y - y) * verticalScale,
+        );
+      }
+
+      return shape.copyWith(
+        height: newHeight,
+        vertices: newVerts,
+        width: newWidth,
+        x: newX,
+        y: newY,
+      );
+    }
 
     return shape.copyWith(height: newHeight, width: newWidth, x: newX, y: newY);
   }
@@ -135,58 +168,117 @@ class _DrawEditorState extends State<DrawEditor> {
     if (_activePointerId != null) return;
 
     final point = _transformController.toScene(event.localPosition);
-    final template = _controller.creationTemplate;
+    final pointerId = event.pointer;
 
-    if (template != null) {
-      _isCreating = true;
-      _creationStartPoint = point;
-      _controller.selectedIndex = null;
-      _activePointerId = event.pointer;
+    if (_didHandlePolygonTool(point, pointerId)) return;
+    if (_didHandleCreationTool(point, pointerId)) return;
+    if (_didHandleSelectedHandleInteraction(point, pointerId)) return;
+    if (_didHandleElementSelection(point, pointerId)) return;
 
-      if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
-      final element = template.copyWith(height: 0, width: 0, x: point.dx, y: point.dy);
-      _controller.addElement(element);
-      _previewIndex = _controller.elements.length - 1;
-      _previewElement = element;
+    _controller.selectedIndex = null;
+  }
 
-      return;
-    }
+  bool _didHandlePolygonTool(Offset point, int pointerId) {
+    if (_controller.activeTool != .polygon) return false;
 
-    final selected = _controller.selectedElement;
-    if (selected != null) {
-      final handle = switch (selected) {
-        RectElement() || OvalElement() => DrawPainter.hitTestHandle(point, element: selected),
-        TextElement() => null,
-      };
-      if (handle != null) {
-        if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
-        _activePointerId = event.pointer;
-        _startDrag(handle: handle);
+    _controller.updateCursorPosition(point);
+    _activePointerId = pointerId;
+
+    return true;
+  }
+
+  void _didHandlePolygonUp(Offset point) {
+    final pending = _controller.pendingVertices;
+    if (pending.length >= 3) {
+      final first = Offset(pending.first.x, pending.first.y);
+      final distance = (point - first).distance;
+      if (distance < _closeTolerance / _transformController.value.getMaxScaleOnAxis()) {
+        final template = _controller.creationTemplate;
+        if (template is PolygonElement) {
+          final vertices = Float64x2List.fromList(pending);
+          final box = PolygonElement.boundingBoxOf(vertices);
+          final element = template.copyWith(
+            height: box.height,
+            vertices: vertices,
+            width: box.width,
+            x: box.x,
+            y: box.y,
+          );
+          _controller
+            ..commitAdd(element)
+            ..creationTemplate = null;
+          _previewIndex = null;
+        }
+        _controller.updateCursorPosition(null);
 
         return;
       }
     }
+    _controller
+      ..addPendingVertex(point)
+      ..updateCursorPosition(null);
+  }
 
+  bool _didHandleCreationTool(Offset point, int pointerId) {
+    final template = _controller.creationTemplate;
+    if (template == null) return false;
+
+    _isCreating = true;
+    _creationStartPoint = point;
+    _controller.selectedIndex = null;
+    _activePointerId = pointerId;
+
+    if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
+    final element = template.copyWith(height: 0, width: 0, x: point.dx, y: point.dy);
+    _controller.addElement(element);
+    _previewIndex = _controller.elements.length - 1;
+    _previewElement = element;
+
+    return true;
+  }
+
+  bool _didHandleSelectedHandleInteraction(Offset point, int pointerId) {
+    final selected = _controller.selectedElement;
+    if (selected == null) return false;
+
+    final handle = switch (selected) {
+      RectElement() ||
+      OvalElement() ||
+      PolygonElement() => DrawPainter.hitTestHandle(point, element: selected),
+      TextElement() => null,
+    };
+    if (handle == null) return false;
+
+    if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
+    _activePointerId = pointerId;
+    _startDrag(handle: handle);
+
+    return true;
+  }
+
+  bool _didHandleElementSelection(Offset point, int pointerId) {
     final allElements = _controller.elements;
     for (int i = allElements.length - 1; i >= 0; i -= 1) {
       final target = allElements.elementAtOrNull(i);
       if (target != null) {
         final isHit = switch (target) {
-          RectElement() || OvalElement() => DrawPainter.isPointOnShape(point, element: target),
+          RectElement() ||
+          OvalElement() ||
+          PolygonElement() => DrawPainter.isPointOnShape(point, element: target),
           TextElement() => false,
         };
         if (isHit) {
           if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
-          _activePointerId = event.pointer;
+          _activePointerId = pointerId;
           _controller.selectedIndex = i;
           _startDrag();
 
-          return;
+          return true;
         }
       }
     }
 
-    _controller.selectedIndex = null;
+    return false;
   }
 
   void _handlePointerMove(PointerMoveEvent event) {
@@ -197,8 +289,11 @@ class _DrawEditorState extends State<DrawEditor> {
 
     if (_isCreating && start != null) {
       final current = pIndex == null ? null : _controller.elements.elementAtOrNull(pIndex);
-      // ignore: avoid-returning-void, Element missing, abort creation to avoid getting stuck.
-      if (current == null || pIndex == null) return _abortCreation();
+      if (current == null || pIndex == null) {
+        _abortCreation();
+
+        return;
+      }
 
       final currentPoint = _transformController.toScene(event.localPosition);
       final updated = current.copyWithDrag(a: currentPoint, b: start);
@@ -207,6 +302,13 @@ class _DrawEditorState extends State<DrawEditor> {
 
       return;
     }
+
+    if (_controller.activeTool == .polygon) {
+      _controller.updateCursorPosition(_transformController.toScene(event.localPosition));
+
+      return;
+    }
+
     if (!_isDragging.value) return;
 
     final index = _controller.selectedIndex;
@@ -216,7 +318,7 @@ class _DrawEditorState extends State<DrawEditor> {
     // TODO(tsinis): Enable TextElement movement once _paintElement supports text bounds/handles.
     // Also remember to wire up hitTestHandle/hasHandles to allow text dragging.
     final canMove = switch (selected) {
-      RectElement() || OvalElement() => true,
+      RectElement() || OvalElement() || PolygonElement() => true,
       TextElement() => false,
     };
     if (!canMove) return;
@@ -225,7 +327,10 @@ class _DrawEditorState extends State<DrawEditor> {
     final delta = event.delta / scale;
 
     final updated = handle == null
-        ? selected.copyWith(x: selected.x + delta.dx, y: selected.y + delta.dy)
+        ? switch (selected) {
+            PolygonElement() => _movePolygon(delta, selected),
+            final element => element.copyWith(x: element.x + delta.dx, y: element.y + delta.dy),
+          }
         : _resizedShape(delta: delta, handle: handle, shape: selected);
 
     _controller.updateElement(updated, index);
@@ -244,14 +349,23 @@ class _DrawEditorState extends State<DrawEditor> {
   void _handlePointerUp(PointerUpEvent event) {
     _pointerCount = max(0, _pointerCount - 1);
     if (_pointerCount == 0) _dragStartMatrix = null;
-
     if (_activePointerId != null && event.pointer != _activePointerId) return;
+    if (_controller.activeTool == .polygon) {
+      final point = _transformController.toScene(event.localPosition);
+      _didHandlePolygonUp(point);
+      _activePointerId = null;
+
+      return;
+    }
 
     final pIndex = _resolvePreviewIndex;
     if (_isCreating) {
       final current = pIndex == null ? null : _controller.elements.elementAtOrNull(pIndex);
-      // ignore: avoid-returning-void, same reason as one above.
-      if (current == null || pIndex == null) return _abortCreation();
+      if (current == null || pIndex == null) {
+        _abortCreation();
+
+        return;
+      }
 
       // If it's too small, just drop it. We consider < 10px as an accidental press.
       if (current.width >= _minSize && current.height >= _minSize) {
@@ -282,8 +396,13 @@ class _DrawEditorState extends State<DrawEditor> {
   void _handlePointerCancel(PointerCancelEvent event) {
     _pointerCount = max(0, _pointerCount - 1);
     if (_pointerCount == 0) _dragStartMatrix = null;
-
     if (_activePointerId != null && event.pointer != _activePointerId) return;
+    if (_controller.activeTool == .polygon) {
+      _controller.updateCursorPosition(null);
+      _activePointerId = null;
+
+      return;
+    }
 
     final pIndex = _resolvePreviewIndex;
     if (_isCreating) {
@@ -347,7 +466,12 @@ class _DrawEditorState extends State<DrawEditor> {
           builder: (_, child) => CustomPaint(
             foregroundPainter: DrawPainter(
               _controller.elements,
+              activeTool: _controller.activeTool,
+              creationTemplate: _controller.creationTemplate,
+              cursorPosition: _controller.cursorPosition,
+              pendingVertices: _controller.pendingVertices,
               selectedIndex: _controller.selectedIndex,
+              tolerance: _closeTolerance / _transformController.value.getMaxScaleOnAxis(),
             ),
             willChange: _isDragging.value || _isCreating,
             child: child,

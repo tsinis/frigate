@@ -1,15 +1,30 @@
+import 'dart:typed_data' show Float64x2;
 import 'package:flutter/rendering.dart';
-
 import 'package:frigatebird/frigatebird.dart';
+
 import '../helpers/draw_element_extension.dart';
+import 'draw_tool.dart';
 
 class DrawPainter extends CustomPainter {
-  const DrawPainter(this.elements, {this.selectedIndex});
+  const DrawPainter(
+    this.elements, {
+    this.activeTool,
+    this.creationTemplate,
+    this.cursorPosition,
+    this.pendingVertices,
+    this.selectedIndex,
+    this.tolerance = 20.0,
+  });
 
   static const handleRadius = 6.0;
 
   final List<DrawElement> elements;
   final int? selectedIndex;
+  final List<Float64x2>? pendingVertices;
+  final Offset? cursorPosition;
+  final DrawTool? activeTool;
+  final double tolerance;
+  final DrawElement? creationTemplate;
 
   /// Hit-test slop around a rect outline: how far inside/outside a tap still counts as "on the
   /// rect." Keeps finger/mouse imprecision from making selection feel flaky at thin strokes.
@@ -29,6 +44,8 @@ class DrawPainter extends CustomPainter {
       _paintElement(canvas, element);
     }
 
+    _paintPolygonPreview(canvas);
+
     final index = selectedIndex;
     if (index == null || index.isNegative || index >= elements.length) return;
 
@@ -42,17 +59,202 @@ class DrawPainter extends CustomPainter {
     }
   }
 
-  void _paintElement(Canvas canvas, DrawElement element) {
-    switch (element) {
-      case RectElement():
-        _paintRect(canvas, element);
+  Color get _previewOutlineColor {
+    final template = creationTemplate;
 
-      case OvalElement():
-        _paintOval(canvas, element);
+    return template == null ? const Color(0xFF000000) : template.uiOutlineColor;
+  }
 
-      case TextElement():
-        // TODO(tsinis): render TextElement in the preview painter.
-        break;
+  double get _previewOutlineThickness {
+    final template = creationTemplate;
+
+    return template == null ? 2.0 : template.outlineThickness.toDouble();
+  }
+
+  void _paintPolygonPreview(Canvas canvas) {
+    final pending = pendingVertices;
+    if (activeTool != .polygon || pending == null || pending.isEmpty) return;
+
+    final color = _previewOutlineColor;
+    final thickness = _previewOutlineThickness;
+
+    _paintOpenPath(canvas, color, pending, thickness);
+    if (cursorPosition == null) {
+      _paintClosingLine(canvas, color, pending, thickness);
+    } else {
+      _paintCursorLine(canvas, color, cursorPosition, pending, thickness);
+    }
+    _paintVertexHandles(canvas, pending);
+    _paintCloseZone(canvas, color, pending, tolerance);
+  }
+
+  static void _paintOpenPath(
+    Canvas canvas,
+    Color color,
+    List<Float64x2> pending,
+    double thickness,
+  ) {
+    final first = pending.firstOrNull;
+    if (first == null) {
+      return;
+    }
+
+    final path = Path()..moveTo(first.x, first.y);
+    for (int i = 1; i < pending.length; i += 1) {
+      path.lineTo(pending[i].x, pending[i].y);
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = .stroke
+        ..strokeWidth = thickness,
+    );
+  }
+
+  static void _paintCursorLine(
+    Canvas canvas,
+    Color color,
+    Offset? cursor,
+    List<Float64x2> pending,
+    double thickness,
+  ) {
+    if (cursor == null || pending.isEmpty) {
+      return;
+    }
+
+    final lastVertex = pending.lastOrNull;
+    if (lastVertex == null) {
+      return;
+    }
+
+    _drawDashedLine(
+      canvas,
+      Offset(lastVertex.x, lastVertex.y),
+      Paint()
+        ..color = color.withValues(alpha: 0.5)
+        ..style = .stroke
+        ..strokeWidth = thickness,
+      cursor,
+    );
+  }
+
+  static void _paintClosingLine(
+    Canvas canvas,
+    Color color,
+    List<Float64x2> pending,
+    double thickness,
+  ) {
+    if (pending.length < 2) {
+      return;
+    }
+
+    final firstVertex = pending.firstOrNull;
+    final lastVertex = pending.lastOrNull;
+    if (firstVertex == null || lastVertex == null) {
+      return;
+    }
+
+    _drawDashedLine(
+      canvas,
+      Offset(firstVertex.x, firstVertex.y),
+      Paint()
+        ..color = color.withValues(alpha: 0.5)
+        ..style = .stroke
+        ..strokeWidth = thickness,
+      Offset(lastVertex.x, lastVertex.y),
+    );
+  }
+
+  static void _paintVertexHandles(Canvas canvas, List<Float64x2> pending) {
+    final paint = Paint()..color = const Color(0xFF000000);
+    for (final vertex in pending) {
+      canvas.drawCircle(Offset(vertex.x, vertex.y), 4, paint);
+    }
+  }
+
+  static void _paintCloseZone(
+    Canvas canvas,
+    Color color,
+    List<Float64x2> pending,
+    double zoneRadius,
+  ) {
+    final firstVertex = pending.firstOrNull;
+    if (firstVertex == null) {
+      return;
+    }
+
+    canvas.drawCircle(
+      Offset(firstVertex.x, firstVertex.y),
+      zoneRadius,
+      Paint()
+        ..color = color.withValues(alpha: 0.5)
+        ..style = .fill,
+    );
+  }
+
+  static void _drawDashedLine(Canvas canvas, Offset origin, Paint paint, Offset target) {
+    const dashWidth = 4.0;
+    const dashSpace = 4.0;
+    final Offset(dx: origX, dy: origY) = origin;
+    final Offset(dx: destX, dy: destY) = target;
+    final diffX = destX - origX;
+    final diffY = destY - origY;
+    final distance = Offset(diffX, diffY).distance;
+    if (distance == 0) return;
+
+    final count = (distance / (dashWidth + dashSpace)).floor();
+    final incX = diffX / distance;
+    final incY = diffY / distance;
+
+    for (int i = 0; i < count; i += 1) {
+      final dashX = origX + incX * i * (dashWidth + dashSpace);
+      final dashY = origY + incY * i * (dashWidth + dashSpace);
+      canvas.drawLine(
+        Offset(dashX, dashY),
+        Offset(dashX + incX * dashWidth, dashY + incY * dashWidth),
+        paint,
+      );
+    }
+  }
+
+  void _paintElement(Canvas canvas, DrawElement element) => switch (element) {
+    RectElement() => _paintRect(canvas, element),
+    OvalElement() => _paintOval(canvas, element),
+    PolygonElement() => _paintPolygon(canvas, element),
+    TextElement() => {}, // TODO(tsinis): render TextElement in the preview painter.
+  };
+
+  static void _paintPolygon(Canvas canvas, PolygonElement element) {
+    if (element.vertices.length < 3) return;
+
+    final first = element.vertices.firstOrNull;
+    if (first == null) return;
+    final path = Path()..moveTo(first.x, first.y);
+    for (int index = 1; index < element.vertices.length; index += 1) {
+      path.lineTo(element.vertices[index].x, element.vertices[index].y);
+    }
+    path.close();
+
+    if (element.uiFillColor.a > 0) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = element.uiFillColor
+          ..style = .fill
+          ..isAntiAlias = true,
+      );
+    }
+
+    if (element.outlineThickness > 0 && element.uiOutlineColor.a > 0) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = element.uiOutlineColor
+          ..style = .stroke
+          ..strokeWidth = element.outlineThickness.toDouble()
+          ..isAntiAlias = true,
+      );
     }
   }
 
@@ -139,7 +341,11 @@ class DrawPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant DrawPainter oldDelegate) =>
-      !identical(oldDelegate.elements, elements) || oldDelegate.selectedIndex != selectedIndex;
+      !identical(oldDelegate.elements, elements) ||
+      oldDelegate.selectedIndex != selectedIndex ||
+      !identical(oldDelegate.pendingVertices, pendingVertices) ||
+      oldDelegate.cursorPosition != cursorPosition ||
+      oldDelegate.activeTool != activeTool;
 
   @override
   bool hitTest(Offset position) {
@@ -153,6 +359,7 @@ class DrawPainter extends CustomPainter {
       final target = elements.elementAtOrNull(i);
       final isHit = switch (target) {
         RectElement() || OvalElement() => isPointOnShape(position, element: target),
+        PolygonElement() => isPointOnShape(position, element: target),
         _ => false, // ignore: avoid-wildcard-cases-with-sealed-classes, covers text and null.
       };
       if (isHit) return true;
@@ -179,10 +386,27 @@ class DrawPainter extends CustomPainter {
     final half = element.outlineThickness.toDouble() / 2 + _hitSlop;
     final outer = rect.inflate(half);
 
+    if (!outer.contains(point)) return false;
+
     return switch (element) {
       OvalElement() => _isPointInEllipse(point, outer),
-      RectElement() || TextElement() => outer.contains(point),
+      PolygonElement() => _isPointInPolygon(element, point),
+      RectElement() || TextElement() => true,
     };
+  }
+
+  static bool _isPointInPolygon(PolygonElement element, Offset point) {
+    if (element.vertices.length < 3) return false;
+
+    final first = element.vertices.firstOrNull;
+    if (first == null) return false;
+    final path = Path()..moveTo(first.x, first.y);
+    for (int index = 1; index < element.vertices.length; index += 1) {
+      path.lineTo(element.vertices[index].x, element.vertices[index].y);
+    }
+    path.close();
+
+    return path.contains(point);
   }
 
   /// Simple ellipse hit test: (x-h)^2/a^2 + (y-k)^2/b^2 <= 1.

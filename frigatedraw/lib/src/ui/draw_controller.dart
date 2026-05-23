@@ -3,15 +3,24 @@
 // ignore_for_file: avoid-collection-mutating-methods, avoid-ignoring-return-values
 
 import 'dart:collection' show UnmodifiableListView;
+import 'dart:typed_data' show Float64x2;
 
 import 'package:flutter/foundation.dart' show ChangeNotifier;
+import 'package:flutter/painting.dart' show Offset;
 import 'package:frigatebird/frigatebird.dart';
+
+import '../helpers/draw_element_extension.dart';
+import 'draw_tool.dart';
 
 class DrawController extends ChangeNotifier {
   final commandStack = CommandStack();
   final _elements = <DrawElement>[];
+  final _pendingVertices = <Float64x2>[];
+
   DrawElement? _creationTemplate;
   int? _selectedIndex;
+  DrawTool _activeTool = .select;
+  Offset? _cursorPosition;
 
   List<DrawElement> get elements => UnmodifiableListView(_elements);
 
@@ -28,6 +37,30 @@ class DrawController extends ChangeNotifier {
   set creationTemplate(DrawElement? value) {
     if (_creationTemplate == value) return;
     _creationTemplate = value;
+    _activeTool = value?.tool ?? .select;
+    _pendingVertices.clear();
+    _cursorPosition = null;
+    if (value != null) _selectedIndex = null;
+    notifyListeners();
+  }
+
+  DrawTool get activeTool => _activeTool;
+  List<Float64x2> get pendingVertices => UnmodifiableListView(_pendingVertices);
+  Offset? get cursorPosition => _cursorPosition;
+
+  void addPendingVertex(Offset point) {
+    _pendingVertices.add(Float64x2(point.dx, point.dy));
+    notifyListeners();
+  }
+
+  void updateCursorPosition(Offset? point) {
+    _cursorPosition = point;
+    notifyListeners();
+  }
+
+  void resetPolygonCreation() {
+    _pendingVertices.clear();
+    _cursorPosition = null;
     notifyListeners();
   }
 
@@ -122,7 +155,17 @@ class DrawController extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get canUndo =>
+      commandStack.canUndo || (_activeTool == .polygon && _pendingVertices.isNotEmpty);
+
   void undo() {
+    if (_activeTool == .polygon && _pendingVertices.isNotEmpty) {
+      _pendingVertices.removeLast();
+      _cursorPosition = null;
+      notifyListeners();
+
+      return;
+    }
     if (!commandStack.canUndo) return;
     commandStack.undo();
     notifyListeners();

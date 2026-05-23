@@ -2,6 +2,8 @@ import 'dart:ui' show Color, Offset, Rect;
 
 import 'package:frigatebird/frigatebird.dart';
 
+import '../ui/draw_tool.dart';
+
 extension DrawElementExtension on DrawElement {
   /// Converts to `dart:ui` [Rect] for rendering only.
   @pragma('dart2js:tryInline')
@@ -21,9 +23,15 @@ extension DrawElementExtension on DrawElement {
   @pragma('dart2js:tryInline')
   @pragma('vm:prefer-inline')
   DrawElement copyWithDrag({required Offset a, required Offset b}) {
-    final shape = Rect.fromPoints(a, b);
+    final Rect(:height, :left, :top, :width) = .fromPoints(a, b);
 
-    // ignore: prefer-class-destructuring, readability creating a new object just for destructuring.
-    return copyWith(height: shape.height, width: shape.width, x: shape.left, y: shape.top);
+    return copyWith(height: height, width: width, x: left, y: top);
   }
+
+  DrawTool get tool => switch (this) {
+    TextElement() => .text,
+    RectElement() => .rectangle,
+    OvalElement() => .oval,
+    PolygonElement() => .polygon,
+  };
 }
