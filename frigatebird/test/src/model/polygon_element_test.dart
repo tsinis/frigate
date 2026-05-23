@@ -123,4 +123,64 @@ void main() => group(PolygonElement, () {
     expect(updated.height, 130);
     expect(updated.vertices, newVerts);
   });
+
+  test('copyWith with vertices AND explicit x/y/w/h uses the explicit values', () {
+    final poly = PolygonElement(height: 100, vertices: triangle, width: 100, x: 0, y: 0);
+    final newVerts = Float64x2List.fromList([Float64x2(0, 0), Float64x2(50, 0), Float64x2(25, 50)]);
+    final updated = poly.copyWith(height: 999, vertices: newVerts, width: 888, x: 111, y: 222);
+
+    expect(updated.x, 111);
+    expect(updated.y, 222);
+    expect(updated.width, 888);
+    expect(updated.height, 999);
+    expect(updated.vertices, newVerts);
+  });
+
+  test('copyWith without vertices keeps existing dims', () {
+    final poly = PolygonElement(height: 100, vertices: triangle, width: 100, x: 0, y: 0);
+    final updated = poly.copyWith(blur: 3);
+
+    expect(updated.x, isZero);
+    expect(updated.width, 100);
+    expect(updated.blur, 3);
+    expect(identical(updated.vertices, triangle), isTrue);
+  });
+
+  test('toString returns a descriptive string', () {
+    final poly = PolygonElement(
+      blur: 2,
+      fillColor: const FfiColor(0xFFFF0000),
+      height: 100,
+      outlineColor: const FfiColor(0xFF00FF00),
+      rotation: 45,
+      vertices: triangle,
+      width: 100,
+      x: 10,
+      y: 20,
+    );
+    final str = poly.toString();
+
+    expect(str, contains('PolygonElement'));
+    expect(str, contains('x: 10.0'));
+    expect(str, contains('vertices: 3'));
+  });
+
+  test('boundingBoxOf with single-vertex list returns zero-size at that vertex', () {
+    final verts = Float64x2List.fromList([Float64x2(5, 7)]);
+    final box = PolygonElement.boundingBoxOf(verts);
+
+    expect(box.x, 5);
+    expect(box.y, 7);
+    expect(box.width, isZero);
+    expect(box.height, isZero);
+  });
+
+  test('boundingBoxOf with empty list returns zeros', () {
+    final box = PolygonElement.boundingBoxOf(Float64x2List(0));
+
+    expect(box.x, isZero);
+    expect(box.y, isZero);
+    expect(box.width, isZero);
+    expect(box.height, isZero);
+  });
 });

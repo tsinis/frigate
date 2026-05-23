@@ -201,5 +201,65 @@ void main() {
       expect(controller.pendingVertices, isEmpty);
       expect(controller.canUndo, isFalse, reason: 'false after undoing last pending vertex');
     });
+
+    test('updateCursorPosition notifies listeners', () {
+      controller
+        ..addListener(_handleNotification)
+        ..updateCursorPosition(const Offset(10, 20));
+      expect(controller.cursorPosition, const Offset(10, 20));
+      expect(_wasNotified, isTrue);
+    });
+
+    test('resetPolygonCreation clears pending vertices and cursor', () {
+      controller.creationTemplate = PolygonElement(
+        height: 0,
+        vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(0, 0), Float64x2(0, 0)]),
+        width: 0,
+        x: 0,
+        y: 0,
+      );
+      // ignore: cascade_invocations, expects in between prevent a single cascade.
+      controller
+        ..addPendingVertex(const Offset(1, 2))
+        ..updateCursorPosition(const Offset(3, 4));
+      expect(controller.pendingVertices, hasLength(1));
+      expect(controller.cursorPosition, isNotNull);
+
+      controller
+        ..addListener(_handleNotification)
+        ..resetPolygonCreation();
+
+      expect(controller.pendingVertices, isEmpty);
+      expect(controller.cursorPosition, isNull);
+      expect(_wasNotified, isTrue);
+    });
+
+    test('redo when canRedo is false does nothing', () {
+      controller
+        ..addListener(_handleNotification)
+        ..redo(); // Stack is empty.
+      expect(_wasNotified, isFalse);
+    });
+
+    test('creationTemplate setter clears selection and resets polygon state', () {
+      controller
+        ..addElement(rect)
+        ..selectedIndex = 0;
+      expect(controller.selectedIndex, isNotNull);
+
+      controller.creationTemplate = const RectElement(height: 10, width: 10, x: 0, y: 0);
+
+      expect(controller.selectedIndex, isNull);
+    });
+
+    test('creationTemplate setter skips notification when value is unchanged', () {
+      const template = RectElement(height: 10, width: 10, x: 0, y: 0);
+      controller.creationTemplate = template;
+      controller.addListener(_handleNotification); // ignore: cascade_invocations, just a test.
+      // Assign the same instance again: the identity guard must suppress notification.
+      controller.creationTemplate = template; // ignore: cascade_invocations, just a test.
+
+      expect(_wasNotified, isFalse, reason: 'Same value must not notify listeners.');
+    });
   });
 }

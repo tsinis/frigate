@@ -1137,3 +1137,97 @@ mod polygon_tests {
         assert!(draw_polygon_on_pixmap(&mut pixmap, &p, &style).is_ok());
     }
 }
+
+#[cfg(test)]
+#[allow(unsafe_code)]
+mod extra_coverage_tests {
+    use super::*;
+
+    #[test]
+    fn handle_panic_string_payload() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new(String::from("string panic"));
+        let code = handle_panic(None, payload);
+        assert_eq!(code, FfiErrorCode::Panic as u8);
+    }
+
+    #[test]
+    fn handle_panic_static_str_payload() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new("static str panic");
+        let code = handle_panic(None, payload);
+        assert_eq!(code, FfiErrorCode::Panic as u8);
+    }
+
+    #[test]
+    #[cfg(not(miri))]
+    fn surface_rgba_to_pixmap_round_trip() {
+        use image::RgbaImage;
+        let img = RgbaImage::from_pixel(4, 4, image::Rgba([255, 0, 0, 255]));
+        let mut surface = Surface::Rgba(img);
+        // Exercise the Rgba -> Pixmap branch in as_pixmap.
+        let _ = surface.as_pixmap();
+        // Exercise the Pixmap -> Rgba branch in into_rgba.
+        let result = surface.into_rgba();
+        assert_eq!(result.width(), 4);
+        assert_eq!(result.height(), 4);
+        assert_eq!(result.get_pixel(0, 0).0[0], 255, "red channel preserved");
+    }
+
+    #[test]
+    #[cfg(not(miri))]
+    fn surface_pixmap_as_rgba_branch() {
+        use image::RgbaImage;
+        let img = RgbaImage::from_pixel(4, 4, image::Rgba([0, 255, 0, 255]));
+        let mut surface = Surface::Rgba(img);
+        // Force Rgba -> Pixmap so the variant is Pixmap.
+        let _ = surface.as_pixmap();
+        // Now call as_rgba on the Pixmap variant to cover that branch.
+        let rgba = surface.as_rgba();
+        assert_eq!(rgba.width(), 4);
+        assert_eq!(rgba.height(), 4);
+    }
+
+    #[test]
+    fn element_text_bounds_error() {
+        // offset=10, len=5 -> end=15 > buf.len()=4.
+        let p = TextPayload::new(0.0, 0.0, 12.0, 0, 0, 10, 5);
+        let buf = b"hi!!";
+        let result = element_text(&p, buf);
+        assert!(result.is_err(), "out-of-bounds slice should return Err");
+    }
+
+    #[test]
+    fn element_text_utf8_error() {
+        // text_offset=0, text_len=3, buf is invalid UTF-8.
+        let p = TextPayload::new(0.0, 0.0, 12.0, 0, 0, 0, 3);
+        let buf: &[u8] = &[0xFF, 0xFE, 0xFD];
+        let result = element_text(&p, buf);
+        assert!(result.is_err(), "invalid UTF-8 should return Err");
+    }
+
+    #[test]
+    fn element_text_success() {
+        let p = TextPayload::new(0.0, 0.0, 12.0, 0, 0, 0, 5);
+        let buf = b"hello world";
+        let result = element_text(&p, buf);
+        assert_eq!(result.unwrap(), "hello");
+    }
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn draw_elements_missing_elements_ptr_errors() {
+        let img_path = std::ffi::CString::new("nonexistent.png").unwrap();
+        let out_path = std::ffi::CString::new("out.png").unwrap();
+        let status = unsafe {
+            draw_elements(
+                img_path.as_ptr(),
+                out_path.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(), // null elements_ptr with count > 0
+                3,                // elements_count = 3 with null ptr -> InvalidArg
+                90,
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(status, FfiErrorCode::InvalidArg as u8);
+    }
+}
