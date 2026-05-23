@@ -44,6 +44,9 @@ external int sizeof_ffi_error();
 @Native<Size Function()>(isLeaf: true)
 external int sizeof_image_info();
 
+@Native<Size Function()>(isLeaf: true)
+external int sizeof_polygon_payload();
+
 // --- Drop Hooks ---.
 
 @Native<Pointer<FfiArena> Function(Size)>(isLeaf: true)

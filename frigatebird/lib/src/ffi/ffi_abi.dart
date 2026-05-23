@@ -11,7 +11,7 @@ import 'image_info_struct.dart';
 abstract final class FfiAbi {
   /// Expected size in bytes for the element payload union in C.
   /// Used by [FfiPayload] to anchor its size.
-  static const payloadBytes = 48;
+  static const payloadBytes = 64;
 
   /// Error buffer capacity allocated by `FfiMarshal.encodeElements` for Rust to write
   /// diagnostic messages into. Single source of truth — Rust docs reference this value too.
@@ -34,7 +34,16 @@ abstract final class FfiAbi {
     _check('FfiArena', sizeOf<FfiArena>(), ffi.sizeof_ffi_arena());
     _check('FfiError', sizeOf<FfiError>(), ffi.sizeof_ffi_error());
     _check('ImageInfo', sizeOf<ImageInfoStruct>(), ffi.sizeof_image_info());
+    _check('PolygonPayload', sizeOf<PolygonPayload>(), ffi.sizeof_polygon_payload());
     _hasAsserted = true;
+  }
+
+  static void assertPolygonPayload({int expectedSize = payloadBytes}) {
+    final actualSize = sizeOf<PolygonPayload>();
+    assert(
+      actualSize == expectedSize,
+      'PolygonPayload ABI mismatch: Dart=$actualSize Rust=$expectedSize',
+    );
   }
 
   static void _check(String name, int dart, int rust) {

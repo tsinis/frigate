@@ -8,8 +8,8 @@
 enum FfiElementType {
   rectangle(0),
   text(1),
-  oval(2);
-  // TODO(tsinis): Add polygon in future versions.
+  oval(2),
+  polygon(3);
 
   const FfiElementType(this.value);
 
