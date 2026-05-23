@@ -1,6 +1,6 @@
-import 'dart:ui' show Canvas, Offset, Paint, RRect, Rect;
+import 'dart:typed_data';
+import 'dart:ui';
 
-import 'package:flutter/rendering.dart' show Size;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frigatedraw/frigatedraw.dart';
 
@@ -164,6 +164,45 @@ void main() => group(DrawPainter, () {
       expect(canvas.lastPaintColorAlpha, 255, reason: 'black fill has alpha 255');
     });
 
+    test('uses drawPath for PolygonElement', () {
+      final canvas = _DrawPainterTest();
+      final poly = PolygonElement(
+        height: 100,
+        vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(100, 0), Float64x2(50, 100)]),
+        width: 100,
+        x: 0,
+        y: 0,
+      );
+      DrawPainter([poly]).paint(canvas, const Size(200, 200));
+      expect(
+        canvas.drawPathCount,
+        2,
+        reason: 'polygon element should hit drawPath twice (fill + outline)',
+      );
+    });
+
+    test('Polygon preview uses custom creationTemplate styling', () {
+      final canvas = _DrawPainterTest();
+      final polyTemplate = PolygonElement(
+        height: 0,
+        outlineColor: const FfiColor(0xFFFF0000),
+        outlineThickness: 8,
+        vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(100, 0), Float64x2(50, 100)]),
+        width: 0,
+        x: 0,
+        y: 0,
+      );
+
+      DrawPainter(
+        const [],
+        activeTool: .polygon,
+        creationTemplate: polyTemplate,
+        pendingVertices: polyTemplate.vertices,
+      ).paint(canvas, const Size(200, 200));
+
+      expect(canvas.drawPathCount, 1);
+    });
+
     test('non-positive width or height is silently skipped for ovals', () {
       final canvas = _DrawPainterTest();
       const oval = OvalElement(height: 0, width: 100, x: 0, y: 0);
@@ -235,6 +274,20 @@ void main() => group(DrawPainter, () {
         reason: 'Top left corner of bounding box, outside ellipse',
       );
     });
+
+    test('PolygonElement isPointOnShape works correctly', () {
+      final poly = PolygonElement(
+        height: 100,
+        vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(100, 0), Float64x2(50, 100)]),
+        width: 100,
+        x: 0,
+        y: 0,
+      );
+      expect(DrawPainter.isPointOnShape(const Offset(50, 50), element: poly), isTrue);
+      expect(DrawPainter.isPointOnShape(const Offset(10, 10), element: poly), isTrue);
+      expect(DrawPainter.isPointOnShape(const Offset(90, 10), element: poly), isTrue);
+      expect(DrawPainter.isPointOnShape(const Offset(0, 100), element: poly), isFalse);
+    });
   });
 
   group('Rendering', () {
@@ -303,6 +356,7 @@ class _DrawPainterTest implements Canvas {
   int drawRectCount = 0;
   int drawRRectCount = 0;
   int drawOvalCount = 0;
+  int drawPathCount = 0;
   RRect? lastRRect;
   bool? isLastPaintAntiAlias;
   int? lastPaintColorAlpha;
@@ -328,6 +382,14 @@ class _DrawPainterTest implements Canvas {
   // ignore: parameters-ordering, signature must match dart:ui Canvas.
   void drawOval(Rect rect, Paint paint) {
     drawOvalCount += 1;
+    isLastPaintAntiAlias = paint.isAntiAlias;
+    lastPaintColorAlpha = (paint.color.a * 255).round();
+  }
+
+  @override
+  // ignore: parameters-ordering, signature must match dart:ui Canvas.
+  void drawPath(Path path, Paint paint) {
+    drawPathCount += 1;
     isLastPaintAntiAlias = paint.isAntiAlias;
     lastPaintColorAlpha = (paint.color.a * 255).round();
   }
