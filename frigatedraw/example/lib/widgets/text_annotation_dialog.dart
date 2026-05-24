@@ -1,0 +1,92 @@
+// ignore_for_file: prefer-match-file-name, prefer-single-declaration-per-file, prefer-shorthands-with-enums, diagnostic_describe_all_properties, prefer_expression_function_bodies
+import 'package:flutter/material.dart';
+
+/// Parameters submitted from the [TextAnnotationDialog].
+@immutable
+class TextAnnotationParams {
+  const TextAnnotationParams({required this.fontSize, required this.rotation, required this.text});
+
+  final double fontSize;
+  final int rotation;
+  final String text;
+}
+
+/// A dialog allowing customization and submission of text annotation values.
+class TextAnnotationDialog extends StatefulWidget {
+  const TextAnnotationDialog({super.key});
+
+  @override
+  State<TextAnnotationDialog> createState() => _TextAnnotationDialogState();
+}
+
+class _TextAnnotationDialogState extends State<TextAnnotationDialog> {
+  final _textController = TextEditingController(text: 'Frigate');
+  double _fontSize = 48;
+  double _rotation = 0;
+
+  String get _trimmedText => _textController.text.trim();
+
+  void _handleSubmit() {
+    final text = _trimmedText;
+    if (text.isEmpty) return;
+
+    final params = TextAnnotationParams(
+      fontSize: _fontSize,
+      rotation: _rotation.round(),
+      text: text,
+    );
+
+    Navigator.of(context).pop(params);
+  }
+
+  void _handleTextSubmitted(String _) => _handleSubmit();
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        ListenableBuilder(
+          builder: (_, _) => FilledButton(
+            onPressed: _trimmedText.isEmpty ? null : _handleSubmit,
+            child: const Text('Render'),
+          ),
+          listenable: _textController,
+        ),
+      ],
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            autofocus: true,
+            controller: _textController,
+            decoration: const InputDecoration(labelText: 'Text to render'),
+            onSubmitted: _handleTextSubmitted,
+          ),
+          const SizedBox(height: 16),
+          Text('Font size: ${_fontSize.toStringAsFixed(0)} px'),
+          Slider(
+            max: 128,
+            min: 12,
+            onChanged: (value) => setState(() => _fontSize = value),
+            value: _fontSize,
+          ),
+          Text('Rotation: ${_rotation.toStringAsFixed(0)} deg'),
+          Slider(
+            max: 180,
+            min: -180,
+            onChanged: (value) => setState(() => _rotation = value),
+            value: _rotation,
+          ),
+        ],
+      ),
+      title: const Text('Render text annotation'),
+    );
+  }
+}
