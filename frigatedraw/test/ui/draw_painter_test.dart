@@ -54,17 +54,13 @@ void main() => group(DrawPainter, () {
         (handle: HandlePosition.bottomRight, point: Offset(250, 130)),
       ];
       for (final (:handle, :point) in cases) {
-        expect(
-          DrawPainter.hitTestHandle(point, element: hitRect),
-          handle,
-          reason: 'point $point should map to $handle',
-        );
+        expect(hitRect.hitTestHandle(point), handle, reason: 'point $point should map to $handle');
       }
     });
 
     test('returns null for the rect center (no handle in the middle)', () {
       expect(
-        DrawPainter.hitTestHandle(const Offset(150, 80), element: hitRect),
+        hitRect.hitTestHandle(const Offset(150, 80)),
         isNull,
         reason: 'center of the rect is handle-free',
       );
@@ -178,8 +174,9 @@ void main() => group(DrawPainter, () {
       DrawPainter([poly]).paint(canvas, const Size(200, 200));
       expect(
         canvas.drawPathCount,
-        2,
-        reason: 'polygon element should hit drawPath twice (fill + outline)',
+        3,
+        reason:
+            'polygon element should hit drawPath three times (fill + contrast outline base + outline)',
       );
     });
 
@@ -202,7 +199,12 @@ void main() => group(DrawPainter, () {
         pendingVertices: polyTemplate.vertices,
       ).paint(canvas, const Size(200, 200));
 
-      expect(canvas.drawPathCount, 1);
+      expect(canvas.drawPathCount, 2, reason: 'preview calls drawPath to render the open segments');
+      expect(
+        canvas.drawLineCount,
+        greaterThanOrEqualTo(1),
+        reason: 'closing segments are drawn as line primitives',
+      );
     });
 
     test('non-positive width or height is silently skipped for ovals', () {
@@ -211,12 +213,64 @@ void main() => group(DrawPainter, () {
       const DrawPainter([oval]).paint(canvas, const Size(100, 100));
       expect(canvas.drawOvalCount, isZero);
     });
+
+    test('renders placeholder outline for transparent/no-outline blur RectElement', () {
+      final canvas = _DrawPainterTest();
+      const sharp = RectElement(
+        blur: 15,
+        height: 50,
+        outlineColor: .transparent,
+        outlineThickness: 0,
+        width: 100,
+        x: 10,
+        y: 20,
+      );
+      const DrawPainter([sharp]).paint(canvas, const Size(200, 200));
+      expect(canvas.drawRectCount, 1, reason: 'drawRect should be called for region blur fill');
+    });
+
+    test('renders placeholder outline for transparent/no-outline blur OvalElement', () {
+      final canvas = _DrawPainterTest();
+      const oval = OvalElement(
+        blur: 15,
+        height: 50,
+        outlineColor: .transparent,
+        outlineThickness: 0,
+        width: 100,
+        x: 10,
+        y: 20,
+      );
+      const DrawPainter([oval]).paint(canvas, const Size(200, 200));
+      expect(canvas.drawOvalCount, 1, reason: 'drawOval should be called once for fill');
+      expect(canvas.drawPathCount, 1, reason: 'drawPath should be called once for dashed outline');
+    });
+
+    test('renders placeholder outline for transparent/no-outline blur PolygonElement', () {
+      final canvas = _DrawPainterTest();
+      final poly = PolygonElement(
+        blur: 15,
+        fillColor: .transparent,
+        height: 100,
+        outlineColor: .transparent,
+        outlineThickness: 0,
+        vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(100, 0), Float64x2(50, 100)]),
+        width: 100,
+        x: 0,
+        y: 0,
+      );
+      DrawPainter([poly]).paint(canvas, const Size(200, 200));
+      expect(
+        canvas.drawPathCount,
+        2,
+        reason: 'drawPath should be called twice (fill + dashed outline)',
+      );
+    });
   });
 
   group('isPointOnShape', () {
     test('is true on the outline of a rect', () {
       expect(
-        DrawPainter.isPointOnShape(const Offset(50, 30), element: hitRect),
+        hitRect.isPointOnShape(const Offset(50, 30)),
         isTrue,
         reason: 'top-left corner sits on the outline',
       );
@@ -226,13 +280,13 @@ void main() => group(DrawPainter, () {
       const oval = OvalElement(height: 100, width: 200, x: 50, y: 30);
       // Center of the top edge of the bounding box is a point on the oval.
       expect(
-        DrawPainter.isPointOnShape(const Offset(150, 30), element: oval),
+        oval.isPointOnShape(const Offset(150, 30)),
         isTrue,
         reason: 'top midpoint sits on the oval outline',
       );
 
       expect(
-        DrawPainter.isPointOnShape(const Offset(50, 30), element: oval),
+        oval.isPointOnShape(const Offset(50, 30)),
         isFalse,
         reason: 'bounding-box corner is not on the oval outline',
       );
@@ -240,12 +294,12 @@ void main() => group(DrawPainter, () {
 
     test('is false for non-positive dimensions', () {
       const oval = OvalElement(height: 0, width: 100, x: 0, y: 0);
-      expect(DrawPainter.isPointOnShape(const Offset(50, 0), element: oval), isFalse);
+      expect(oval.isPointOnShape(const Offset(50, 0)), isFalse);
     });
 
     test('is true in the interior of a shape without fill', () {
       expect(
-        DrawPainter.isPointOnShape(const Offset(150, 80), element: hitRect),
+        hitRect.isPointOnShape(const Offset(150, 80)),
         isTrue,
         reason: 'shape center is clickable even when transparent',
       );
@@ -254,14 +308,14 @@ void main() => group(DrawPainter, () {
     test('is true in the interior of a shape with fill', () {
       const filledRect = RectElement(fillColor: .black, height: 100, width: 200, x: 50, y: 30);
       expect(
-        DrawPainter.isPointOnShape(const Offset(150, 80), element: filledRect),
+        filledRect.isPointOnShape(const Offset(150, 80)),
         isTrue,
         reason: 'shape center is clickable when filled',
       );
     });
     test('is false far outside the shape', () {
       expect(
-        DrawPainter.isPointOnShape(const Offset(500, 500), element: hitRect),
+        hitRect.isPointOnShape(const Offset(500, 500)),
         isFalse,
         reason: 'well outside the shape and its hit-slop',
       );
@@ -269,9 +323,9 @@ void main() => group(DrawPainter, () {
 
     test('OvalElement isPointOnShape works correctly', () {
       const oval = OvalElement(height: 100, width: 200, x: 50, y: 50);
-      expect(DrawPainter.isPointOnShape(const Offset(150, 100), element: oval), isTrue);
+      expect(oval.isPointOnShape(const Offset(150, 100)), isTrue);
       expect(
-        DrawPainter.isPointOnShape(const Offset(50, 50), element: oval),
+        oval.isPointOnShape(const Offset(50, 50)),
         isFalse,
         reason: 'Top left corner of bounding box, outside ellipse',
       );
@@ -285,10 +339,10 @@ void main() => group(DrawPainter, () {
         x: 0,
         y: 0,
       );
-      expect(DrawPainter.isPointOnShape(const Offset(50, 50), element: poly), isTrue);
-      expect(DrawPainter.isPointOnShape(const Offset(10, 10), element: poly), isTrue);
-      expect(DrawPainter.isPointOnShape(const Offset(90, 10), element: poly), isTrue);
-      expect(DrawPainter.isPointOnShape(const Offset(0, 100), element: poly), isFalse);
+      expect(poly.isPointOnShape(const Offset(50, 50)), isTrue);
+      expect(poly.isPointOnShape(const Offset(10, 10)), isTrue);
+      expect(poly.isPointOnShape(const Offset(90, 10)), isTrue);
+      expect(poly.isPointOnShape(const Offset(0, 100)), isFalse);
     });
   });
 
@@ -418,7 +472,7 @@ void main() => group(DrawPainter, () {
       expect(canvas.drawPathCount, isZero, reason: 'fully transparent polygon draws nothing');
     });
 
-    test('polygon with outline only (no fill) draws once', () {
+    test('polygon with outline only (no fill) draws outline + contrast base', () {
       final canvas = _DrawPainterTest();
       final poly = PolygonElement(
         fillColor: .transparent, // Transparent fill.
@@ -431,7 +485,7 @@ void main() => group(DrawPainter, () {
         y: 0,
       );
       DrawPainter([poly]).paint(canvas, const Size(200, 200));
-      expect(canvas.drawPathCount, 1, reason: 'only the outline path is drawn');
+      expect(canvas.drawPathCount, 2, reason: 'the outline path + contrast base path are drawn');
     });
   });
 
@@ -462,10 +516,11 @@ void main() => group(DrawPainter, () {
         cursorPosition: const Offset(50, 50),
         pendingVertices: pending,
       ).paint(canvas, const Size(200, 200));
-      // The open path plus cursor dashed line calls drawPath and drawLine (via drawDashedLine).
+      // The open path plus cursor dashed line calls drawLine (via drawDashedLine).
       // No closing line because only 1 vertex.
-      // We just verify no crash and drawPath was called for the open-path segment.
-      expect(canvas.drawPathCount, greaterThanOrEqualTo(1));
+      // We just verify no crash and drawLine was called for the open-path segment.
+      expect(canvas.drawPathCount, 0);
+      expect(canvas.drawLineCount, greaterThanOrEqualTo(1));
     });
 
     test('closing line is drawn when cursorPosition is null and >= 2 vertices', () {
@@ -477,9 +532,8 @@ void main() => group(DrawPainter, () {
         pendingVertices: pending,
         // A cursorPosition: null (default) — triggers _paintClosingLine path.
       ).paint(canvas, const Size(200, 200));
-      // _paintClosingLine calls _drawDashedLine which calls drawLine.
-      // Not checking exact count, just no crash and at least one path drawn.
-      expect(canvas.drawPathCount, greaterThanOrEqualTo(1));
+      expect(canvas.drawPathCount, 2);
+      expect(canvas.drawLineCount, greaterThanOrEqualTo(1));
     });
   });
 
@@ -553,6 +607,7 @@ class _DrawPainterTest implements Canvas {
   int drawRRectCount = 0;
   int drawOvalCount = 0;
   int drawPathCount = 0;
+  int drawLineCount = 0;
   RRect? lastRRect;
   bool? isLastPaintAntiAlias;
   int? lastPaintColorAlpha;
@@ -590,9 +645,16 @@ class _DrawPainterTest implements Canvas {
     lastPaintColorAlpha = (paint.color.a * 255).round();
   }
 
+  @override
+  void drawLine(Offset p1, Offset p2, Paint paint) {
+    drawLineCount += 1;
+    isLastPaintAntiAlias = paint.isAntiAlias;
+    lastPaintColorAlpha = (paint.color.a * 255).round();
+  }
+
   /// Catch-all: every other Canvas method the painter happens to call (drawCircle for handles,
   /// saveLayer, etc.) is a silent no-op for our recording purposes.
   @override
-  // ignore: avoid-dynamic, signature must match dart:ui Canvas.
+  // ignore: avoid-dynamic, signature must match base Canvas class.
   dynamic noSuchMethod(Invocation invocation) => null;
 }

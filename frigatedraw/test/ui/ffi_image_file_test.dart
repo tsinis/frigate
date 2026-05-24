@@ -141,7 +141,7 @@ void main() {
           home: Scaffold(
             body: FfiImageFile(
               file,
-              builder: (context, image) {
+              builder: (image, info, uiImage) {
                 resolvedImage = image;
 
                 return const SizedBox();
@@ -230,7 +230,7 @@ void main() {
           home: Scaffold(
             body: FfiImageFile(
               file,
-              builder: (context, image) {
+              builder: (image, info, uiImage) {
                 if (image.width == null) isCalledWithNull = true;
 
                 return const SizedBox();
@@ -256,7 +256,7 @@ void main() {
 
     test('debugFillProperties covers builder property', () {
       final file = File('test.jpg');
-      final image = FfiImageFile(file, builder: (context, img) => const SizedBox());
+      final image = FfiImageFile(file, builder: (img, info, uiImage) => const SizedBox());
       final propertiesBuilder = DiagnosticPropertiesBuilder();
       image.debugFillProperties(propertiesBuilder);
 
