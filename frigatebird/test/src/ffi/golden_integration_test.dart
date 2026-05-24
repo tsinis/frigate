@@ -1,5 +1,6 @@
 // ignore_for_file: prefer-extracting-function-callbacks
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:frigatebird/frigatebird.dart';
 import 'package:test/test.dart';
@@ -29,6 +30,20 @@ void main() {
 
         final elements = [
           const RectElement(fillColor: FfiColor(0xFFFF0000), height: 100, width: 200, x: 10, y: 10),
+          PolygonElement(
+            fillColor: const FfiColor(0xFF00FF00),
+            height: 100,
+            outlineColor: const FfiColor(0xFF0000FF),
+            outlineThickness: 4,
+            vertices: Float64x2List.fromList([
+              Float64x2(20, 20),
+              Float64x2(120, 20),
+              Float64x2(70, 120),
+            ]),
+            width: 100,
+            x: 20,
+            y: 20,
+          ),
           const TextElement(height: 40, text: 'Deterministic', x: 20, y: 120),
         ];
 
