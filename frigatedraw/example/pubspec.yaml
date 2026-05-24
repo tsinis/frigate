@@ -13,6 +13,7 @@ dependencies:
     sdk: flutter
   frigatedraw:
     path: ../
+  image_picker: ^1.2.2
   meta: any # Constrained by Flutter SDK
   path_provider_dart:
     git: https://github.com/tsinis/path_provider
