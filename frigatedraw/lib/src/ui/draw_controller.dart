@@ -17,12 +17,15 @@ class DrawController extends ChangeNotifier {
   final _elements = <DrawElement>[];
   final _pendingVertices = <Float64x2>[];
 
+  UnmodifiableListView<DrawElement>? _cachedElements;
+  UnmodifiableListView<Float64x2>? _cachedPendingVertices;
+
   DrawElement? _creationTemplate;
   int? _selectedIndex;
   DrawTool _activeTool = .select;
   Offset? _cursorPosition;
 
-  List<DrawElement> get elements => UnmodifiableListView(_elements);
+  List<DrawElement> get elements => _cachedElements ??= UnmodifiableListView(_elements);
 
   int? get selectedIndex => _selectedIndex;
 
@@ -45,7 +48,7 @@ class DrawController extends ChangeNotifier {
   }
 
   DrawTool get activeTool => _activeTool;
-  List<Float64x2> get pendingVertices => UnmodifiableListView(_pendingVertices);
+  List<Float64x2> get pendingVertices => _cachedPendingVertices ??= UnmodifiableListView(_pendingVertices);
   Offset? get cursorPosition => _cursorPosition;
 
   void addPendingVertex(Offset point) {
@@ -175,5 +178,12 @@ class DrawController extends ChangeNotifier {
     if (!commandStack.canRedo) return;
     commandStack.redo();
     notifyListeners();
+  }
+
+  @override
+  void notifyListeners() {
+    _cachedElements = null;
+    _cachedPendingVertices = null;
+    super.notifyListeners();
   }
 }

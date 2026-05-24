@@ -232,7 +232,7 @@ class DrawPainter extends CustomPainter {
     RectElement() => _paintRect(canvas, element),
     OvalElement() => _paintOval(canvas, element),
     PolygonElement() => _paintPolygon(canvas, element),
-    TextElement() => {}, // TODO(tsinis): render TextElement in the preview painter.
+    TextElement() => null, // TODO(tsinis): render TextElement in the preview painter.
   };
 
   static void _paintPolygon(Canvas canvas, PolygonElement element) {
