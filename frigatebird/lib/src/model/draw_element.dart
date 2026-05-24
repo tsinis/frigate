@@ -7,6 +7,7 @@ part 'text_element.dart';
 part 'oval_element.dart';
 part 'immutable_draw_element.dart';
 part 'polygon_element.dart';
+part 'mask_region_element.dart';
 
 /// Base for all drawable elements.
 ///

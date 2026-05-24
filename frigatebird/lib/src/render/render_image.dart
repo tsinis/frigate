@@ -7,6 +7,8 @@ import 'package:ffi/ffi.dart';
 import '../constants/draw_constants.dart';
 import '../ffi/bindings.dart' as ffi;
 import '../ffi/ffi_abi.dart';
+import '../ffi/ffi_arena_handle.dart';
+import '../ffi/ffi_element.dart';
 import '../ffi/ffi_marshal.dart';
 import '../ffi/ffi_result_unit.dart';
 import '../model/draw_element.dart';
@@ -113,6 +115,64 @@ sealed class RenderImage {
       if (outputCStr != nullptr) calloc.free(outputCStr);
       if (fontCStr != nullptr) calloc.free(fontCStr);
       handle?.free();
+    }
+  }
+
+  /// Standalone region blur: applies a Gaussian blur to [region] (an instance of [RectElement])
+  /// and writes the output.
+  ///
+  /// File I/O is performed entirely in Rust. Runs in a background isolate via [Isolate.run].
+  static Future<void> blur({
+    required String imagePath,
+    required RectElement region,
+    String? outputPath,
+  }) {
+    FfiAbi.assertAll();
+    if (imagePath.isEmpty) {
+      throw const RenderException(.invalidArg, 'imagePath cannot be empty');
+    }
+
+    return Isolate.run(
+      () => _runBlurWorker(imagePath: imagePath, outputPath: outputPath, region: region),
+    );
+  }
+
+  static void _runBlurWorker({
+    required String imagePath,
+    required String? outputPath,
+    required RectElement region,
+  }) {
+    Pointer<Utf8> imageCStr = nullptr;
+    Pointer<Utf8> outputCStr = nullptr;
+    FfiArenaHandle? arena;
+    Pointer<RectanglePayload> payloadPtr = nullptr;
+    try {
+      imageCStr = imagePath.toNativeUtf8(allocator: calloc);
+      outputCStr = outputPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
+      arena = FfiArenaHandle.allocate(errorCapacity: FfiAbi.errorCapBytes);
+
+      // Allocate a native RectanglePayload to pass by value over FFI.
+      payloadPtr = calloc<RectanglePayload>()
+        ..ref.x = region.x
+        ..ref.y = region.y
+        ..ref.width = region.width
+        ..ref.height = region.height
+        ..ref.rotationDeg = region.rotation
+        ..ref.fillColorArgb = region.fillColor.argb
+        ..ref.outlineColorArgb = region.outlineColor.argb
+        ..ref.outlineThickness = region.outlineThickness
+        ..ref.blur = region.blur
+        ..ref.cornerRadius = region.cornerRadius;
+
+      final code = ffi.blur_region(imageCStr, outputCStr, payloadPtr.ref, arena.ptr);
+
+      final domainResult = arena.readResult(code);
+      if (domainResult is ErrUnit) throw RenderException(domainResult.code, domainResult.message);
+    } finally {
+      if (imageCStr != nullptr) calloc.free(imageCStr);
+      if (outputCStr != nullptr) calloc.free(outputCStr);
+      if (payloadPtr != nullptr) calloc.free(payloadPtr);
+      arena?.free();
     }
   }
 }
