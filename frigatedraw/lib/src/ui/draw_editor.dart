@@ -1,16 +1,13 @@
-// Widget tree composes inline gesture / pointer / build callbacks where extraction would
-// add named methods that don't get reused — the inline form keeps the hierarchy readable.
-// ignore_for_file: prefer-extracting-callbacks, prefer-extracting-function-callbacks
-
 import 'dart:io' show File;
 import 'dart:math';
-import 'dart:typed_data' show Float64x2, Float64x2List;
+import 'dart:typed_data' show Float64x2List;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'package:frigatebird/frigatebird.dart';
 import '../helpers/draw_element_extension.dart';
+import '../helpers/image_information_extension.dart';
 import 'draw_controller.dart';
 import 'draw_painter.dart';
 import 'ffi_image_file.dart';
@@ -41,73 +38,6 @@ class _DrawEditorState extends State<DrawEditor> {
   /// becomes impossible to grab again because the 8 handles start overlapping each other.
   static const _minSize = 10.0;
   static const _closeTolerance = 20.0;
-
-  static PolygonElement _movePolygon(Offset delta, PolygonElement element) {
-    final newVerts = Float64x2List(element.vertices.length);
-    for (int index = 0; index < element.vertices.length; index += 1) {
-      final v = element.vertices[index];
-      newVerts[index] = Float64x2(v.x + delta.dx, v.y + delta.dy);
-    }
-
-    return element.copyWith(vertices: newVerts, x: element.x + delta.dx, y: element.y + delta.dy);
-  }
-
-  static DrawElement _resizedShape({
-    required Offset delta,
-    required HandlePosition handle,
-    required DrawElement shape,
-  }) {
-    final DrawElement(:height, :width, :x, :y) = shape;
-
-    final newHeight = switch (handle) {
-      .topLeft || .topCenter || .topRight => max(height - delta.dy, _minSize),
-      .bottomLeft || .bottomCenter || .bottomRight => max(height + delta.dy, _minSize),
-      .centerLeft || .centerRight => height,
-    };
-
-    final newWidth = switch (handle) {
-      .topLeft || .centerLeft || .bottomLeft => max(width - delta.dx, _minSize),
-      .topRight || .centerRight || .bottomRight => max(width + delta.dx, _minSize),
-      .topCenter || .bottomCenter => width,
-    };
-
-    final appliedHeightDelta = newHeight - height;
-    final appliedWidthDelta = newWidth - width;
-
-    final newX = switch (handle) {
-      .topLeft || .centerLeft || .bottomLeft => x - appliedWidthDelta,
-      .topCenter || .topRight || .centerRight || .bottomCenter || .bottomRight => x,
-    };
-
-    final newY = switch (handle) {
-      .topLeft || .topCenter || .topRight => y - appliedHeightDelta,
-      .centerLeft || .centerRight || .bottomLeft || .bottomCenter || .bottomRight => y,
-    };
-
-    if (shape is PolygonElement) {
-      final horizontalScale = width == 0.0 ? 1.0 : newWidth / width;
-      final verticalScale = height == 0.0 ? 1.0 : newHeight / height;
-
-      final newVerts = Float64x2List(shape.vertices.length);
-      for (int index = 0; index < shape.vertices.length; index += 1) {
-        final v = shape.vertices[index];
-        newVerts[index] = Float64x2(
-          newX + (v.x - x) * horizontalScale,
-          newY + (v.y - y) * verticalScale,
-        );
-      }
-
-      return shape.copyWith(
-        height: newHeight,
-        vertices: newVerts,
-        width: newWidth,
-        x: newX,
-        y: newY,
-      );
-    }
-
-    return shape.copyWith(height: newHeight, width: newWidth, x: newX, y: newY);
-  }
 
   final _transformController = TransformationController();
   final _isDragging = ValueNotifier<bool>(false);
@@ -243,12 +173,7 @@ class _DrawEditorState extends State<DrawEditor> {
     final selected = _controller.selectedElement;
     if (selected == null) return false;
 
-    final handle = switch (selected) {
-      RectElement() ||
-      OvalElement() ||
-      PolygonElement() => DrawPainter.hitTestHandle(point, element: selected),
-      TextElement() => null,
-    };
+    final handle = selected.hitTestHandle(point);
     if (handle == null) return false;
 
     if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
@@ -262,21 +187,13 @@ class _DrawEditorState extends State<DrawEditor> {
     final allElements = _controller.elements;
     for (int i = allElements.length - 1; i >= 0; i -= 1) {
       final target = allElements.elementAtOrNull(i);
-      if (target != null) {
-        final isHit = switch (target) {
-          RectElement() ||
-          OvalElement() ||
-          PolygonElement() => DrawPainter.isPointOnShape(point, element: target),
-          TextElement() => false,
-        };
-        if (isHit) {
-          if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
-          _activePointerId = pointerId;
-          _controller.selectedIndex = i;
-          _startDrag();
+      if (target != null && target.isPointOnShape(point)) {
+        if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
+        _activePointerId = pointerId;
+        _controller.selectedIndex = i;
+        _startDrag();
 
-          return true;
-        }
+        return true;
       }
     }
 
@@ -329,11 +246,8 @@ class _DrawEditorState extends State<DrawEditor> {
     final delta = event.delta / scale;
 
     final updated = handle == null
-        ? switch (selected) {
-            PolygonElement() => _movePolygon(delta, selected),
-            final element => element.copyWith(x: element.x + delta.dx, y: element.y + delta.dy),
-          }
-        : _resizedShape(delta: delta, handle: handle, shape: selected);
+        ? selected.moved(delta.dx, delta.dy)
+        : selected.resized(dx: delta.dx, dy: delta.dy, handle: handle);
 
     _controller.updateElement(updated, index);
   }
@@ -464,22 +378,24 @@ class _DrawEditorState extends State<DrawEditor> {
       valueListenable: _isDragging,
       child: FfiImageFile(
         widget.image,
-        builder: (_, image) => ListenableBuilder(
+        builder: (displayImage, info, uiImage) => ListenableBuilder(
           builder: (_, child) => CustomPaint(
             foregroundPainter: DrawPainter(
               _controller.elements,
               activeTool: _controller.activeTool,
+              backgroundImage: uiImage,
               creationTemplate: _controller.creationTemplate,
               cursorPosition: _controller.cursorPosition,
               pendingVertices: _controller.pendingVertices,
               selectedIndex: _controller.selectedIndex,
               tolerance: _closeTolerance / _transformController.value.getMaxScaleOnAxis(),
             ),
+            size: info.size,
             willChange: _isDragging.value || _isCreating,
             child: child,
           ),
           listenable: Listenable.merge([_controller, _isDragging, _transformController]),
-          child: image,
+          child: displayImage,
         ),
         fit: .fill,
         size: widget.size,

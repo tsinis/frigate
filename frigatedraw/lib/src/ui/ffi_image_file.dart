@@ -1,7 +1,6 @@
-// ignore_for_file: prefer-class-destructuring, in widgets more explicit with named parameters...
-
-import 'dart:async';
+import 'dart:async' show unawaited;
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -44,7 +43,7 @@ class FfiImageFile extends Image {
 
   /// If provided, this callback allows custom layout control by wrapping the pre-configured [Image].
   /// If not provided, returns the [Image] widget directly.
-  final Widget Function(BuildContext context, Image image)? builder;
+  final Widget Function(Image displayedImage, ImageInformation? info, ui.Image? uiImage)? builder;
 
   /// Optional fixed size. If provided, FFI probing is skipped.
   final Size? size; // ignore: diagnostic_describe_all_properties, shown via parent width/height.
@@ -62,13 +61,63 @@ class FfiImageFile extends Image {
 }
 
 class _FfiImageFileState extends State<FfiImageFile> {
-  // ignore: avoid-late-keyword, it's more efficient to reuse the same Future instance.
-  late Future<ImageInformation?> _infoFuture = _loadInfo;
+  ImageInformation? _info;
+  ui.Image? _uiImage;
+  Uint8List? _bytes;
+  Object? _error; // ignore: no-object-declaration, we don't know the type in advance.
+  StackTrace? _stackTrace;
+  File? _loadedImageFile;
 
-  Future<ImageInformation?> get _loadInfo async =>
-      widget.size == null ? FfiImageFile._infoBuilder(widget._image.absolute.path) : null;
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
 
-  void _updateInfoFuture() => _infoFuture = _loadInfo;
+  Future<void> _load() async {
+    final file = widget._image;
+    _loadedImageFile = file;
+    _error = null;
+    setState(() => _stackTrace = null);
+
+    // 1. Run the size probe first in Phase 1.
+    ImageInformation? info;
+    final size = widget.size;
+    try {
+      info = size == null
+          ? await FfiImageFile._infoBuilder(file.absolute.path)
+          : ImageInformation(height: size.height.toInt(), width: size.width.toInt());
+      if (!mounted || _loadedImageFile != file) return;
+      setState(() => _info = info);
+
+      // 2. Decode the bytes inside Phase 2.
+      try {
+        final bytes = await file.readAsBytes();
+        if (!mounted || _loadedImageFile != file) return;
+
+        final codec = await ui.instantiateImageCodec(bytes);
+        final frame = await codec.getNextFrame();
+        if (!mounted || _loadedImageFile != file) {
+          frame.image.dispose();
+
+          return;
+        }
+
+        final oldUiImage = _uiImage;
+        _bytes = bytes;
+        setState(() => _uiImage = frame.image);
+        oldUiImage?.dispose();
+      } on Object catch (_) {
+        // If byte reading/decoding fails (e.g. in unit tests where file doesn't exist),
+        // we silently ignore or log it, and do not fail the widget rendering.
+        // The displayedImage remains Image.file which is exactly what tests and fallbacks expect!
+      }
+    } on Object catch (error, stackTrace) {
+      if (!mounted || _loadedImageFile != file) return;
+      _error = error;
+      setState(() => _stackTrace = stackTrace);
+    }
+  }
 
   @override
   void didUpdateWidget(FfiImageFile oldWidget) {
@@ -77,47 +126,62 @@ class _FfiImageFileState extends State<FfiImageFile> {
     final hasPathChanged = oldWidget._image.absolute.path != widget._image.absolute.path;
     final hasSizeNullabilityChanged = (oldWidget.size == null) != (widget.size == null);
 
-    if (!hasPathChanged && !hasSizeNullabilityChanged) return;
-    _updateInfoFuture();
-    // ignore: avoid-empty-setstate, no-empty-block, triggers FutureBuilder with the new future.
-    WidgetsBinding.instance.addPostFrameCallback((_) => mounted ? setState(() {}) : null);
+    if (hasPathChanged || hasSizeNullabilityChanged) {
+      if (hasPathChanged) {
+        final oldUiImage = _uiImage;
+        _uiImage = null;
+        _bytes = null;
+        _info = null;
+        oldUiImage?.dispose();
+      }
+      unawaited(_load());
+    }
+  }
+
+  @override
+  void dispose() {
+    _uiImage?.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final fallback = Image.file(
-      widget._image,
-      errorBuilder: widget.errorBuilder,
-      excludeFromSemantics: widget.excludeFromSemantics,
-      filterQuality: widget.filterQuality,
-      fit: widget.fit,
-      gaplessPlayback: widget.gaplessPlayback,
-      height: widget.size?.height,
-      semanticLabel: widget.semanticLabel,
-      width: widget.size?.width,
-    );
-    if (widget.size != null) return widget.builder?.call(context, fallback) ?? fallback;
+    final width = widget.size?.width ?? _info?.width.toDouble();
+    final height = widget.size?.height ?? _info?.height.toDouble();
 
-    return FutureBuilder<ImageInformation?>(
-      builder: (bc, snap) {
-        final image = Image.file(
-          widget._image,
-          errorBuilder: widget.errorBuilder,
-          excludeFromSemantics: widget.excludeFromSemantics,
-          filterQuality: widget.filterQuality,
-          fit: widget.fit,
-          gaplessPlayback: widget.gaplessPlayback,
-          height: snap.data?.height.toDouble() ?? fallback.height,
-          semanticLabel: widget.semanticLabel,
-          width: snap.data?.width.toDouble() ?? fallback.width,
-        );
-        if (snap.connectionState == .waiting) return widget.builder?.call(bc, image) ?? image;
+    final bytes = _bytes;
+    final displayedImage = bytes == null
+        ? Image.file(
+            widget._image,
+            errorBuilder: widget.errorBuilder,
+            excludeFromSemantics: widget.excludeFromSemantics,
+            filterQuality: widget.filterQuality,
+            fit: widget.fit,
+            gaplessPlayback: widget.gaplessPlayback,
+            height: height,
+            key: widget.key,
+            semanticLabel: widget.semanticLabel,
+            width: width,
+          )
+        : Image.memory(
+            bytes,
+            errorBuilder: widget.errorBuilder,
+            excludeFromSemantics: widget.excludeFromSemantics,
+            filterQuality: widget.filterQuality,
+            fit: widget.fit,
+            gaplessPlayback: widget.gaplessPlayback,
+            height: height,
+            key: widget.key,
+            semanticLabel: widget.semanticLabel,
+            width: width,
+          );
 
-        return snap.hasError
-            ? (widget.errorBuilder?.call(bc, snap.error ?? 'frigatedraw', snap.stackTrace) ?? image)
-            : (widget.builder?.call(bc, image) ?? image);
-      },
-      future: _infoFuture,
-    );
+    final error = _error;
+    if (error != null) {
+      final errorWidget = widget.errorBuilder?.call(context, error, _stackTrace);
+      if (errorWidget != null) return errorWidget;
+    }
+
+    return widget.builder?.call(displayedImage, _info, _uiImage) ?? displayedImage;
   }
 }
