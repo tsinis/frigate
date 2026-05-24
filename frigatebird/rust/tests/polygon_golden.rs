@@ -36,21 +36,19 @@ fn make_polygon_full(
     fill_color_argb: u32,
     rotation_deg: i32,
 ) -> FfiElement {
-    FfiElement::Polygon(PolygonPayload {
+    FfiElement::Polygon(PolygonPayload::new(
         x,
         y,
         width,
         height,
-        vertices_ptr: vertices.as_ptr(),
-        vertex_count: (vertices.len() / 2) as u32,
+        vertices.as_ptr(),
+        (vertices.len() / 2) as u32,
         fill_color_argb,
         outline_color_argb,
         outline_thickness,
-        blur: 0,
-        _pad1: 0,
+        0,
         rotation_deg,
-        _pad2: 0,
-    })
+    ))
 }
 
 fn render_polygons(polygons: &[FfiElement]) -> RgbaImage {

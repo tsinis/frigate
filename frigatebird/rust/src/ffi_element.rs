@@ -294,9 +294,42 @@ pub struct PolygonPayload {
     pub outline_color_argb: u32,
     pub outline_thickness: u8,
     pub blur: u8,
-    pub _pad1: u16,
+    _pad1: u16,
     pub rotation_deg: i32,
-    pub _pad2: u32,
+    _pad2: u32,
+}
+
+impl PolygonPayload {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        vertices_ptr: *const f64,
+        vertex_count: u32,
+        fill_color_argb: u32,
+        outline_color_argb: u32,
+        outline_thickness: u8,
+        blur: u8,
+        rotation_deg: i32,
+    ) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            vertices_ptr,
+            vertex_count,
+            fill_color_argb,
+            outline_color_argb,
+            outline_thickness,
+            blur,
+            _pad1: 0,
+            rotation_deg,
+            _pad2: 0,
+        }
+    }
 }
 
 impl Shape for PolygonPayload {
@@ -453,21 +486,19 @@ mod tests {
 
     #[test]
     fn polygon_shape_trait_getters() {
-        let p = PolygonPayload {
-            x: 11.0,
-            y: 22.0,
-            width: 33.0,
-            height: 44.0,
-            vertices_ptr: std::ptr::null(),
-            vertex_count: 0,
-            fill_color_argb: 0xFF_CC_DD_EE,
-            outline_color_argb: 0,
-            outline_thickness: 0,
-            blur: 6,
-            _pad1: 0,
-            rotation_deg: -45,
-            _pad2: 0,
-        };
+        let p = PolygonPayload::new(
+            11.0,
+            22.0,
+            33.0,
+            44.0,
+            std::ptr::null(),
+            0,
+            0xFF_CC_DD_EE,
+            0,
+            0,
+            6,
+            -45,
+        );
 
         assert_eq!(p.x(), 11.0);
         assert_eq!(p.y(), 22.0);
@@ -480,21 +511,7 @@ mod tests {
 
     #[test]
     fn polygon_shape_builder_set_methods() {
-        let mut p = PolygonPayload {
-            x: 0.0,
-            y: 0.0,
-            width: 10.0,
-            height: 10.0,
-            vertices_ptr: std::ptr::null(),
-            vertex_count: 0,
-            fill_color_argb: 0,
-            outline_color_argb: 0,
-            outline_thickness: 0,
-            blur: 0,
-            _pad1: 0,
-            rotation_deg: 0,
-            _pad2: 0,
-        };
+        let mut p = PolygonPayload::new(0.0, 0.0, 10.0, 10.0, std::ptr::null(), 0, 0, 0, 0, 0, 0);
         p.set_rotation(90);
         p.set_blur(15);
         assert_eq!(p.rotation(), 90);

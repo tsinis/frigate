@@ -1,7 +1,7 @@
 // Test reads better with inline lambdas + dotted property access; trailing-comma decisions
 // are case-by-case for readability inside `expect` blocks.
-// ignore_for_file: prefer-extracting-callbacks, prefer-extracting-function-callbacks
-// ignore_for_file: prefer-class-destructuring, unnecessary-trailing-comma
+
+// ignore_for_file: prefer-extracting-function-callbacks, prefer-class-destructuring
 
 import 'dart:typed_data';
 
@@ -37,8 +37,8 @@ void main() {
     test('addElement adds element and selects it', () {
       controller.addElement(rect);
 
-      expect(controller.elements, hasLength(1));
-      expect(controller.selectedIndex, 0);
+      expect(controller.elements.singleOrNull, rect);
+      expect(controller.selectedIndex, isZero);
       expect(controller.selectedElement, rect);
     });
 
@@ -261,5 +261,47 @@ void main() {
 
       expect(_wasNotified, isFalse, reason: 'Same value must not notify listeners.');
     });
+
+    test(
+      'elements and pendingVertices getters cache UnmodifiableListView instances between notifications',
+      () {
+        final elementsFirst = controller.elements;
+        // ignore: avoid-duplicate-initializers, just for the test.
+        final elementsOther = controller.elements;
+        expect(
+          identical(elementsFirst, elementsOther),
+          isTrue,
+          reason: 'Consecutive elements reads should be identical.',
+        );
+
+        final pendingFirst = controller.pendingVertices;
+        // ignore: avoid-duplicate-initializers, just for the test.
+        final pendingLast = controller.pendingVertices;
+        expect(
+          identical(pendingFirst, pendingLast),
+          isTrue,
+          reason: 'Consecutive pendingVertices reads should be identical.',
+        );
+
+        // Mutate list -> triggers notifyListeners() -> cache should clear.
+        controller.addElement(rect);
+
+        // ignore: avoid-duplicate-initializers, just for the test.
+        final elementsThird = controller.elements;
+        expect(
+          identical(elementsFirst, elementsThird),
+          isFalse,
+          reason: 'Cache should be invalidated on notification.',
+        );
+
+        // ignore: avoid-duplicate-initializers, just for the test.
+        final lastElements = controller.elements;
+        expect(
+          identical(elementsThird, lastElements),
+          isTrue,
+          reason: 'Elements reads after mutation should be identical.',
+        );
+      },
+    );
   });
 }

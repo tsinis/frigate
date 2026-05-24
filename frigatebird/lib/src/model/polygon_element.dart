@@ -46,6 +46,10 @@ final class PolygonElement extends DrawElement {
     return (height: maxY - minY, width: maxX - minX, x: minX, y: minY);
   }
 
+  /// Creates a copy of this polygon with updated fields.
+  ///
+  /// If [vertices] is provided, the bounding box is recomputed unless x/y/width/height
+  /// are explicitly overridden.
   @override
   PolygonElement copyWith({
     int? blur,

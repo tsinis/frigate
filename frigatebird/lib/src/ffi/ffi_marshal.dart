@@ -320,9 +320,8 @@ sealed class FfiMarshal {
             );
           }
 
-          // Reconstruct Float64x2List by copying the raw f64 pairs from the FFI buffer.
-          // NOTE: The reconstructed vertex list views coordinates directly from polyRaw.
-          // This buffer is owned by the native handle and MUST be copied before the handle is freed.
+          // Copy coordinate pairs from the native float buffer into a fresh heap list.
+          // This ensures the vertex data is safe after the native memory gets freed.
           final polyRaw = poly.verticesPtr.asTypedList(polyCount * 2);
           final verts = Float64x2List(polyCount);
           // NOTE: This assumes Float64x2List layout is [x0, y0, x1, y1, ...] in double representation.

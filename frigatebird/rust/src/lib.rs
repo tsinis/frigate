@@ -1005,21 +1005,19 @@ mod polygon_tests {
     #[test]
     fn degenerate_polygon_skipped() {
         let mut pixmap = Pixmap::new(10, 10).unwrap();
-        let p = PolygonPayload {
-            x: 0.0,
-            y: 0.0,
-            width: 10.0,
-            height: 10.0,
-            vertices_ptr: std::ptr::null(),
-            vertex_count: 2,
-            fill_color_argb: 0xFFFF0000,
-            outline_color_argb: 0,
-            outline_thickness: 0,
-            blur: 0,
-            _pad1: 0,
-            rotation_deg: 0,
-            _pad2: 0,
-        };
+        let p = PolygonPayload::new(
+            0.0,
+            0.0,
+            10.0,
+            10.0,
+            std::ptr::null(),
+            2,
+            0xFFFF0000,
+            0,
+            0,
+            0,
+            0,
+        );
         let style = ShapeStyle {
             fill_color: Some(tiny_skia::Color::from_rgba8(255, 0, 0, 255)),
             outline_color: None,
@@ -1032,21 +1030,19 @@ mod polygon_tests {
     #[test]
     fn empty_polygon_skipped() {
         let mut pixmap = Pixmap::new(10, 10).unwrap();
-        let p = PolygonPayload {
-            x: 0.0,
-            y: 0.0,
-            width: 10.0,
-            height: 10.0,
-            vertices_ptr: std::ptr::null(),
-            vertex_count: 0,
-            fill_color_argb: 0xFFFF0000,
-            outline_color_argb: 0,
-            outline_thickness: 0,
-            blur: 0,
-            _pad1: 0,
-            rotation_deg: 0,
-            _pad2: 0,
-        };
+        let p = PolygonPayload::new(
+            0.0,
+            0.0,
+            10.0,
+            10.0,
+            std::ptr::null(),
+            0,
+            0xFFFF0000,
+            0,
+            0,
+            0,
+            0,
+        );
         let style = ShapeStyle {
             fill_color: Some(tiny_skia::Color::from_rgba8(255, 0, 0, 255)),
             outline_color: None,
@@ -1058,21 +1054,19 @@ mod polygon_tests {
     #[test]
     fn single_vertex_polygon_skipped() {
         let mut pixmap = Pixmap::new(10, 10).unwrap();
-        let p = PolygonPayload {
-            x: 0.0,
-            y: 0.0,
-            width: 10.0,
-            height: 10.0,
-            vertices_ptr: std::ptr::null(),
-            vertex_count: 1,
-            fill_color_argb: 0xFFFF0000,
-            outline_color_argb: 0,
-            outline_thickness: 0,
-            blur: 0,
-            _pad1: 0,
-            rotation_deg: 0,
-            _pad2: 0,
-        };
+        let p = PolygonPayload::new(
+            0.0,
+            0.0,
+            10.0,
+            10.0,
+            std::ptr::null(),
+            1,
+            0xFFFF0000,
+            0,
+            0,
+            0,
+            0,
+        );
         let style = ShapeStyle {
             fill_color: Some(tiny_skia::Color::from_rgba8(255, 0, 0, 255)),
             outline_color: None,
@@ -1084,21 +1078,19 @@ mod polygon_tests {
     #[test]
     fn null_vertices_ptr_errors() {
         let mut pixmap = Pixmap::new(10, 10).unwrap();
-        let p = PolygonPayload {
-            x: 0.0,
-            y: 0.0,
-            width: 10.0,
-            height: 10.0,
-            vertices_ptr: std::ptr::null(),
-            vertex_count: 3,
-            fill_color_argb: 0xFFFF0000,
-            outline_color_argb: 0,
-            outline_thickness: 0,
-            blur: 0,
-            _pad1: 0,
-            rotation_deg: 0,
-            _pad2: 0,
-        };
+        let p = PolygonPayload::new(
+            0.0,
+            0.0,
+            10.0,
+            10.0,
+            std::ptr::null(),
+            3,
+            0xFFFF0000,
+            0,
+            0,
+            0,
+            0,
+        );
         let style = ShapeStyle {
             fill_color: Some(tiny_skia::Color::from_rgba8(255, 0, 0, 255)),
             outline_color: None,
@@ -1114,21 +1106,19 @@ mod polygon_tests {
     fn valid_polygon_renders() {
         let mut pixmap = Pixmap::new(10, 10).unwrap();
         let verts = [0.0, 0.0, 10.0, 0.0, 5.0, 10.0];
-        let p = PolygonPayload {
-            x: 0.0,
-            y: 0.0,
-            width: 10.0,
-            height: 10.0,
-            vertices_ptr: verts.as_ptr(),
-            vertex_count: 3,
-            fill_color_argb: 0xFFFF0000,
-            outline_color_argb: 0,
-            outline_thickness: 0,
-            blur: 0,
-            _pad1: 0,
-            rotation_deg: 0,
-            _pad2: 0,
-        };
+        let p = PolygonPayload::new(
+            0.0,
+            0.0,
+            10.0,
+            10.0,
+            verts.as_ptr(),
+            3,
+            0xFFFF0000,
+            0,
+            0,
+            0,
+            0,
+        );
         let style = ShapeStyle {
             fill_color: Some(tiny_skia::Color::from_rgba8(255, 0, 0, 255)),
             outline_color: None,
@@ -1157,6 +1147,8 @@ mod extra_coverage_tests {
         assert_eq!(code, FfiErrorCode::Panic as u8);
     }
 
+    // NOTE: This test exists purely for coverage of the Surface enum transition branches
+    // and variant conversions, rather than verifying deep structural invariants.
     #[test]
     #[cfg(not(miri))]
     fn surface_rgba_to_pixmap_round_trip() {
@@ -1172,6 +1164,8 @@ mod extra_coverage_tests {
         assert_eq!(result.get_pixel(0, 0).0[0], 255, "red channel preserved");
     }
 
+    // NOTE: This test exists purely for coverage of the Surface enum transition branches
+    // and variant conversions, rather than verifying deep structural invariants.
     #[test]
     #[cfg(not(miri))]
     fn surface_pixmap_as_rgba_branch() {

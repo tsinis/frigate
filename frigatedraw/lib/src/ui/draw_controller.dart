@@ -48,8 +48,9 @@ class DrawController extends ChangeNotifier {
   }
 
   DrawTool get activeTool => _activeTool;
-  List<Float64x2> get pendingVertices => _cachedPendingVertices ??= UnmodifiableListView(_pendingVertices);
   Offset? get cursorPosition => _cursorPosition;
+  List<Float64x2> get pendingVertices =>
+      _cachedPendingVertices ??= UnmodifiableListView(_pendingVertices);
 
   void addPendingVertex(Offset point) {
     _pendingVertices.add(Float64x2(point.dx, point.dy));
