@@ -29,6 +29,7 @@ CLAUDE.md
 **/.claude/
 GEMINI.md
 **/.gemini/
+.antigravitycli/**
 
 # IDE related files
 .vscode/settings.json

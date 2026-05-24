@@ -1,7 +1,7 @@
 part of 'draw_element.dart';
 
 @pragma('vm:deeply-immutable')
-final class RectElement extends DrawElement {
+final class RectElement extends ImmutableDrawElement {
   const RectElement({
     required super.height,
     required super.width,

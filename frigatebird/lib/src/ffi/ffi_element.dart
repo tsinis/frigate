@@ -114,6 +114,47 @@ final class OvalPayload extends Struct {
   external Array<Uint8> _pad;
 }
 
+/// Payload for a polygon element.
+final class PolygonPayload extends Struct {
+  @Double()
+  external double x;
+
+  @Double()
+  external double y;
+
+  @Double()
+  external double width;
+
+  @Double()
+  external double height;
+
+  external Pointer<Double> verticesPtr;
+
+  @Uint32()
+  external int vertexCount;
+
+  @Uint32()
+  external int fillColorArgb;
+
+  @Uint32()
+  external int outlineColorArgb;
+
+  @Uint8()
+  external int outlineThickness;
+
+  @Uint8()
+  external int blur;
+
+  @Uint16()
+  external int _pad1;
+
+  @Int32()
+  external int rotationDeg;
+
+  @Uint32()
+  external int _pad2;
+}
+
 /// Union of all possible element payloads.
 final class FfiPayload extends Union {
   /// Size anchor: forces the union to be 48 bytes to match Rust payloads.
@@ -123,6 +164,7 @@ final class FfiPayload extends Union {
   external RectanglePayload rectangle;
   external TextPayload text;
   external OvalPayload oval;
+  external PolygonPayload polygon;
 }
 
 /// Tagged-union element struct passed across the FFI boundary.

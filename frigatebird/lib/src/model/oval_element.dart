@@ -1,7 +1,7 @@
 part of 'draw_element.dart';
 
 @pragma('vm:deeply-immutable')
-final class OvalElement extends DrawElement {
+final class OvalElement extends ImmutableDrawElement {
   const OvalElement({
     required super.height,
     required super.width,

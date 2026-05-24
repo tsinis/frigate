@@ -1,7 +1,9 @@
 // Test reads better with inline lambdas + dotted property access; trailing-comma decisions
 // are case-by-case for readability inside `expect` blocks.
-// ignore_for_file: prefer-extracting-callbacks, prefer-extracting-function-callbacks
-// ignore_for_file: prefer-class-destructuring, unnecessary-trailing-comma
+
+// ignore_for_file: prefer-extracting-function-callbacks, prefer-class-destructuring
+
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frigatedraw/frigatedraw.dart';
@@ -35,8 +37,8 @@ void main() {
     test('addElement adds element and selects it', () {
       controller.addElement(rect);
 
-      expect(controller.elements, hasLength(1));
-      expect(controller.selectedIndex, 0);
+      expect(controller.elements.singleOrNull, rect);
+      expect(controller.selectedIndex, isZero);
       expect(controller.selectedElement, rect);
     });
 
@@ -179,5 +181,127 @@ void main() {
       expect(controller.elements, hasLength(1));
       expect(controller.selectedIndex, 0);
     });
+
+    test('canUndo and undo with pending polygon vertices', () {
+      expect(controller.canUndo, isFalse, reason: 'initially false');
+
+      controller.creationTemplate = PolygonElement(
+        height: 0,
+        vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(0, 0), Float64x2(0, 0)]),
+        width: 0,
+        x: 0,
+        y: 0,
+      );
+      expect(controller.canUndo, isFalse, reason: 'still false with 0 pending vertices');
+
+      controller.addPendingVertex(const Offset(10, 20));
+      expect(controller.canUndo, isTrue);
+
+      controller.undo();
+      expect(controller.pendingVertices, isEmpty);
+      expect(controller.canUndo, isFalse, reason: 'false after undoing last pending vertex');
+    });
+
+    test('updateCursorPosition notifies listeners', () {
+      controller
+        ..addListener(_handleNotification)
+        ..updateCursorPosition(const Offset(10, 20));
+      expect(controller.cursorPosition, const Offset(10, 20));
+      expect(_wasNotified, isTrue);
+    });
+
+    test('resetPolygonCreation clears pending vertices and cursor', () {
+      controller.creationTemplate = PolygonElement(
+        height: 0,
+        vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(0, 0), Float64x2(0, 0)]),
+        width: 0,
+        x: 0,
+        y: 0,
+      );
+      // ignore: cascade_invocations, expects in between prevent a single cascade.
+      controller
+        ..addPendingVertex(const Offset(1, 2))
+        ..updateCursorPosition(const Offset(3, 4));
+      expect(controller.pendingVertices, hasLength(1));
+      expect(controller.cursorPosition, isNotNull);
+
+      controller
+        ..addListener(_handleNotification)
+        ..resetPolygonCreation();
+
+      expect(controller.pendingVertices, isEmpty);
+      expect(controller.cursorPosition, isNull);
+      expect(_wasNotified, isTrue);
+    });
+
+    test('redo when canRedo is false does nothing', () {
+      controller
+        ..addListener(_handleNotification)
+        ..redo(); // Stack is empty.
+      expect(_wasNotified, isFalse);
+    });
+
+    test('creationTemplate setter clears selection and resets polygon state', () {
+      controller
+        ..addElement(rect)
+        ..selectedIndex = 0;
+      expect(controller.selectedIndex, isNotNull);
+
+      controller.creationTemplate = const RectElement(height: 10, width: 10, x: 0, y: 0);
+
+      expect(controller.selectedIndex, isNull);
+    });
+
+    test('creationTemplate setter skips notification when value is unchanged', () {
+      const template = RectElement(height: 10, width: 10, x: 0, y: 0);
+      controller.creationTemplate = template;
+      controller.addListener(_handleNotification); // ignore: cascade_invocations, just a test.
+      // Assign the same instance again: the identity guard must suppress notification.
+      controller.creationTemplate = template; // ignore: cascade_invocations, just a test.
+
+      expect(_wasNotified, isFalse, reason: 'Same value must not notify listeners.');
+    });
+
+    test(
+      'elements and pendingVertices getters cache UnmodifiableListView instances between notifications',
+      () {
+        final elementsFirst = controller.elements;
+        // ignore: avoid-duplicate-initializers, just for the test.
+        final elementsOther = controller.elements;
+        expect(
+          identical(elementsFirst, elementsOther),
+          isTrue,
+          reason: 'Consecutive elements reads should be identical.',
+        );
+
+        final pendingFirst = controller.pendingVertices;
+        // ignore: avoid-duplicate-initializers, just for the test.
+        final pendingLast = controller.pendingVertices;
+        expect(
+          identical(pendingFirst, pendingLast),
+          isTrue,
+          reason: 'Consecutive pendingVertices reads should be identical.',
+        );
+
+        // Mutate list -> triggers notifyListeners() -> cache should clear.
+        controller.addElement(rect);
+
+        // ignore: avoid-duplicate-initializers, just for the test.
+        final elementsThird = controller.elements;
+        expect(
+          identical(elementsFirst, elementsThird),
+          isFalse,
+          reason: 'Cache should be invalidated on notification.',
+        );
+
+        // ignore: avoid-duplicate-initializers, just for the test.
+        final lastElements = controller.elements;
+        expect(
+          identical(elementsThird, lastElements),
+          isTrue,
+          reason: 'Elements reads after mutation should be identical.',
+        );
+      },
+    );
   });
 }

@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:io' show Directory, File, Platform;
+import 'dart:typed_data' show Float64x2, Float64x2List;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -214,7 +215,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(SnackBar(content: SelectableText(message)));
   }
 
   @override
@@ -254,70 +255,72 @@ class _DrawingScreenState extends State<DrawingScreen> {
     bottomNavigationBar: BottomAppBar(
       child: Center(
         child: ListenableBuilder(
-          builder: (context, _) => SegmentedButton<_DrawingTool>(
+          builder: (context, _) => SegmentedButton<DrawTool>(
             emptySelectionAllowed: true,
             onSelectionChanged: (select) => switch (select.firstOrNull) {
               .text => unawaited(_handleRenderText()),
-              .rounded => _controller.creationTemplate = const RectElement(
-                cornerRadius: 16,
-                height: 0,
-                width: 0,
-                x: 0,
-                y: 0,
-              ),
               .oval => _controller.creationTemplate = const OvalElement(
                 height: 0,
                 width: 0,
                 x: 0,
                 y: 0,
               ),
-              .rect => _controller.creationTemplate = const RectElement(
+              .rectangle => _controller.creationTemplate = const RectElement(
                 height: 0,
                 width: 0,
                 x: 0,
                 y: 0,
               ),
-              // ignore: avoid-wildcard-cases-with-enums, covers selection and null.
+              .polygon => _controller.creationTemplate = PolygonElement(
+                height: 0,
+                vertices: Float64x2List.fromList([
+                  Float64x2(0, 0),
+                  Float64x2(0, 0),
+                  Float64x2(0, 0),
+                ]),
+                width: 0,
+                x: 0,
+                y: 0,
+              ),
+              // ignore: avoid-wildcard-cases-with-enums, covers select and null.
               _ => _controller.creationTemplate = null,
             },
             segments: const [
               ButtonSegment(
                 icon: Icon(Icons.pan_tool_alt),
                 label: Text('Select'),
-                value: _DrawingTool.selection,
+                value: DrawTool.select,
               ),
               ButtonSegment(
                 icon: Icon(Icons.crop_square),
                 label: Text('Rect'),
-                value: _DrawingTool.rect,
-              ),
-              ButtonSegment(
-                icon: Icon(Icons.rounded_corner),
-                label: Text('Rounded'),
-                value: _DrawingTool.rounded,
+                value: DrawTool.rectangle,
               ),
               ButtonSegment(
                 icon: Icon(Icons.circle_outlined),
                 label: Text('Oval'),
-                value: _DrawingTool.oval,
+                value: DrawTool.oval,
+              ),
+              ButtonSegment(
+                icon: Icon(Icons.hexagon_outlined),
+                label: Text('Polygon'),
+                value: DrawTool.polygon,
               ),
               ButtonSegment(
                 icon: Icon(Icons.text_fields),
                 label: Text('Text'),
-                value: _DrawingTool.text,
+                value: DrawTool.text,
               ),
             ],
             selected: {
               if (_controller.creationTemplate == null)
-                _DrawingTool.selection
+                DrawTool.select
               else if (_controller.creationTemplate is OvalElement)
-                _DrawingTool.oval
-              else if (_controller.creationTemplate is RectElement &&
-                  // ignore: cast_nullable_to_non_nullable, avoid-type-casts, just an example app.
-                  (_controller.creationTemplate as RectElement).cornerRadius > 0)
-                _DrawingTool.rounded
+                DrawTool.oval
+              else if (_controller.creationTemplate is PolygonElement)
+                DrawTool.polygon
               else if (_controller.creationTemplate is RectElement)
-                _DrawingTool.rect, // Text remains stateless in _DrawingTool as it triggers a popup.
+                DrawTool.rectangle, // Text remains stateless in DrawTool as it triggers a popup.
             },
           ),
           listenable: _controller,
@@ -326,8 +329,6 @@ class _DrawingScreenState extends State<DrawingScreen> {
     ),
   );
 }
-
-enum _DrawingTool { oval, rect, rounded, selection, text }
 
 class _TextAnnotationDialog extends StatefulWidget {
   const _TextAnnotationDialog();

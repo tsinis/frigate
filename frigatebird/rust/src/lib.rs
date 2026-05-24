@@ -16,7 +16,8 @@ pub use ffi::{
     write_panic_to_arena,
 };
 pub use ffi_element::{
-    FfiElement, FfiPayload, OvalPayload, RectanglePayload, Shape, ShapeBuilder, TextPayload,
+    FfiElement, FfiPayload, OvalPayload, PolygonPayload, RectanglePayload, Shape, ShapeBuilder,
+    TextPayload,
 };
 
 // Rust-side layout anchors: if these ever change, the Dart Struct declarations must be updated.
@@ -66,6 +67,10 @@ pub fn sizeof_ffi_error() -> usize {
 #[ffi_export]
 pub fn sizeof_image_info() -> usize {
     core::mem::size_of::<ImageInformation>()
+}
+#[ffi_export]
+pub fn sizeof_polygon_payload() -> usize {
+    core::mem::size_of::<PolygonPayload>()
 }
 
 // --- Drop Hooks ---
@@ -514,6 +519,12 @@ fn draw_element_on_surface(
                 draw_text_element(surface.as_rgba(), font_ref, p, text_slice);
             }
         }
+        FfiElement::Polygon(p) => {
+            let style: ShapeStyle = p.into();
+            if style.paints_anything() {
+                draw_polygon_on_pixmap(surface.as_pixmap(), p, &style)?;
+            }
+        }
     }
     Ok(())
 }
@@ -617,6 +628,16 @@ impl From<&OvalPayload> for ShapeStyle {
     }
 }
 
+impl From<&PolygonPayload> for ShapeStyle {
+    fn from(p: &PolygonPayload) -> Self {
+        Self {
+            fill_color: ffi_color_to_skia(p.fill_color_argb),
+            outline_color: ffi_color_to_skia(p.outline_color_argb),
+            thickness: p.outline_thickness as f32,
+        }
+    }
+}
+
 /// Converts an ARGB u32 to a tiny-skia Color.
 /// Returns `None` when `alpha == 0` (i.e. fully transparent), allowing rendering passes
 /// like `paints_anything()` to skip purely-transparent shapes entirely instead of returning `Color::TRANSPARENT`.
@@ -710,6 +731,58 @@ fn draw_oval_on_pixmap(
     let path = pb
         .finish()
         .ok_or_else(|| (FfiErrorCode::Render, "Failed to finish path".to_string()))?;
+
+    draw_shape_path(
+        pixmap,
+        &path,
+        p.rotation_deg,
+        p.x,
+        p.y,
+        p.width,
+        p.height,
+        style,
+    );
+    Ok(())
+}
+
+#[allow(unsafe_code)]
+fn draw_polygon_on_pixmap(
+    pixmap: &mut Pixmap,
+    p: &PolygonPayload,
+    style: &ShapeStyle,
+) -> Result<(), (FfiErrorCode, String)> {
+    if p.vertex_count < 3 {
+        return Ok(()); // degenerate — skip silently
+    }
+    if p.vertices_ptr.is_null() {
+        return Err((
+            FfiErrorCode::InvalidArg,
+            "Polygon vertices pointer is null".into(),
+        ));
+    }
+
+    let len = (p.vertex_count as usize).checked_mul(2).ok_or_else(|| {
+        (
+            FfiErrorCode::InvalidArg,
+            "Polygon vertex count calculation overflowed".into(),
+        )
+    })?;
+
+    // SAFETY: Dart guarantees vertices_ptr points to the checked, safe length
+    // of valid f64s for the duration of the draw_elements call.
+    let verts: &[f64] = unsafe { std::slice::from_raw_parts(p.vertices_ptr, len) };
+
+    let mut pb = PathBuilder::new();
+    // tiny-skia uses f32; coordinates beyond ±16M lose sub-pixel precision
+    pb.move_to(verts[0] as f32, verts[1] as f32);
+    for pair in verts[2..].chunks_exact(2) {
+        pb.line_to(pair[0] as f32, pair[1] as f32);
+    }
+    pb.close();
+
+    let path = pb
+        .finish()
+        .ok_or_else(|| (FfiErrorCode::Render, "Failed to finish polygon path".into()))?;
 
     draw_shape_path(
         pixmap,
@@ -922,5 +995,233 @@ mod merge_tests {
         let payload = Box::new(42i32); // Non-string payload
         let code = handle_panic(None, payload);
         assert_eq!(code, FfiErrorCode::Panic as u8);
+    }
+}
+
+#[cfg(test)]
+mod polygon_tests {
+    use super::*;
+
+    #[test]
+    fn degenerate_polygon_skipped() {
+        let mut pixmap = Pixmap::new(10, 10).unwrap();
+        let p = PolygonPayload::new(
+            0.0,
+            0.0,
+            10.0,
+            10.0,
+            std::ptr::null(),
+            2,
+            0xFFFF0000,
+            0,
+            0,
+            0,
+            0,
+        );
+        let style = ShapeStyle {
+            fill_color: Some(tiny_skia::Color::from_rgba8(255, 0, 0, 255)),
+            outline_color: None,
+            thickness: 0.0,
+        };
+        // Should return Ok(()) without doing anything
+        assert!(draw_polygon_on_pixmap(&mut pixmap, &p, &style).is_ok());
+    }
+
+    #[test]
+    fn empty_polygon_skipped() {
+        let mut pixmap = Pixmap::new(10, 10).unwrap();
+        let p = PolygonPayload::new(
+            0.0,
+            0.0,
+            10.0,
+            10.0,
+            std::ptr::null(),
+            0,
+            0xFFFF0000,
+            0,
+            0,
+            0,
+            0,
+        );
+        let style = ShapeStyle {
+            fill_color: Some(tiny_skia::Color::from_rgba8(255, 0, 0, 255)),
+            outline_color: None,
+            thickness: 0.0,
+        };
+        assert!(draw_polygon_on_pixmap(&mut pixmap, &p, &style).is_ok());
+    }
+
+    #[test]
+    fn single_vertex_polygon_skipped() {
+        let mut pixmap = Pixmap::new(10, 10).unwrap();
+        let p = PolygonPayload::new(
+            0.0,
+            0.0,
+            10.0,
+            10.0,
+            std::ptr::null(),
+            1,
+            0xFFFF0000,
+            0,
+            0,
+            0,
+            0,
+        );
+        let style = ShapeStyle {
+            fill_color: Some(tiny_skia::Color::from_rgba8(255, 0, 0, 255)),
+            outline_color: None,
+            thickness: 0.0,
+        };
+        assert!(draw_polygon_on_pixmap(&mut pixmap, &p, &style).is_ok());
+    }
+
+    #[test]
+    fn null_vertices_ptr_errors() {
+        let mut pixmap = Pixmap::new(10, 10).unwrap();
+        let p = PolygonPayload::new(
+            0.0,
+            0.0,
+            10.0,
+            10.0,
+            std::ptr::null(),
+            3,
+            0xFFFF0000,
+            0,
+            0,
+            0,
+            0,
+        );
+        let style = ShapeStyle {
+            fill_color: Some(tiny_skia::Color::from_rgba8(255, 0, 0, 255)),
+            outline_color: None,
+            thickness: 0.0,
+        };
+        let res = draw_polygon_on_pixmap(&mut pixmap, &p, &style);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().0, FfiErrorCode::InvalidArg);
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)] // tiny-skia uses SIMD intrinsics unsupported by Miri
+    fn valid_polygon_renders() {
+        let mut pixmap = Pixmap::new(10, 10).unwrap();
+        let verts = [0.0, 0.0, 10.0, 0.0, 5.0, 10.0];
+        let p = PolygonPayload::new(
+            0.0,
+            0.0,
+            10.0,
+            10.0,
+            verts.as_ptr(),
+            3,
+            0xFFFF0000,
+            0,
+            0,
+            0,
+            0,
+        );
+        let style = ShapeStyle {
+            fill_color: Some(tiny_skia::Color::from_rgba8(255, 0, 0, 255)),
+            outline_color: None,
+            thickness: 0.0,
+        };
+        assert!(draw_polygon_on_pixmap(&mut pixmap, &p, &style).is_ok());
+    }
+}
+
+#[cfg(test)]
+#[allow(unsafe_code)]
+mod extra_coverage_tests {
+    use super::*;
+
+    #[test]
+    fn handle_panic_string_payload() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new(String::from("string panic"));
+        let code = handle_panic(None, payload);
+        assert_eq!(code, FfiErrorCode::Panic as u8);
+    }
+
+    #[test]
+    fn handle_panic_static_str_payload() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new("static str panic");
+        let code = handle_panic(None, payload);
+        assert_eq!(code, FfiErrorCode::Panic as u8);
+    }
+
+    // NOTE: This test exists purely for coverage of the Surface enum transition branches
+    // and variant conversions, rather than verifying deep structural invariants.
+    #[test]
+    #[cfg(not(miri))]
+    fn surface_rgba_to_pixmap_round_trip() {
+        use image::RgbaImage;
+        let img = RgbaImage::from_pixel(4, 4, image::Rgba([255, 0, 0, 255]));
+        let mut surface = Surface::Rgba(img);
+        // Exercise the Rgba -> Pixmap branch in as_pixmap.
+        let _ = surface.as_pixmap();
+        // Exercise the Pixmap -> Rgba branch in into_rgba.
+        let result = surface.into_rgba();
+        assert_eq!(result.width(), 4);
+        assert_eq!(result.height(), 4);
+        assert_eq!(result.get_pixel(0, 0).0[0], 255, "red channel preserved");
+    }
+
+    // NOTE: This test exists purely for coverage of the Surface enum transition branches
+    // and variant conversions, rather than verifying deep structural invariants.
+    #[test]
+    #[cfg(not(miri))]
+    fn surface_pixmap_as_rgba_branch() {
+        use image::RgbaImage;
+        let img = RgbaImage::from_pixel(4, 4, image::Rgba([0, 255, 0, 255]));
+        let mut surface = Surface::Rgba(img);
+        // Force Rgba -> Pixmap so the variant is Pixmap.
+        let _ = surface.as_pixmap();
+        // Now call as_rgba on the Pixmap variant to cover that branch.
+        let rgba = surface.as_rgba();
+        assert_eq!(rgba.width(), 4);
+        assert_eq!(rgba.height(), 4);
+    }
+
+    #[test]
+    fn element_text_bounds_error() {
+        // offset=10, len=5 -> end=15 > buf.len()=4.
+        let p = TextPayload::new(0.0, 0.0, 12.0, 0, 0, 10, 5);
+        let buf = b"hi!!";
+        let result = element_text(&p, buf);
+        assert!(result.is_err(), "out-of-bounds slice should return Err");
+    }
+
+    #[test]
+    fn element_text_utf8_error() {
+        // text_offset=0, text_len=3, buf is invalid UTF-8.
+        let p = TextPayload::new(0.0, 0.0, 12.0, 0, 0, 0, 3);
+        let buf: &[u8] = &[0xFF, 0xFE, 0xFD];
+        let result = element_text(&p, buf);
+        assert!(result.is_err(), "invalid UTF-8 should return Err");
+    }
+
+    #[test]
+    fn element_text_success() {
+        let p = TextPayload::new(0.0, 0.0, 12.0, 0, 0, 0, 5);
+        let buf = b"hello world";
+        let result = element_text(&p, buf);
+        assert_eq!(result.unwrap(), "hello");
+    }
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn draw_elements_missing_elements_ptr_errors() {
+        let img_path = std::ffi::CString::new("nonexistent.png").unwrap();
+        let out_path = std::ffi::CString::new("out.png").unwrap();
+        let status = unsafe {
+            draw_elements(
+                img_path.as_ptr(),
+                out_path.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(), // null elements_ptr with count > 0
+                3,                // elements_count = 3 with null ptr -> InvalidArg
+                90,
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(status, FfiErrorCode::InvalidArg as u8);
     }
 }

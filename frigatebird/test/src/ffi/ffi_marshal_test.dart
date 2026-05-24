@@ -1,5 +1,5 @@
-// ignore_for_file: prefer-trailing-comma
 import 'dart:ffi';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:frigatebird/src/ffi/ffi_marshal.dart';
@@ -92,6 +92,51 @@ void main() {
       }
     });
 
+    test('Polygon round-trip via Rust echo', () {
+      final poly = PolygonElement(
+        blur: 3,
+        height: 40,
+        outlineColor: const FfiColor(0xFFFF0000),
+        rotation: 45,
+        vertices: Float64x2List.fromList([Float64x2(10, 20), Float64x2(30, 40), Float64x2(50, 60)]),
+        width: 40,
+        x: 10,
+        y: 20,
+      );
+
+      final bundle = FfiMarshal.encodeElements([poly], malloc);
+      try {
+        final echoedPtr = ffi_echo_element(bundle.elementsPtr);
+        final decodeResult = FfiMarshal.decodeElements(
+          echoedPtr,
+          bundle.count,
+          bundle.textBufferPtr,
+          payloadBufferLen: bundle.arena.ptr.ref.textLen,
+        );
+        final decoded = decodeResult.elements;
+
+        expect(decoded.length, 1);
+        expect(decoded.first, isA<PolygonElement>(), reason: 'decoded element type');
+        final result = decoded.whereType<PolygonElement>().first;
+        expect(result.x, poly.x);
+        expect(result.y, poly.y);
+        expect(result.width, poly.width);
+        expect(result.height, poly.height);
+        expect(result.rotation, poly.rotation);
+        expect(result.fillColor.argb, poly.fillColor.argb);
+        expect(result.outlineColor.argb, poly.outlineColor.argb);
+        expect(result.outlineThickness, poly.outlineThickness);
+        expect(result.blur, poly.blur);
+        expect(result.vertices.length, poly.vertices.length);
+        for (int index = 0; index < poly.vertices.length; index += 1) {
+          expect(result.vertices[index].x, poly.vertices[index].x);
+          expect(result.vertices[index].y, poly.vertices[index].y);
+        }
+      } finally {
+        bundle.free();
+      }
+    });
+
     test('Mixed elements round-trip', () {
       final elements = [
         const RectElement(height: 10, width: 10, x: 0, y: 0),
@@ -138,6 +183,32 @@ void main() {
       );
     });
 
+    test('frees elements, vertices, and text buffer when later allocations fail', () {
+      // 1st (elements), 2nd (vertices) succeed, 3rd (text buffer) throws -> all previous allocations must be freed.
+      final allocator = _FailingAllocator(failAfter: 2);
+      final inputs = <DrawElement>[
+        PolygonElement(
+          height: 10,
+          vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(10, 0), Float64x2(5, 10)]),
+          width: 10,
+          x: 0,
+          y: 0,
+        ),
+        const TextElement(text: 'hi', x: 0, y: 0),
+      ];
+
+      expect(
+        () => FfiMarshal.encodeElements(inputs, allocator),
+        throwsException,
+        reason: 'mock OOM propagates',
+      );
+      expect(
+        allocator.freedCount,
+        allocator.succeededAllocations,
+        reason: 'every successful allocation before the failure must be freed',
+      );
+    });
+
     test('frees nothing extra on the happy path (baseline)', () {
       final allocator = _FailingAllocator(failAfter: 10);
       final inputs = <DrawElement>[const TextElement(text: 'hi', x: 0, y: 0)];
@@ -153,9 +224,10 @@ void main() {
 
     test('manual free is idempotent (second call is a no-op, not a double-free)', () {
       final allocator = _FailingAllocator(failAfter: 10);
-      final bundle = FfiMarshal.encodeElements(const [
-        TextElement(text: 'hi', x: 0, y: 0),
-      ], allocator)..free();
+      final bundle = FfiMarshal.encodeElements(
+        const [TextElement(text: 'hi', x: 0, y: 0)], // Dart 3.8 format.
+        allocator,
+      )..free();
       expect(bundle.free, returnsNormally, reason: 'double-free must be safe');
     });
   });
@@ -183,9 +255,10 @@ void main() {
     });
 
     test('round-trip with ffi_zero_element catches offset bugs', () {
-      final handle = FfiMarshal.encodeElements([
-        const RectElement(height: 0, width: 0, x: 0, y: 0),
-      ], malloc);
+      final handle = FfiMarshal.encodeElements(
+        [const RectElement(height: 0, width: 0, x: 0, y: 0)], // Dart 3.8 format.
+        malloc,
+      );
       try {
         ffi_zero_element(handle.elementsPtr);
         final decodeResult = FfiMarshal.decodeElements(
@@ -213,9 +286,10 @@ void main() {
     });
 
     test('round-trip with ffi_fill_element_0xAA catches offset bugs', () {
-      final handle = FfiMarshal.encodeElements([
-        const RectElement(height: 0, width: 0, x: 0, y: 0),
-      ], malloc);
+      final handle = FfiMarshal.encodeElements(
+        [const RectElement(height: 0, width: 0, x: 0, y: 0)], // Dart 3.8 format.
+        malloc,
+      );
       try {
         ffi_fill_element_0xAA(handle.elementsPtr);
         final decodeResult = FfiMarshal.decodeElements(
@@ -248,6 +322,33 @@ void main() {
           ),
           throwsStateError,
           reason: 'out-of-bounds text slice must throw StateError',
+        );
+      } finally {
+        bundle.free();
+      }
+    });
+
+    test('null vertices pointer with polyCount > 0 throws ArgumentError', () {
+      final poly = PolygonElement(
+        height: 10,
+        vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(10, 0), Float64x2(5, 10)]),
+        width: 10,
+        x: 0,
+        y: 0,
+      );
+      final bundle = FfiMarshal.encodeElements([poly], malloc);
+      try {
+        // Force the vertices pointer to nullptr.
+        bundle.elementsPtr.ref.payload.polygon.verticesPtr = nullptr;
+        expect(
+          () => FfiMarshal.decodeElements(
+            bundle.elementsPtr,
+            1,
+            bundle.textBufferPtr,
+            payloadBufferLen: bundle.arena.ptr.ref.textLen,
+          ),
+          throwsArgumentError,
+          reason: 'null verticesPtr with polyCount > 0 must throw ArgumentError',
         );
       } finally {
         bundle.free();

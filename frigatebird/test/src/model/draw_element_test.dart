@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:frigatebird/src/model/draw_element.dart';
 import 'package:frigatebird/src/model/ffi_color.dart';
 import 'package:test/test.dart';
@@ -95,10 +96,17 @@ void main() {
     });
 
     test('sealed switch covers every subtype exhaustively', () {
-      const elements = <DrawElement>[
-        RectElement(height: 1, width: 1, x: 0, y: 0),
-        TextElement(text: _emptyText, x: 0, y: 0),
-        OvalElement(height: 1, width: 1, x: 0, y: 0),
+      final elements = <DrawElement>[
+        const RectElement(height: 1, width: 1, x: 0, y: 0),
+        const TextElement(text: _emptyText, x: 0, y: 0),
+        const OvalElement(height: 1, width: 1, x: 0, y: 0),
+        PolygonElement(
+          height: 1,
+          vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(1, 0), Float64x2(0, 1)]),
+          width: 1,
+          x: 0,
+          y: 0,
+        ),
       ];
       final types = elements
           .map(
@@ -106,10 +114,15 @@ void main() {
               RectElement() => 'rect',
               TextElement() => 'text',
               OvalElement() => 'oval',
+              PolygonElement() => 'polygon',
             },
           )
           .toSet();
-      expect(types, const {'rect', 'text', 'oval'}, reason: 'switch is exhaustive over all types');
+      expect(
+        types,
+        const {'rect', 'text', 'oval', 'polygon'}, // Dart 3.8 format.
+        reason: 'switch is exhaustive over all types',
+      );
     });
   });
 }

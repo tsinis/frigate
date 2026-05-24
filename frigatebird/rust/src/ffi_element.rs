@@ -6,6 +6,7 @@ pub union FfiPayload {
     pub rectangle: RectanglePayload,
     pub text: TextPayload,
     pub oval: OvalPayload,
+    pub polygon: PolygonPayload,
 }
 
 impl std::fmt::Debug for FfiPayload {
@@ -24,6 +25,7 @@ pub enum FfiElement {
     Rectangle(RectanglePayload) = 0,
     Text(TextPayload) = 1,
     Oval(OvalPayload) = 2,
+    Polygon(PolygonPayload) = 3,
 }
 
 pub trait Shape {
@@ -274,15 +276,104 @@ impl ShapeBuilder for TextPayload {
     }
 }
 
+/// Represents the FFI layout for a polygon payload.
+/// Note: Manual padding fields (_pad1, _pad2) are explicitly specified here instead of
+/// #[repr(C, align(8))] to ensure a mechanical, 1-to-1 match with the Dart FFI Struct definition
+/// without depending on compiler-specific alignment behavior for composite fields.
+#[derive_ReprC]
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct PolygonPayload {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub vertices_ptr: *const f64,
+    pub vertex_count: u32,
+    pub fill_color_argb: u32,
+    pub outline_color_argb: u32,
+    pub outline_thickness: u8,
+    pub blur: u8,
+    _pad1: u16,
+    pub rotation_deg: i32,
+    _pad2: u32,
+}
+
+impl PolygonPayload {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        vertices_ptr: *const f64,
+        vertex_count: u32,
+        fill_color_argb: u32,
+        outline_color_argb: u32,
+        outline_thickness: u8,
+        blur: u8,
+        rotation_deg: i32,
+    ) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            vertices_ptr,
+            vertex_count,
+            fill_color_argb,
+            outline_color_argb,
+            outline_thickness,
+            blur,
+            _pad1: 0,
+            rotation_deg,
+            _pad2: 0,
+        }
+    }
+}
+
+impl Shape for PolygonPayload {
+    fn x(&self) -> f64 {
+        self.x
+    }
+    fn y(&self) -> f64 {
+        self.y
+    }
+    fn width(&self) -> f64 {
+        self.width
+    }
+    fn height(&self) -> f64 {
+        self.height
+    }
+    fn rotation(&self) -> i32 {
+        self.rotation_deg
+    }
+    fn fill_color_argb(&self) -> u32 {
+        self.fill_color_argb
+    }
+    fn blur(&self) -> u8 {
+        self.blur
+    }
+}
+
+impl ShapeBuilder for PolygonPayload {
+    fn set_rotation(&mut self, deg: i32) {
+        self.rotation_deg = deg;
+    }
+    fn set_blur(&mut self, blur: u8) {
+        self.blur = blur;
+    }
+}
+
 // Layout assertions to freeze the wire contract.
 // Dart side MUST match these exactly using Struct + Union + padding.
 const _: () = assert!(std::mem::size_of::<RectanglePayload>() == 48);
 const _: () = assert!(std::mem::size_of::<OvalPayload>() == 48);
 const _: () = assert!(std::mem::size_of::<TextPayload>() == 48);
-const _: () = assert!(std::mem::size_of::<FfiPayload>() == 48);
-const _: () =
-    assert!(std::mem::align_of::<FfiPayload>() == std::mem::align_of::<RectanglePayload>());
-const _: () = assert!(std::mem::size_of::<FfiElement>() == 56); // Tag(1) + Pad(7) + Payload(48)
+const _: () = assert!(std::mem::size_of::<PolygonPayload>() == 64);
+const _: () = assert!(std::mem::size_of::<FfiPayload>() == 64);
+const _: () = assert!(std::mem::align_of::<FfiPayload>() == 8);
+const _: () = assert!(std::mem::size_of::<FfiElement>() == 72); // Tag(1) + Pad(7) + Payload(64)
 const _: () = assert!(std::mem::align_of::<FfiElement>() == 8);
 
 #[cfg(test)]
@@ -294,12 +385,147 @@ mod tests {
         assert_eq!(std::mem::size_of::<RectanglePayload>(), 48);
         assert_eq!(std::mem::size_of::<OvalPayload>(), 48);
         assert_eq!(std::mem::size_of::<TextPayload>(), 48);
-        assert_eq!(std::mem::size_of::<FfiPayload>(), 48);
-        assert_eq!(
-            std::mem::align_of::<FfiPayload>(),
-            std::mem::align_of::<RectanglePayload>()
-        );
-        assert_eq!(std::mem::size_of::<FfiElement>(), 56);
+        assert_eq!(std::mem::size_of::<PolygonPayload>(), 64);
+        assert_eq!(std::mem::size_of::<FfiPayload>(), 64);
+        assert_eq!(std::mem::align_of::<FfiPayload>(), 8);
+        assert_eq!(std::mem::size_of::<FfiElement>(), 72);
         assert_eq!(std::mem::align_of::<FfiElement>(), 8);
+    }
+
+    // --- RectanglePayload ---
+
+    #[test]
+    fn rectangle_shape_trait_getters() {
+        let p = RectanglePayload::new(1.0, 2.0, 3.0, 4.0, 0xFF_00_FF_00)
+            .with_rotation(45)
+            .with_blur(7)
+            .with_outline(0xFF_FF_00_00, 3)
+            .with_corner_radius(8);
+
+        assert_eq!(p.x(), 1.0);
+        assert_eq!(p.y(), 2.0);
+        assert_eq!(p.width(), 3.0);
+        assert_eq!(p.height(), 4.0);
+        assert_eq!(p.rotation(), 45);
+        assert_eq!(p.fill_color_argb(), 0xFF_00_FF_00);
+        assert_eq!(p.blur(), 7);
+        assert_eq!(p.outline_color_argb, 0xFF_FF_00_00);
+        assert_eq!(p.outline_thickness, 3);
+        assert_eq!(p.corner_radius, 8);
+    }
+
+    #[test]
+    fn rectangle_shape_builder_set_methods() {
+        let mut p = RectanglePayload::new(0.0, 0.0, 10.0, 10.0, 0);
+        p.set_rotation(90);
+        p.set_blur(5);
+        assert_eq!(p.rotation(), 90);
+        assert_eq!(p.blur(), 5);
+    }
+
+    // --- OvalPayload ---
+
+    #[test]
+    fn oval_shape_trait_getters() {
+        let p = OvalPayload::new(5.0, 6.0, 7.0, 8.0, 0xFF_00_00_FF)
+            .with_rotation(30)
+            .with_blur(2)
+            .with_outline(0xFF_FF_FF_00, 4);
+
+        assert_eq!(p.x(), 5.0);
+        assert_eq!(p.y(), 6.0);
+        assert_eq!(p.width(), 7.0);
+        assert_eq!(p.height(), 8.0);
+        assert_eq!(p.rotation(), 30);
+        assert_eq!(p.fill_color_argb(), 0xFF_00_00_FF);
+        assert_eq!(p.blur(), 2);
+        assert_eq!(p.outline_color_argb, 0xFF_FF_FF_00);
+        assert_eq!(p.outline_thickness, 4);
+    }
+
+    #[test]
+    fn oval_shape_builder_set_methods() {
+        let mut p = OvalPayload::new(0.0, 0.0, 10.0, 10.0, 0);
+        p.set_rotation(-90);
+        p.set_blur(12);
+        assert_eq!(p.rotation(), -90);
+        assert_eq!(p.blur(), 12);
+    }
+
+    // --- TextPayload ---
+
+    #[test]
+    fn text_shape_trait_getters() {
+        let p = TextPayload::new(10.0, 20.0, 30.0, 0xFF_AA_BB_CC, 1, 0, 5)
+            .with_rotation(180)
+            .with_blur(3);
+
+        assert_eq!(p.x(), 10.0);
+        // TextPayload has no `width` stored — always returns 0.0 per spec.
+        assert_eq!(p.width(), 0.0);
+        assert_eq!(p.y(), 20.0);
+        assert_eq!(p.height(), 30.0);
+        assert_eq!(p.rotation(), 180);
+        assert_eq!(p.fill_color_argb(), 0xFF_AA_BB_CC);
+        assert_eq!(p.blur(), 3);
+        assert_eq!(p.font_id, 1);
+        assert_eq!(p.text_offset, 0);
+        assert_eq!(p.text_len, 5);
+    }
+
+    #[test]
+    fn text_shape_builder_set_methods() {
+        let mut p = TextPayload::new(0.0, 0.0, 12.0, 0, 0, 0, 0);
+        p.set_rotation(270);
+        p.set_blur(9);
+        assert_eq!(p.rotation(), 270);
+        assert_eq!(p.blur(), 9);
+    }
+
+    // --- PolygonPayload ---
+
+    #[test]
+    fn polygon_shape_trait_getters() {
+        let p = PolygonPayload::new(
+            11.0,
+            22.0,
+            33.0,
+            44.0,
+            std::ptr::null(),
+            0,
+            0xFF_CC_DD_EE,
+            0,
+            0,
+            6,
+            -45,
+        );
+
+        assert_eq!(p.x(), 11.0);
+        assert_eq!(p.y(), 22.0);
+        assert_eq!(p.width(), 33.0);
+        assert_eq!(p.height(), 44.0);
+        assert_eq!(p.rotation(), -45);
+        assert_eq!(p.fill_color_argb(), 0xFF_CC_DD_EE);
+        assert_eq!(p.blur(), 6);
+    }
+
+    #[test]
+    fn polygon_shape_builder_set_methods() {
+        let mut p = PolygonPayload::new(0.0, 0.0, 10.0, 10.0, std::ptr::null(), 0, 0, 0, 0, 0, 0);
+        p.set_rotation(90);
+        p.set_blur(15);
+        assert_eq!(p.rotation(), 90);
+        assert_eq!(p.blur(), 15);
+    }
+
+    // --- FfiPayload debug impl ---
+
+    #[test]
+    fn ffi_payload_debug_does_not_panic() {
+        let payload = FfiPayload {
+            rectangle: RectanglePayload::new(0.0, 0.0, 1.0, 1.0, 0),
+        };
+        let debug_str = format!("{:?}", payload);
+        assert!(debug_str.contains("FfiPayload"));
     }
 }

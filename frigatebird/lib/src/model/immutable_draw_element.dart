@@ -1,18 +1,11 @@
-import 'dart:typed_data';
+part of 'draw_element.dart';
 
-import 'ffi_color.dart';
-
-part 'rect_element.dart';
-part 'text_element.dart';
-part 'oval_element.dart';
-part 'immutable_draw_element.dart';
-part 'polygon_element.dart';
-
-/// Base for all drawable elements.
-///
-/// Coordinates and sizes are in **document-space pixels**.
-sealed class DrawElement {
-  const DrawElement({
+/// Subtypes of [DrawElement] whose fields are all deeply immutable scalars.
+/// [RectElement], [OvalElement], and [TextElement] extend this.
+/// [PolygonElement] does NOT — it holds a variable-length vertex collection.
+@pragma('vm:deeply-immutable')
+sealed class ImmutableDrawElement implements DrawElement {
+  const ImmutableDrawElement({
     required this.height,
     required this.width,
     required this.x,
@@ -28,25 +21,22 @@ sealed class DrawElement {
          'outlineThickness must be in 0..255',
        );
 
+  @override
   final double x;
+  @override
   final double y;
+  @override
   final double width;
+  @override
   final double height;
+  @override
   final int blur;
+  @override
   final int rotation;
+  @override
   final FfiColor fillColor;
+  @override
   final FfiColor outlineColor;
+  @override
   final int outlineThickness;
-
-  DrawElement copyWith({
-    int? blur,
-    FfiColor? fillColor,
-    double? height,
-    FfiColor? outlineColor,
-    int? outlineThickness,
-    int? rotation,
-    double? width,
-    double? x,
-    double? y,
-  });
 }

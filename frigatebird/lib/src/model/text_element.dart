@@ -1,7 +1,7 @@
 part of 'draw_element.dart';
 
 @pragma('vm:deeply-immutable')
-final class TextElement extends DrawElement {
+final class TextElement extends ImmutableDrawElement {
   const TextElement({
     required this.text,
     required super.x,

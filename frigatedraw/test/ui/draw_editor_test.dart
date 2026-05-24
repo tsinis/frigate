@@ -1,6 +1,7 @@
-// ignore_for_file: avoid-ignoring-return-values
+// ignore_for_file: avoid-ignoring-return-values, avoid-long-files
 
 import 'dart:io';
+import 'dart:typed_data' show Float64x2, Float64x2List;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -460,5 +461,167 @@ void main() => group(DrawEditor, () {
     expect(props, contains('image'));
     expect(props, contains('size.height'));
     expect(props, contains('size.width'));
+  });
+  testWidgets('moves PolygonElement on drag', (tester) async {
+    final controller = DrawController();
+    final vertices = Float64x2List.fromList([
+      Float64x2(50, 50),
+      Float64x2(150, 50),
+      Float64x2(100, 150),
+    ]);
+    final poly = PolygonElement(height: 100, vertices: vertices, width: 100, x: 50, y: 50);
+    controller
+      ..addElement(poly)
+      ..selectedIndex = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            width: 800,
+            child: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final ivFinder = find.byType(InteractiveViewer);
+    final topLeft = tester.getTopLeft(ivFinder);
+
+    // Drag from inside the polygon (center ~100, 83).
+    final gesture = await tester.startGesture(topLeft + const Offset(100, 83));
+    await tester.pump();
+    await gesture.moveBy(const Offset(20, 10));
+    await tester.pump();
+
+    final moved = controller.elements.firstOrNull;
+    expect(moved, isA<PolygonElement>());
+    expect(moved?.x, closeTo(70.0, 0.5));
+    expect(moved?.y, closeTo(60.0, 0.5));
+
+    await gesture.up();
+    await tester.pump();
+  });
+
+  testWidgets('resizes PolygonElement via corner handle', (tester) async {
+    final controller = DrawController();
+    final vertices = Float64x2List.fromList([
+      Float64x2(100, 100),
+      Float64x2(200, 100),
+      Float64x2(150, 200),
+    ]);
+    final poly = PolygonElement(height: 100, vertices: vertices, width: 100, x: 100, y: 100);
+    controller
+      ..addElement(poly)
+      ..selectedIndex = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            width: 800,
+            child: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final ivFinder = find.byType(InteractiveViewer);
+    final topLeft = tester.getTopLeft(ivFinder);
+
+    // Bottom-right handle is at (200, 200).
+    final gesture = await tester.startGesture(topLeft + const Offset(200, 200));
+    await tester.pump();
+    await gesture.moveBy(const Offset(20, 20));
+    await tester.pump();
+
+    final resized = controller.elements.firstOrNull;
+    expect(resized, isA<PolygonElement>());
+    expect(resized?.width, closeTo(120.0, 1.0));
+    expect(resized?.height, closeTo(120.0, 1.0));
+
+    await gesture.up();
+    await tester.pump();
+  });
+
+  testWidgets('aborts creation on pointer cancel during polygon creation', (tester) async {
+    final controller = DrawController();
+    final vertices = Float64x2List.fromList([Float64x2(0, 0), Float64x2(0, 0), Float64x2(0, 0)]);
+    controller.creationTemplate = PolygonElement(
+      height: 0,
+      vertices: vertices,
+      width: 0,
+      x: 0,
+      y: 0,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final ivFinder = find.byType(InteractiveViewer);
+    final topLeft = tester.getTopLeft(ivFinder);
+
+    // Tap to add a vertex, then cancel.
+    await tester.tapAt(topLeft + const Offset(100, 100));
+    await tester.pump();
+    expect(controller.pendingVertices.length, 1);
+
+    // Cancel via a gesture cancel.
+    final gesture = await tester.startGesture(topLeft + const Offset(120, 120));
+    await tester.pump();
+    await gesture.cancel();
+    await tester.pump();
+
+    // Cursor position should be cleared.
+    expect(controller.cursorPosition, isNull);
+  });
+
+  testWidgets('closing a polygon with zero area does not commit', (tester) async {
+    final controller = DrawController();
+    final vertices = Float64x2List.fromList([Float64x2(0, 0), Float64x2(0, 0), Float64x2(0, 0)]);
+    controller.creationTemplate = PolygonElement(
+      height: 0,
+      vertices: vertices,
+      width: 0,
+      x: 0,
+      y: 0,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final ivFinder = find.byType(InteractiveViewer);
+    final topLeft = tester.getTopLeft(ivFinder);
+
+    // Tap 3 collinear points (zero-area polygon).
+    await tester.tapAt(topLeft + const Offset(100, 100));
+    await tester.pump();
+    await tester.tapAt(topLeft + const Offset(100, 100));
+    await tester.pump();
+    await tester.tapAt(topLeft + const Offset(100, 100));
+    await tester.pump();
+
+    // Try to close at the same first vertex — should result in zero-area box.
+    await tester.tapAt(topLeft + const Offset(100, 100));
+    await tester.pump();
+
+    // Zero-area polygon must NOT be committed.
+    expect(controller.elements, isEmpty);
   });
 });

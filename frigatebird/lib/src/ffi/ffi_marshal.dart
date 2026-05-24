@@ -3,7 +3,7 @@
 
 import 'dart:convert' show utf8;
 import 'dart:ffi';
-import 'dart:typed_data' show BytesBuilder, Uint8List;
+import 'dart:typed_data' show BytesBuilder, Float64x2List, Uint8List;
 
 import 'package:ffi/ffi.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
@@ -27,6 +27,7 @@ final class FfiElementsHandle implements Finalizable {
     required this.count,
     required this.arena,
     required this.textBufferPtr,
+    required this.polygonVerticesPtrs,
   });
 
   final Allocator allocator;
@@ -34,6 +35,7 @@ final class FfiElementsHandle implements Finalizable {
   final int count;
   final FfiArenaHandle arena;
   final Pointer<Uint8> textBufferPtr;
+  final List<Pointer<Double>> polygonVerticesPtrs;
 
   static final _finalizer = NativeFinalizer(malloc.nativeFree);
 
@@ -46,6 +48,9 @@ final class FfiElementsHandle implements Finalizable {
     if (isMallocCompatible(allocator)) _finalizer.detach(this);
     if (elementsPtr != nullptr) allocator.free(elementsPtr);
     if (textBufferPtr != nullptr) allocator.free(textBufferPtr);
+    for (final ptr in polygonVerticesPtrs) {
+      if (ptr != nullptr) allocator.free(ptr);
+    }
     arena.free();
   }
 }
@@ -64,6 +69,8 @@ sealed class FfiMarshal {
   }) {
     final elementsPtr = drawElements.isEmpty ? nullptr : allocator<FfiElement>(drawElements.length);
     final payloadBytes = BytesBuilder();
+    final polygonVerticesPtrs = <Pointer<Double>>[];
+    Pointer<Uint8> textBufferPtr = nullptr;
 
     try {
       for (final (i, item) in drawElements.indexed) {
@@ -127,11 +134,38 @@ sealed class FfiMarshal {
               ..textOffset = payloadBytes.length
               ..textLen = encoded.length;
             payloadBytes.add(encoded);
+
+          case PolygonElement():
+            assert(item.blur >= 0 && item.blur <= 255, 'blur must be in 0..255');
+            assert(
+              item.outlineThickness >= 0 && item.outlineThickness <= 255,
+              'outlineThickness must be in 0..255',
+            );
+
+            final vertices = item.vertices;
+            final vPtr = allocator<Double>(vertices.length * 2);
+            polygonVerticesPtrs.add(vPtr);
+            final vView = vPtr.asTypedList(vertices.length * 2);
+            final vRaw = vertices.buffer.asFloat64List();
+            final vOffset = vertices.offsetInBytes ~/ 8;
+            vView.setRange(0, vertices.length * 2, vRaw, vOffset);
+
+            (ref..tag = FfiElementType.polygon.value).payload.polygon
+              ..x = item.x
+              ..y = item.y
+              ..width = item.width
+              ..height = item.height
+              ..verticesPtr = vPtr
+              ..vertexCount = vertices.length
+              ..fillColorArgb = item.fillColor.argb
+              ..outlineColorArgb = item.outlineColor.argb
+              ..outlineThickness = item.outlineThickness.clamp(0, 255)
+              ..rotationDeg = item.rotation
+              ..blur = item.blur.clamp(0, 255);
         }
       }
 
       final payloadTotal = payloadBytes.length;
-      Pointer<Uint8> textBufferPtr = nullptr;
       if (payloadTotal > 0) {
         textBufferPtr = allocator<Uint8>(payloadTotal);
         try {
@@ -153,6 +187,7 @@ sealed class FfiMarshal {
         arena: arena,
         count: drawElements.length,
         elementsPtr: elementsPtr,
+        polygonVerticesPtrs: polygonVerticesPtrs,
         textBufferPtr: textBufferPtr,
       );
 
@@ -163,11 +198,20 @@ sealed class FfiMarshal {
         if (textBufferPtr != nullptr) {
           FfiElementsHandle._finalizer.attach(handle, textBufferPtr.cast<Void>(), detach: handle);
         }
+        for (final ptr in polygonVerticesPtrs) {
+          if (ptr != nullptr) {
+            FfiElementsHandle._finalizer.attach(handle, ptr.cast<Void>(), detach: handle);
+          }
+        }
       }
 
       return handle;
     } on Object {
       if (elementsPtr != nullptr) allocator.free(elementsPtr);
+      if (textBufferPtr != nullptr) allocator.free(textBufferPtr);
+      for (final ptr in polygonVerticesPtrs) {
+        if (ptr != nullptr) allocator.free(ptr);
+      }
 
       rethrow;
     }
@@ -264,6 +308,38 @@ sealed class FfiMarshal {
               text: text,
               x: txt.x,
               y: txt.y,
+            ),
+          );
+
+        case .polygon:
+          final poly = element.payload.polygon;
+          final polyCount = poly.vertexCount;
+          if (polyCount > 0 && poly.verticesPtr == nullptr) {
+            throw ArgumentError(
+              'Malformed FFI polygon buffer: verticesPtr is null for polyCount=$polyCount',
+            );
+          }
+
+          // Copy coordinate pairs from the native float buffer into a fresh heap list.
+          // This ensures the vertex data is safe after the native memory gets freed.
+          final polyRaw = poly.verticesPtr.asTypedList(polyCount * 2);
+          final verts = Float64x2List(polyCount);
+          // NOTE: This assumes Float64x2List layout is [x0, y0, x1, y1, ...] in double representation.
+          // This is guaranteed on the Dart VM, but might vary on other platforms (e.g. dart2wasm).
+          // Guarded by the PolygonElement round-trip unit tests.
+          verts.buffer.asFloat64List().setAll(0, polyRaw);
+          outElements.add(
+            PolygonElement(
+              blur: poly.blur,
+              fillColor: FfiColor(poly.fillColorArgb),
+              height: poly.height,
+              outlineColor: FfiColor(poly.outlineColorArgb),
+              outlineThickness: poly.outlineThickness,
+              rotation: poly.rotationDeg,
+              vertices: verts,
+              width: poly.width,
+              x: poly.x,
+              y: poly.y,
             ),
           );
       }

@@ -33,5 +33,5 @@ class DrawUndoButton extends DrawIconButton {
   });
 
   @override
-  VoidCallback? get callback => controller.commandStack.canUndo ? controller.undo : null;
+  VoidCallback? get callback => controller.canUndo ? controller.undo : null;
 }

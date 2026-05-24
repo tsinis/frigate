@@ -27,6 +27,7 @@ void main() => group('Delete Element Flow', () {
           ),
           body: DrawEditor(file, controller: controller, size: const Size(800, 600)),
         ),
+        theme: ThemeData(splashFactory: NoSplash.splashFactory),
       ),
     );
     await tester.pump();
@@ -83,6 +84,7 @@ void main() => group('Delete Element Flow', () {
           appBar: AppBar(actions: [DrawDeleteButton(controller)]),
           body: DrawEditor(file, controller: controller, size: const Size(800, 600)),
         ),
+        theme: ThemeData(splashFactory: NoSplash.splashFactory),
       ),
     );
 
