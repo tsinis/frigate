@@ -47,13 +47,13 @@ jobs:
         run: rustc --version && cargo --version
 
       - name: 📥 Install cargo-make and tools
-        uses: taiki-e/install-action@v2.78.2
+        uses: taiki-e/install-action@v2.79.6
         with:
           tool: cargo-make,nextest,cargo-deny,cargo-audit,cargo-semver-checks,cargo-udeps,cargo-llvm-lines,cargo-bloat,cargo-fuzz,cargo-trust
 
       - name: 📥 Install cargo-llvm-cov
         if: matrix.runner == 'ubuntu-latest'
-        uses: taiki-e/install-action@v2.78.2
+        uses: taiki-e/install-action@v2.79.6
         with:
           tool: cargo-llvm-cov
 
