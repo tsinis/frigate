@@ -81,22 +81,22 @@ where
     let sigma = blur_radius_px as f32 / 3.0;
     let (iw, ih) = src.dimensions();
 
-    // Support flipped/negative dimensions robustly
-    let x_raw = (rect.x as i64).clamp(0, iw as i64) as u32;
-    let y_raw = (rect.y as i64).clamp(0, ih as i64) as u32;
-    let x2_raw = ((rect.x + rect.width) as i64).clamp(0, iw as i64) as u32;
-    let y2_raw = ((rect.y + rect.height) as i64).clamp(0, ih as i64) as u32;
+    // Support flipped/negative dimensions robustly, capturing sub-pixel bounds via floor/ceil.
+    let (x_min, x_max) = if rect.width < 0.0 {
+        (rect.x + rect.width, rect.x)
+    } else {
+        (rect.x, rect.x + rect.width)
+    };
+    let (y_min, y_max) = if rect.height < 0.0 {
+        (rect.y + rect.height, rect.y)
+    } else {
+        (rect.y, rect.y + rect.height)
+    };
 
-    let (x, x2) = if rect.width < 0.0 {
-        (x2_raw, x_raw)
-    } else {
-        (x_raw, x2_raw)
-    };
-    let (y, y2) = if rect.height < 0.0 {
-        (y2_raw, y_raw)
-    } else {
-        (y_raw, y2_raw)
-    };
+    let x = x_min.floor().clamp(0.0, iw as f64) as u32;
+    let y = y_min.floor().clamp(0.0, ih as f64) as u32;
+    let x2 = x_max.ceil().clamp(0.0, iw as f64) as u32;
+    let y2 = y_max.ceil().clamp(0.0, ih as f64) as u32;
 
     let (rx, ry, rw, rh) = (x, y, x2.saturating_sub(x), y2.saturating_sub(y));
 
@@ -311,6 +311,36 @@ mod tests {
             img.as_raw(),
             before.as_raw(),
             "negative dimensions must swap correctly and apply blur"
+        );
+    }
+
+    #[test]
+    #[cfg(not(miri))]
+    fn blur_fractional_coords_include_pixels() {
+        let mut img = RgbaImage::new(16, 16);
+        for (x, _, px) in img.enumerate_pixels_mut() {
+            px.0 = if x < 8 {
+                [0, 0, 0, 255]
+            } else {
+                [255, 255, 255, 255]
+            };
+        }
+        let before = img.clone();
+
+        // Sub-pixel region covering x=7.1 to x=7.9: width is 0.8.
+        // Proper floor/ceil handling captures this pixel and applies the blur,
+        // avoiding a silent no-op.
+        let fractional_rect = RectanglePayload::new(7.1, 0.1, 0.8, 0.8, 0);
+        blur_shape_rgba(&mut img, fractional_rect, 6, |mask, _, _| {
+            mask.fill(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
+            Ok(())
+        })
+        .unwrap();
+
+        assert_ne!(
+            img.as_raw(),
+            before.as_raw(),
+            "fractional coords spanning sub-pixel region should be blurred, not skipped as zero-area"
         );
     }
 }
