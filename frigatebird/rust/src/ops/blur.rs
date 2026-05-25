@@ -298,7 +298,7 @@ mod tests {
             };
         }
         let before = img.clone();
-        
+
         // Negative dimensions: should swap x and x2, y and y2, and perform blur
         let negative_rect = RectanglePayload::new(16.0, 16.0, -16.0, -16.0, 0);
         blur_shape_rgba(&mut img, negative_rect, 6, |mask, _, _| {
@@ -306,7 +306,7 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        
+
         assert_ne!(
             img.as_raw(),
             before.as_raw(),
