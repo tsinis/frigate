@@ -23,14 +23,26 @@ final class MaskRegionElement extends ImmutableDrawElement {
     double? width,
     double? x,
     double? y,
-  }) => .new(
-    blur: blur ?? this.blur,
-    height: height ?? this.height,
-    rotation: rotation ?? this.rotation,
-    width: width ?? this.width,
-    x: x ?? this.x,
-    y: y ?? this.y,
-  );
+  }) {
+    assert(
+      outlineColor == null || outlineColor == .transparent,
+      'MaskRegionElement outlineColor must be transparent',
+    );
+    assert(
+      outlineThickness == null || outlineThickness == 0,
+      'MaskRegionElement outlineThickness must be 0',
+    );
+
+    return .new(
+      blur: blur ?? this.blur,
+      fillColor: fillColor ?? this.fillColor,
+      height: height ?? this.height,
+      rotation: rotation ?? this.rotation,
+      width: width ?? this.width,
+      x: x ?? this.x,
+      y: y ?? this.y,
+    );
+  }
 
   @override
   bool operator ==(Object other) =>

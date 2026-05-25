@@ -245,7 +245,6 @@ fn golden_blur_text_no_blur() {
 
 /// Full-image blur via `blur_region` with a zero-area sentinel rect.
 #[test]
-#[ignore]
 #[cfg(not(miri))]
 fn golden_blur_region_full_image() {
     let base = base_image();

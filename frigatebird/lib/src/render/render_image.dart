@@ -160,8 +160,8 @@ sealed class RenderImage {
         ..ref.rotationDeg = region.rotation
         ..ref.fillColorArgb = region.fillColor.argb
         ..ref.outlineColorArgb = region.outlineColor.argb
-        ..ref.outlineThickness = region.outlineThickness
-        ..ref.blur = region.blur
+        ..ref.outlineThickness = region.outlineThickness.clamp(0, 255)
+        ..ref.blur = region.blur.clamp(0, 255)
         ..ref.cornerRadius = region.cornerRadius;
 
       final code = ffi.blur_region(imageCStr, outputCStr, payloadPtr.ref, arena.ptr);
@@ -189,9 +189,14 @@ sealed class RenderImage {
       throw const RenderException(.invalidArg, 'imagePath cannot be empty');
     }
     assert(radius >= 0 && radius <= 255, 'radius must be in 0..255');
+    final clampedRadius = radius.clamp(0, 255);
 
     return Isolate.run(
-      () => _runBlurFullImageWorker(imagePath: imagePath, outputPath: outputPath, radius: radius),
+      () => _runBlurFullImageWorker(
+        imagePath: imagePath,
+        outputPath: outputPath,
+        radius: clampedRadius,
+      ),
     );
   }
 

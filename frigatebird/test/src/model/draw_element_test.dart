@@ -161,8 +161,11 @@ void main() {
     });
 
     test('value equality and hashCode works correctly', () {
+      const FfiColor blackColor = .black;
+      const FfiColor transparentColor = .transparent;
       const baseElement = MaskRegionElement(
         blur: 5,
+        fillColor: blackColor,
         height: 50,
         rotation: 10,
         width: 80,
@@ -171,25 +174,56 @@ void main() {
       );
       const identicalElement = MaskRegionElement(
         blur: 5,
+        fillColor: blackColor,
         height: 50,
         rotation: 10,
         width: 80,
         x: 10,
         y: 20,
       );
-      const differentElement = MaskRegionElement(
+      const yOffsetElement = MaskRegionElement(
         blur: 5,
+        fillColor: blackColor,
         height: 50,
         rotation: 10,
         width: 80,
         x: 10,
         y: 21,
       );
+      const redFillElement = MaskRegionElement(
+        blur: 5,
+        fillColor: FfiColor(0xFFFF0000),
+        height: 50,
+        rotation: 10,
+        width: 80,
+        x: 10,
+        y: 20,
+      );
+
+      final baseHashCode = baseElement.hashCode;
 
       expect(baseElement, equals(identicalElement));
-      expect(baseElement.hashCode, equals(identicalElement.hashCode));
-      expect(baseElement, isNot(equals(differentElement)));
-      expect(baseElement.hashCode, isNot(equals(differentElement.hashCode)));
+      expect(baseHashCode, equals(identicalElement.hashCode));
+      expect(baseElement, isNot(equals(yOffsetElement)));
+      expect(baseHashCode, isNot(equals(yOffsetElement.hashCode)));
+      expect(baseElement, isNot(equals(redFillElement)));
+      expect(baseHashCode, isNot(equals(redFillElement.hashCode)));
+
+      // Test copyWith with the same fillColor.
+      final copiedSameColor = baseElement.copyWith(fillColor: baseElement.fillColor);
+      expect(copiedSameColor, equals(baseElement));
+      expect(copiedSameColor.hashCode, equals(baseHashCode));
+
+      // Test copyWith with a different fillColor.
+      final copiedDiffColor = baseElement.copyWith(fillColor: transparentColor);
+      expect(copiedDiffColor, isNot(equals(baseElement)));
+      expect(copiedDiffColor.hashCode, isNot(equals(baseHashCode)));
+      expect(copiedDiffColor.fillColor, equals(transparentColor));
+
+      // Assert that attempting to change outline properties throws assertions.
+      final throwsAssertion = throwsA(isA<AssertionError>());
+      expect(() => baseElement.copyWith(outlineColor: blackColor), throwsAssertion);
+      expect(() => baseElement.copyWith(outlineThickness: 2), throwsAssertion);
     });
   });
 }

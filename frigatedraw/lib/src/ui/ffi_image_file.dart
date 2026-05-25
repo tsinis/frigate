@@ -74,6 +74,20 @@ class _FfiImageFileState extends State<FfiImageFile> {
     unawaited(_load());
   }
 
+  Future<void> _decodeAndSetBytes(Uint8List bytes, File file) async {
+    final codec = await ui.instantiateImageCodec(bytes);
+    try {
+      final frame = await codec.getNextFrame();
+      if (!mounted || _loadedImageFile != file) return frame.image.dispose();
+      final oldUiImage = _uiImage;
+      _bytes = bytes;
+      setState(() => _uiImage = frame.image);
+      oldUiImage?.dispose();
+    } finally {
+      codec.dispose();
+    }
+  }
+
   Future<void> _load() async {
     final file = widget._image;
     _loadedImageFile = file;
@@ -95,18 +109,7 @@ class _FfiImageFileState extends State<FfiImageFile> {
         final bytes = await file.readAsBytes();
         if (!mounted || _loadedImageFile != file) return;
 
-        final codec = await ui.instantiateImageCodec(bytes);
-        final frame = await codec.getNextFrame();
-        if (!mounted || _loadedImageFile != file) {
-          frame.image.dispose();
-
-          return;
-        }
-
-        final oldUiImage = _uiImage;
-        _bytes = bytes;
-        setState(() => _uiImage = frame.image);
-        oldUiImage?.dispose();
+        await _decodeAndSetBytes(bytes, file);
       } on Object catch (_) {
         // If byte reading/decoding fails (e.g. in unit tests where file doesn't exist),
         // we silently ignore or log it, and do not fail the widget rendering.
@@ -159,7 +162,6 @@ class _FfiImageFileState extends State<FfiImageFile> {
             fit: widget.fit,
             gaplessPlayback: widget.gaplessPlayback,
             height: height,
-            key: widget.key,
             semanticLabel: widget.semanticLabel,
             width: width,
           )
@@ -171,7 +173,6 @@ class _FfiImageFileState extends State<FfiImageFile> {
             fit: widget.fit,
             gaplessPlayback: widget.gaplessPlayback,
             height: height,
-            key: widget.key,
             semanticLabel: widget.semanticLabel,
             width: width,
           );
