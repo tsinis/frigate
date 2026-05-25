@@ -26,6 +26,16 @@ void main() {
       expect(movedOval.height, equals(30));
     });
 
+    test('moves a MaskRegionElement correctly', () {
+      const mask = MaskRegionElement(height: 50, width: 50, x: 10, y: 20);
+      final movedMask = mask.moved(15, 25);
+
+      expect(movedMask.x, equals(25));
+      expect(movedMask.y, equals(45));
+      expect(movedMask.width, equals(50));
+      expect(movedMask.height, equals(50));
+    });
+
     test('moves a PolygonElement correctly', () {
       final vertices = Float64x2List.fromList([
         Float64x2(10, 10),
@@ -263,5 +273,15 @@ void main() {
         expect(bottomResized.height, equals(60));
       },
     );
+
+    test('resizes a MaskRegionElement correctly', () {
+      const mask = MaskRegionElement(height: 50, width: 50, x: 10, y: 20);
+      final resizedMask = mask.resized(dx: 10, dy: 15, handle: .bottomRight);
+
+      expect(resizedMask.x, equals(10));
+      expect(resizedMask.y, equals(20));
+      expect(resizedMask.width, equals(60));
+      expect(resizedMask.height, equals(65));
+    });
   });
 }

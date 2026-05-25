@@ -97,9 +97,11 @@ class _DrawingScreenState extends State<DrawingScreen> {
   }
 
   Future<void> _handleReplaceImage() async {
+    if (_isExporting.value) return;
     final picker = ImagePicker();
     final pickedImage = await picker.pickImage(source: .gallery);
     if (pickedImage != null && mounted) {
+      if (_isExporting.value) return;
       _bgImageFile = File(pickedImage.path);
       setState(() => _originalBgImageFile = File(pickedImage.path));
       _showSnackBar('Background image replaced successfully!');
@@ -114,18 +116,17 @@ class _DrawingScreenState extends State<DrawingScreen> {
     );
 
     if (resultBlur != null && mounted) {
+      if (_isExporting.value) return;
       _isExporting.value = true;
       try {
-        final region = RectElement(blur: resultBlur.round(), height: 0, width: 0, x: 0, y: 0);
-
         final ext = _originalBgImageFile.path.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
         final downloadDir = await widget.destination.create(recursive: true);
         final finalFile = File('${downloadDir.path}/blurred_background_image.$ext');
 
-        await RenderImage.blur(
+        await RenderImage.blurFullImage(
           imagePath: _originalBgImageFile.path,
           outputPath: finalFile.path,
-          region: region,
+          radius: resultBlur.round(),
         );
 
         await FileImage(finalFile).evict(); // ignore: avoid-ignoring-return-values, example only.
@@ -191,6 +192,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
   }
 
   Future<void> _handleSave() async {
+    if (_isExporting.value) return;
     if (_controller.elements.isEmpty) return _showSnackBar('No elements to export');
     _isExporting.value = true;
 

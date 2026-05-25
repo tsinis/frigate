@@ -361,7 +361,7 @@ class DrawPainter extends CustomPainter {
     if (element.vertices.length < 3) return;
     final path = DrawElementExtension.getPathForPolygon(element);
 
-    final bool shouldShowBlurPreview = element.blur > 0;
+    final bool shouldShowBlurPreview = element.blur > 0 && element.uiFillColor.a < 1.0;
 
     if (shouldShowBlurPreview) {
       if (bgImage == null) {
@@ -452,7 +452,7 @@ class DrawPainter extends CustomPainter {
       MaskRegionElement() || OvalElement() || TextElement() => 0,
     };
     final isRounded = cornerRadius > 0;
-    final bool shouldShowBlurPreview = element.blur > 0;
+    final bool shouldShowBlurPreview = element.blur > 0 && uiFillColor.a < 1.0;
 
     if (shouldShowBlurPreview) {
       if (bgImage == null) {
@@ -559,7 +559,7 @@ class DrawPainter extends CustomPainter {
         element;
     if (width <= 0 || height <= 0) return;
 
-    final bool shouldShowBlurPreview = element.blur > 0;
+    final bool shouldShowBlurPreview = element.blur > 0 && uiFillColor.a < 1.0;
 
     if (shouldShowBlurPreview) {
       if (bgImage == null) {

@@ -33,6 +33,22 @@ final class MaskRegionElement extends ImmutableDrawElement {
   );
 
   @override
+  bool operator ==(Object other) =>
+      // ignore: avoid-complex-conditions, a lot of properties to compare.
+      identical(this, other) ||
+      other is MaskRegionElement &&
+          other.x == x &&
+          other.y == y &&
+          other.width == width &&
+          other.height == height &&
+          other.rotation == rotation &&
+          other.blur == blur &&
+          other.fillColor == fillColor;
+
+  @override
+  int get hashCode => Object.hash(x, y, width, height, rotation, blur, fillColor);
+
+  @override
   String toString() =>
       'MaskRegionElement(x: $x, y: $y, width: $width, height: $height, blur: $blur, '
       'rotation: $rotation, fillColor: $fillColor)';

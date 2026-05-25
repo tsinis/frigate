@@ -159,5 +159,37 @@ void main() {
       expect(str, contains('width: 80.0'));
       expect(str, contains('height: 50.0'));
     });
+
+    test('value equality and hashCode works correctly', () {
+      const baseElement = MaskRegionElement(
+        blur: 5,
+        height: 50,
+        rotation: 10,
+        width: 80,
+        x: 10,
+        y: 20,
+      );
+      const identicalElement = MaskRegionElement(
+        blur: 5,
+        height: 50,
+        rotation: 10,
+        width: 80,
+        x: 10,
+        y: 20,
+      );
+      const differentElement = MaskRegionElement(
+        blur: 5,
+        height: 50,
+        rotation: 10,
+        width: 80,
+        x: 10,
+        y: 21,
+      );
+
+      expect(baseElement, equals(identicalElement));
+      expect(baseElement.hashCode, equals(identicalElement.hashCode));
+      expect(baseElement, isNot(equals(differentElement)));
+      expect(baseElement.hashCode, isNot(equals(differentElement.hashCode)));
+    });
   });
 }

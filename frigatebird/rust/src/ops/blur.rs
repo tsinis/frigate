@@ -73,7 +73,7 @@ where
         return Ok(());
     }
 
-    if rect.width <= 0.0 || rect.height <= 0.0 {
+    if rect.width == 0.0 || rect.height == 0.0 {
         // Zero-area/collapsed shape is a safe no-op.
         return Ok(());
     }
@@ -177,6 +177,14 @@ pub fn blur_shape_rgba<F>(
 where
     F: FnOnce(&mut Pixmap, f64, f64) -> Result<(), (FfiErrorCode, String)>,
 {
+    if blur_radius_px == 0 {
+        return Ok(());
+    }
+
+    if rect.width == 0.0 || rect.height == 0.0 {
+        return Ok(());
+    }
+
     let src = img.clone();
     blur_shape_rgba_from_src(img, &src, rect, blur_radius_px, draw_mask_fn)
 }
@@ -208,7 +216,7 @@ mod tests {
     fn blur_radius_zero_is_noop() {
         let mut img = solid_image(8, 8, [255, 0, 0, 255]);
         let before = img.clone();
-        let _ = blur_shape_rgba(&mut img, full_rect_payload(8, 8), 0, |_, _, _| Ok(()));
+        blur_shape_rgba(&mut img, full_rect_payload(8, 8), 0, |_, _, _| Ok(())).unwrap();
         assert_eq!(
             img.as_raw(),
             before.as_raw(),
@@ -228,10 +236,11 @@ mod tests {
             };
         }
         let before = img.clone();
-        let _ = blur_shape_rgba(&mut img, full_rect_payload(16, 16), 6, |mask, _, _| {
+        blur_shape_rgba(&mut img, full_rect_payload(16, 16), 6, |mask, _, _| {
             mask.fill(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
             Ok(())
-        });
+        })
+        .unwrap();
         assert_ne!(
             img.as_raw(),
             before.as_raw(),
@@ -252,10 +261,11 @@ mod tests {
         }
         let before = img.clone();
         let zero_rect = RectanglePayload::new(0.0, 0.0, 0.0, 0.0, 0);
-        let _ = blur_shape_rgba(&mut img, zero_rect, 6, |mask, _, _| {
+        blur_shape_rgba(&mut img, zero_rect, 6, |mask, _, _| {
             mask.fill(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
             Ok(())
-        });
+        })
+        .unwrap();
         assert_eq!(
             img.as_raw(),
             before.as_raw(),
@@ -268,11 +278,39 @@ mod tests {
         let mut img = solid_image(16, 16, [100, 100, 100, 255]);
         let before = img.clone();
         let outside = RectanglePayload::new(1000.0, 0.0, 50.0, 50.0, 0);
-        let _ = blur_shape_rgba(&mut img, outside, 10, |_, _, _| Ok(()));
+        blur_shape_rgba(&mut img, outside, 10, |_, _, _| Ok(())).unwrap();
         assert_eq!(
             img.as_raw(),
             before.as_raw(),
             "out-of-bounds rect must be a no-op"
+        );
+    }
+
+    #[test]
+    #[cfg(not(miri))]
+    fn blur_region_negative_dimensions_swap_correctly() {
+        let mut img = RgbaImage::new(16, 16);
+        for (x, _, px) in img.enumerate_pixels_mut() {
+            px.0 = if x < 8 {
+                [0, 0, 0, 255]
+            } else {
+                [255, 255, 255, 255]
+            };
+        }
+        let before = img.clone();
+        
+        // Negative dimensions: should swap x and x2, y and y2, and perform blur
+        let negative_rect = RectanglePayload::new(16.0, 16.0, -16.0, -16.0, 0);
+        blur_shape_rgba(&mut img, negative_rect, 6, |mask, _, _| {
+            mask.fill(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
+            Ok(())
+        })
+        .unwrap();
+        
+        assert_ne!(
+            img.as_raw(),
+            before.as_raw(),
+            "negative dimensions must swap correctly and apply blur"
         );
     }
 }

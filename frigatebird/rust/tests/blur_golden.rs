@@ -4,7 +4,7 @@
 //! - Per-element blur on Rectangle, Oval, and Polygon shapes via `draw_elements`.
 //! - Text element with `blur > 0` — must render identically to `blur = 0` (blur is a no-op for text).
 //! - `blur_region` standalone FFI entry point: full-image and region cases.
-//! - SHA-256 hash golden for the full-blur case to catch algorithm drift.
+//! - FNV-1a hash golden for the full-blur case to catch algorithm drift.
 
 use std::{
     io::Write as _,
@@ -315,4 +315,26 @@ fn blur_region_nonexistent_file_returns_decode_error() {
     let region = RectanglePayload::new(0.0, 0.0, 100.0, 100.0, 0).with_blur(10);
     let status = frigate::blur_region(Some(bogus.as_ref()), None, region, None);
     assert_eq!(status, frigate::FfiErrorCode::Decode as u8);
+}
+
+/// A rectangle with transparent fill, no outline, and blur (exact model of `MaskRegionElement`).
+#[test]
+#[cfg(not(miri))]
+fn golden_blur_mask_region_element() {
+    let base = base_image();
+    let (w, h) = (base.width() as f64, base.height() as f64);
+    let element = FfiElement::Rectangle(RectanglePayload {
+        x: 0.20 * w,
+        y: 0.20 * h,
+        width: 0.60 * w,
+        height: 0.60 * h,
+        rotation_deg: 0,
+        fill_color_argb: 0x00_00_00_00, // transparent fill (MaskRegionElement style)
+        outline_color_argb: 0x00_00_00_00, // transparent outline
+        outline_thickness: 0,
+        blur: 15,
+        corner_radius: 0,
+    });
+    let img = render_element(element);
+    assert_golden(&img, &golden_path("blur_mask_region_element.png"));
 }

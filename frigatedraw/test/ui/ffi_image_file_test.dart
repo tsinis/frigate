@@ -349,12 +349,38 @@ void main() {
         if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
       });
 
-      await tester.pumpWidget(MaterialApp(home: Scaffold(body: FfiImageFile(file))));
+      Image? displayedImage;
 
-      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: FfiImageFile(
+                file,
+                builder: (img, info, uiImage) {
+                  displayedImage = img;
 
-      final imageFinder = find.byType(Image);
-      expect(imageFinder, findsOneWidget);
+                  return const SizedBox();
+                },
+              ),
+            ),
+          ),
+        );
+        // Allow the async file.readAsBytes() and image decoding to complete.
+        for (int i = 0; i < 20; i += 1) {
+          // Wait for file.readAsBytes() async task in Isolate
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+          await tester.pump();
+        }
+      });
+
+      final finalImage = displayedImage;
+      expect(finalImage, isNotNull);
+      expect(
+        finalImage?.image,
+        anyOf(isA<MemoryImage>(), isA<FileImage>()),
+        reason: 'Image provider must be MemoryImage (decoded) or FileImage (fallback)',
+      );
     });
   });
 }

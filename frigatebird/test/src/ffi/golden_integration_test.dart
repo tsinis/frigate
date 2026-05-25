@@ -45,6 +45,7 @@ void main() {
             y: 20,
           ),
           const TextElement(height: 40, text: 'Deterministic', x: 20, y: 120),
+          const MaskRegionElement(blur: 15, height: 50, width: 80, x: 100, y: 150),
         ];
 
         await RenderImage.run(

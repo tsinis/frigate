@@ -93,11 +93,12 @@ void main() {
 
     test('throws RenderException(decode) for a missing source image', () async {
       const text = TextElement(text: 'x', x: 0, y: 0);
+      final sysTempPath = Directory.systemTemp.path;
       final future = RenderImage.run(
-        backgroundPath: '/does/not/exist.jpg',
+        backgroundPath: '$sysTempPath/does_not_exist.jpg',
         elements: [text],
         fontPath: fontPath,
-        outputPath: '${Directory.systemTemp.path}/nope.jpg',
+        outputPath: '$sysTempPath/nope.jpg',
       );
       await expectLater(
         future,
@@ -167,13 +168,9 @@ void main() {
       outFile.deleteSync();
     });
 
-    test('blur applies full image blur when region size is 0x0', () async {
+    test('blurFullImage applies full image blur', () async {
       final outPath = _ensureTempFileAbsent('frigate_blur_full.jpg');
-      await RenderImage.blur(
-        imagePath: imagePath,
-        outputPath: outPath,
-        region: const RectElement(blur: 10, height: 0, width: 0, x: 0, y: 0),
-      );
+      await RenderImage.blurFullImage(imagePath: imagePath, outputPath: outPath, radius: 10);
 
       final outFile = File(outPath);
       expect(outFile.existsSync(), isTrue);
@@ -193,10 +190,10 @@ void main() {
       outFile.deleteSync();
     });
 
-    test('blur throws RenderException for non-existent image', () async {
-      final future = RenderImage.blur(
-        imagePath: '/does/not/exist.jpg',
-        region: const RectElement(blur: 10, height: 0, width: 0, x: 0, y: 0),
+    test('blurFullImage throws RenderException for non-existent image', () async {
+      final future = RenderImage.blurFullImage(
+        imagePath: '${Directory.systemTemp.path}/does_not_exist.jpg',
+        radius: 10,
       );
       await expectLater(
         future,
@@ -204,15 +201,12 @@ void main() {
       );
     });
 
-    test('blur throws RenderException for empty imagePath', () {
+    test('blurFullImage throws RenderException for empty imagePath', () {
       const emptyPath = '';
       expect(
         () =>
             // ignore: avoid-async-call-in-sync-function, it throws synchronously before returning Future.
-            RenderImage.blur(
-              imagePath: emptyPath,
-              region: const RectElement(blur: 10, height: 0, width: 0, x: 0, y: 0),
-            ),
+            RenderImage.blurFullImage(imagePath: emptyPath, radius: 10),
         throwsA(isA<RenderException>().having((e) => e.code, 'code', FfiErrorCode.invalidArg)),
       );
     });
