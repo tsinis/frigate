@@ -1,5 +1,6 @@
 # Keywords/terms specific to the Rust
 # (clippy / cargo / rustup / rustfmt / rustc etc. come from the bundled `rust` cspell dict.)
+aabb
 aapcs
 aarrggbb
 argb
