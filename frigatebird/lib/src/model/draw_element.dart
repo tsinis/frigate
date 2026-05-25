@@ -1,12 +1,14 @@
 import 'dart:typed_data';
 
+import '../constants/draw_constants.dart';
 import 'ffi_color.dart';
 
+part 'immutable_draw_element.dart';
+part 'mask_region_element.dart';
+part 'oval_element.dart';
+part 'polygon_element.dart';
 part 'rect_element.dart';
 part 'text_element.dart';
-part 'oval_element.dart';
-part 'immutable_draw_element.dart';
-part 'polygon_element.dart';
 
 /// Base for all drawable elements.
 ///

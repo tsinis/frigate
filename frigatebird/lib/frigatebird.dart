@@ -11,6 +11,7 @@ export 'src/ffi/ffi_element_type.dart';
 export 'src/ffi/ffi_error.dart' show FfiErrorCode;
 export 'src/ffi/image_info.dart';
 export 'src/model/draw_element.dart';
+export 'src/model/draw_element_resize_extension.dart';
 export 'src/model/ffi_color.dart';
 export 'src/model/handle_position.dart';
 export 'src/render/render_exception.dart';

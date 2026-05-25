@@ -195,6 +195,7 @@ dart_code_metrics:
     - avoid-default-tostring: false # Doesn't make sense here.
     - avoid-deprecated-usage: false # Using default deprecated_member_use_from_same_package.
     - avoid-dot-shorthands: false # Now we enabled them below.
+    - avoid-returning-void: false # Matter of style.
     - avoid-inferrable-type-arguments: false # Against prefer-explicit-type-arguments.
     - avoid-throw: false # Breaking change + we have maybe* methods.
     - max-imports: false # Sadly not very suitable for the packages.
@@ -342,7 +343,6 @@ dart_code_metrics:
     - avoid-referencing-subclasses: true
     - avoid-renaming-representation-getters: true
     - avoid-returning-cascades: true
-    - avoid-returning-void: true
     - avoid-self-assignment: true
     - avoid-self-compare: true
     - avoid-shadowed-extension-methods: true

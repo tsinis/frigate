@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:frigatebird/src/constants/draw_constants.dart';
 import 'package:frigatebird/src/model/draw_element.dart';
 import 'package:frigatebird/src/model/ffi_color.dart';
 import 'package:test/test.dart';
@@ -107,6 +108,7 @@ void main() {
           x: 0,
           y: 0,
         ),
+        const MaskRegionElement(height: 1, width: 1, x: 0, y: 0),
       ];
       final types = elements
           .map(
@@ -115,14 +117,149 @@ void main() {
               TextElement() => 'text',
               OvalElement() => 'oval',
               PolygonElement() => 'polygon',
+              MaskRegionElement() => 'mask',
             },
           )
           .toSet();
       expect(
         types,
-        const {'rect', 'text', 'oval', 'polygon'}, // Dart 3.8 format.
+        const {'rect', 'text', 'oval', 'polygon', 'mask'}, // Dart 3.8 format.
         reason: 'switch is exhaustive over all types',
       );
+    });
+  });
+
+  group('MaskRegionElement copyWith and toString', () {
+    test('default properties are set correctly', () {
+      const mask = MaskRegionElement(height: 50, width: 80, x: 10, y: 20);
+      expect(mask.blur, equals(DrawConstants.defaultBlurRadius));
+      expect(mask.fillColor, equals(FfiColor.transparent));
+      expect(mask.outlineColor, FfiColor.transparent);
+      expect(mask.outlineThickness, isZero);
+    });
+
+    test('copyWith works correctly', () {
+      const mask = MaskRegionElement(height: 50, width: 80, x: 10, y: 20);
+      final updated = mask.copyWith(blur: 25, height: 100, rotation: 90, width: 200, x: 5, y: 15);
+
+      expect(updated.blur, equals(25));
+      expect(updated.height, equals(100));
+      expect(updated.rotation, equals(90));
+      expect(updated.width, equals(200));
+      expect(updated.x, equals(5));
+      expect(updated.y, equals(15));
+    });
+
+    test('toString contains correct values', () {
+      const mask = MaskRegionElement(height: 50, width: 80, x: 10, y: 20);
+      final str = mask.toString();
+      expect(str, contains('MaskRegionElement'));
+      expect(str, contains('x: 10.0'));
+      expect(str, contains('y: 20.0'));
+      expect(str, contains('width: 80.0'));
+      expect(str, contains('height: 50.0'));
+    });
+
+    test('value equality and hashCode works correctly', () {
+      const FfiColor blackColor = .black;
+      const FfiColor transparentColor = .transparent;
+      const baseElement = MaskRegionElement(
+        blur: 5,
+        fillColor: blackColor,
+        height: 50,
+        rotation: 10,
+        width: 80,
+        x: 10,
+        y: 20,
+      );
+      const identicalElement = MaskRegionElement(
+        blur: 5,
+        fillColor: blackColor,
+        height: 50,
+        rotation: 10,
+        width: 80,
+        x: 10,
+        y: 20,
+      );
+      const yOffsetElement = MaskRegionElement(
+        blur: 5,
+        fillColor: blackColor,
+        height: 50,
+        rotation: 10,
+        width: 80,
+        x: 10,
+        y: 21,
+      );
+      const redFillElement = MaskRegionElement(
+        blur: 5,
+        fillColor: FfiColor(0xFFFF0000),
+        height: 50,
+        rotation: 10,
+        width: 80,
+        x: 10,
+        y: 20,
+      );
+
+      final baseHashCode = baseElement.hashCode;
+
+      expect(baseElement, equals(identicalElement));
+      expect(baseHashCode, equals(identicalElement.hashCode));
+      expect(baseElement, isNot(equals(yOffsetElement)));
+      expect(baseHashCode, isNot(equals(yOffsetElement.hashCode)));
+      expect(baseElement, isNot(equals(redFillElement)));
+      expect(baseHashCode, isNot(equals(redFillElement.hashCode)));
+
+      // Test copyWith with the same fillColor.
+      final copiedSameColor = baseElement.copyWith(fillColor: baseElement.fillColor);
+      expect(copiedSameColor, equals(baseElement));
+      expect(copiedSameColor.hashCode, equals(baseHashCode));
+
+      // Test copyWith with a different fillColor.
+      final copiedDiffColor = baseElement.copyWith(fillColor: transparentColor);
+      expect(copiedDiffColor, isNot(equals(baseElement)));
+      expect(copiedDiffColor.hashCode, isNot(equals(baseHashCode)));
+      expect(copiedDiffColor.fillColor, equals(transparentColor));
+
+      // Test copyWith with all fields.
+      final fullCopy = baseElement.copyWith(
+        blur: 15,
+        height: 100,
+        rotation: 45,
+        width: 150,
+        x: 30,
+        y: 40,
+      );
+      expect(fullCopy.blur, 15);
+      expect(fullCopy.height, 100);
+      expect(fullCopy.rotation, 45);
+      expect(fullCopy.width, 150);
+      expect(fullCopy.x, 30);
+      expect(fullCopy.y, 40);
+
+      // Assert that attempting to change outline properties throws assertions.
+      final throwsAssertion = throwsA(isA<AssertionError>());
+      expect(() => baseElement.copyWith(outlineColor: blackColor), throwsAssertion);
+      expect(() => baseElement.copyWith(outlineThickness: 2), throwsAssertion);
+    });
+
+    test('toString includes all properties', () {
+      const maskRegionElement = MaskRegionElement(
+        fillColor: .black,
+        height: 100,
+        rotation: 45,
+        width: 200,
+        x: 50,
+        y: 30,
+      );
+      final str = maskRegionElement.toString();
+      expect(str, contains('MaskRegionElement('));
+      expect(str, contains('x: 50.0'));
+      expect(str, contains('y: 30.0'));
+      expect(str, contains('width: 200.0'));
+      expect(str, contains('height: 100.0'));
+      expect(str, contains('blur: 10'));
+      expect(str, contains('rotation: 45'));
+      expect(str, contains('fillColor: FfiColor(0xFF000000)'));
     });
   });
 }

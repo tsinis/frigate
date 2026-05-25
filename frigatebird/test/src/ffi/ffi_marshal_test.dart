@@ -53,6 +53,37 @@ void main() {
       }
     });
 
+    test('MaskRegionElement round-trip via Rust echo', () {
+      const mask = MaskRegionElement(blur: 15, height: 80, rotation: 45, width: 120, x: 12, y: 24);
+
+      final bundle = FfiMarshal.encodeElements([mask], malloc);
+      try {
+        final echoedPtr = ffi_echo_element(bundle.elementsPtr);
+        final decodeResult = FfiMarshal.decodeElements(
+          echoedPtr,
+          bundle.count,
+          bundle.textBufferPtr,
+          payloadBufferLen: bundle.arena.ptr.ref.textLen,
+        );
+        final decoded = decodeResult.elements;
+
+        expect(decoded.singleOrNull, isA<MaskRegionElement>(), reason: 'decoded element type');
+        final result = decoded.whereType<MaskRegionElement>().first;
+        expect(result.x, mask.x);
+        expect(result.y, mask.y);
+        expect(result.width, mask.width);
+        expect(result.height, mask.height);
+        expect(result.rotation, mask.rotation);
+        final transparentArgb = FfiColor.transparent.argb;
+        expect(result.fillColor.argb, transparentArgb);
+        expect(result.outlineColor.argb, transparentArgb);
+        expect(result.outlineThickness, isZero);
+        expect(result.blur, mask.blur);
+      } finally {
+        bundle.free();
+      }
+    });
+
     test('Text round-trip via Rust echo', () {
       const text = TextElement(
         blur: 1,
