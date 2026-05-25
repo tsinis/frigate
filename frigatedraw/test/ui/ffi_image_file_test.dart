@@ -1,4 +1,4 @@
-// ignore_for_file: avoid-ignoring-return-values, prefer-moving-to-variable, avoid-duplicate-test-assertions, format-comment, avoid-similar-names, prefer-extracting-function-callbacks, avoid-duplicate-collection-elements, unnecessary-trailing-comma
+// ignore_for_file: prefer-moving-to-variable, avoid-duplicate-test-assertions, prefer-extracting-function-callbacks, avoid-duplicate-collection-elements
 
 import 'dart:async';
 import 'dart:io';
@@ -158,8 +158,8 @@ void main() {
     });
 
     testWidgets('re-probes when file path changes', (tester) async {
-      final file1 = File('file1.jpg');
-      final file2 = File('file2.jpg');
+      final fileFirst = File('file1.jpg');
+      final fileSecond = File('file2.jpg');
       int probeCount = 0;
       FfiImageFile.setInfoBuilder((_) async {
         probeCount += 1;
@@ -167,11 +167,11 @@ void main() {
         return const ImageInformation(height: 100, width: 100);
       });
 
-      await tester.pumpWidget(MaterialApp(home: Scaffold(body: FfiImageFile(file1))));
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: FfiImageFile(fileFirst))));
       await tester.pumpAndSettle();
       expect(probeCount, 1);
 
-      await tester.pumpWidget(MaterialApp(home: Scaffold(body: FfiImageFile(file2))));
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: FfiImageFile(fileSecond))));
       await tester.pumpAndSettle();
       expect(probeCount, 2);
     });
@@ -185,21 +185,21 @@ void main() {
         return const ImageInformation(height: 100, width: 100);
       });
 
-      // Initially with size -> no probe
+      // Initially with size -> no probe.
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(body: FfiImageFile(file, size: const Size(100, 100))),
         ),
       );
       await tester.pumpAndSettle();
-      expect(probeCount, 0);
+      expect(probeCount, isZero);
 
-      // Change to no size -> probe
+      // Change to no size -> probe.
       await tester.pumpWidget(MaterialApp(home: Scaffold(body: FfiImageFile(file))));
       await tester.pumpAndSettle();
       expect(probeCount, 1);
 
-      // Change back to size -> reset future (but no probe call because _loadInfo returns null)
+      // Change back to size -> reset future (but no probe call because _loadInfo returns null).
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(body: FfiImageFile(file, size: const Size(200, 200))),
@@ -215,7 +215,7 @@ void main() {
       FfiImageFile.setInfoBuilder((_) => completer.future);
 
       await tester.pumpWidget(MaterialApp(home: Scaffold(body: FfiImageFile(file))));
-      // Should show Image.file (fallback) because no placeholderBuilder provided
+      // Should show Image.file (fallback) because no placeholderBuilder provided.
       expect(find.byType(Image), findsOneWidget);
     });
 
@@ -246,7 +246,8 @@ void main() {
       tester,
     ) async {
       final file = File('corrupted.jpg');
-      FfiImageFile.setInfoBuilder((_) => Future.error('Failed'));
+      final restore = FfiImageFile.setInfoBuilder((_) => Future.error('Failed'));
+      addTearDown(restore);
 
       await tester.pumpWidget(MaterialApp(home: Scaffold(body: FfiImageFile(file))));
       await tester.pumpAndSettle();
@@ -256,7 +257,8 @@ void main() {
 
     testWidgets('shows error widget when probe fails and errorBuilder is provided', (tester) async {
       final file = File('corrupted.jpg');
-      FfiImageFile.setInfoBuilder((_) => Future.error('Failed test error'));
+      final restore = FfiImageFile.setInfoBuilder((_) => Future.error('Failed test error'));
+      addTearDown(restore);
 
       await tester.pumpWidget(
         MaterialApp(
@@ -388,7 +390,7 @@ void main() {
         );
         // Allow the async file.readAsBytes() and image decoding to complete.
         for (int i = 0; i < 20; i += 1) {
-          // Wait for file.readAsBytes() async task in Isolate
+          // Wait for file.readAsBytes() async task in Isolate.
           await Future<void>.delayed(const Duration(milliseconds: 10));
           await tester.pump();
         }

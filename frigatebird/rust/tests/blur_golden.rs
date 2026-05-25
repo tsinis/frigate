@@ -204,21 +204,19 @@ fn golden_blur_text_no_blur() {
 
 // ── blur_region standalone goldens ───────────────────────────────────────────
 
-/// Full-image blur via `blur_region` with a zero-area sentinel rect.
+/// Full-image blur via `blur`.
 #[test]
 #[cfg(not(miri))]
-fn golden_blur_region_full_image() {
+fn golden_blur_full_image() {
     let base = base_image();
-    let tmp = write_temp_png(&base, "frigate_blur_region_full.png");
+    let tmp = write_temp_png(&base, "frigate_blur_full.png");
     let tmp_str = tmp.to_str().unwrap();
     let path_ref = safer_ffi::char_p::new(tmp_str);
 
-    let region = RectanglePayload::new(0.0, 0.0, 0.0, 0.0, 0).with_blur(24);
-
-    let status = frigate::blur_region(
+    let status = frigate::blur(
         Some(path_ref.as_ref()),
         None, // overwrite in-place
-        region,
+        24,
         None,
     );
     assert_eq!(status, frigate::FfiErrorCode::Success as u8);

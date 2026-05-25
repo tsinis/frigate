@@ -1042,25 +1042,9 @@ pub fn blur_region(
                 return Ok(());
             }
 
-            // If width and height are exactly zero, treat as full-image blur sentinel.
-            if region.width == 0.0 && region.height == 0.0 {
-                let img = io::read_image(Path::new(img_p))
-                    .map_err(|_| (FfiErrorCode::Decode, "Failed to decode image".to_string()))?
-                    .into_rgba8();
-
-                let sigma = region.blur as f32 / 3.0;
-                let blurred = image::imageops::blur(&img, sigma);
-
-                io::write_image(Path::new(out_p), &blurred, 100).map_err(|e| {
-                    let code = match e {
-                        io::IoError::UnsupportedFormat | io::IoError::Encode => {
-                            FfiErrorCode::Encode
-                        }
-                        _ => FfiErrorCode::Io,
-                    };
-                    (code, "Failed to write image".to_string())
-                })?;
-
+            // If width or height is zero, it's a zero-area region, which is a guaranteed no-op.
+            // Short-circuit immediately without reading/writing the image file.
+            if region.width == 0.0 || region.height == 0.0 {
                 return Ok(());
             }
 
