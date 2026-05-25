@@ -128,6 +128,21 @@ void main() => group(DrawPainter, () {
       );
     });
 
+    test('MaskRegionElement draws a rectangle with correct paint properties', () {
+      final canvas = _DrawPainterTest();
+      const mask = MaskRegionElement(
+        fillColor: FfiColor(0xFF00FF00),
+        height: 50,
+        width: 100,
+        x: 10,
+        y: 20,
+      );
+      const DrawPainter([mask]).paint(canvas, const Size(200, 200));
+
+      expect(canvas.drawRectCount, 1, reason: 'MaskRegionElement paints as Rect');
+      expect(canvas.lastPaintColorAlpha, 255); // Opaque green.
+    });
+
     test('drawRRect radius is clamped to half the shortest side (preview matches export)', () {
       final canvas = _DrawPainterTest();
       // Rect is 100x40, so the largest visually-meaningful radius is 20. We pass 9999 to

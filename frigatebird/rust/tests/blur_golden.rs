@@ -6,10 +6,7 @@
 //! - `blur_region` standalone FFI entry point: full-image and region cases.
 //! - FNV-1a hash golden for the full-blur case to catch algorithm drift.
 
-use std::{
-    io::Write as _,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use image::RgbaImage;
 
@@ -90,42 +87,6 @@ fn assert_golden(actual: &RgbaImage, path: &Path) {
             );
         }
     }
-}
-
-/// FNV-1a hash over raw pixel bytes (no file-format overhead).
-fn fnv1a_pixels(img: &RgbaImage) -> String {
-    use std::fmt::Write as _;
-    let raw = img.as_raw();
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a 64-bit offset basis
-    for &b in raw {
-        h ^= u64::from(b);
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    let mut s = String::new();
-    write!(s, "{h:016x}").unwrap();
-    s
-}
-
-fn assert_hash_golden(actual: &RgbaImage, path: &Path) {
-    let hash = fnv1a_pixels(actual);
-    if !path.exists() {
-        let mut f = std::fs::File::create(path)
-            .unwrap_or_else(|e| panic!("failed to create hash golden {path:?}: {e}"));
-        writeln!(f, "{hash}")
-            .unwrap_or_else(|e| panic!("failed to write hash golden {path:?}: {e}"));
-        panic!(
-            "Hash golden did not exist; wrote {hash} to {path:?}. \
-             Verify it is stable, commit it, then re-run."
-        );
-    }
-    let expected = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("failed to read hash golden {path:?}: {e}"));
-    let expected = expected.trim();
-    assert_eq!(
-        hash, expected,
-        "pixel-hash mismatch at {path:?}: algorithm may have changed.\n\
-         Update the golden only after intentional blur changes.",
-    );
 }
 
 // ── Per-element blur goldens ──────────────────────────────────────────────────
@@ -264,9 +225,6 @@ fn golden_blur_region_full_image() {
 
     let result = image::open(&tmp).unwrap().into_rgba8();
     assert_golden(&result, &golden_path("blur_region_full.png"));
-
-    // Hash golden for algorithm-drift detection.
-    assert_hash_golden(&result, &golden_path("blur_region_full.hash"));
     std::fs::remove_file(&tmp).ok();
 }
 

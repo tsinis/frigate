@@ -46,6 +46,8 @@ void main() => group('DrawElementExtension', () {
     y: 20,
   );
 
+  const mask = MaskRegionElement(height: 100, width: 200, x: 50, y: 30);
+
   group('rect / uiFillColor / uiOutlineColor getters', () {
     test('rect returns exact boundaries', () {
       expect(rect.rect, const Rect.fromLTWH(50, 30, 200, 100));
@@ -73,6 +75,7 @@ void main() => group('DrawElementExtension', () {
       expect(oval.tool, DrawTool.oval);
       expect(poly.tool, DrawTool.polygon);
       expect(text.tool, DrawTool.text);
+      expect(mask.tool, DrawTool.rectangle);
     });
   });
 
@@ -93,6 +96,7 @@ void main() => group('DrawElementExtension', () {
     test('returns matched handle within radius', () {
       expect(rect.hitTestHandle(const Offset(52, 32)), HandlePosition.topLeft);
       expect(rect.hitTestHandle(const Offset(150, 28)), HandlePosition.topCenter);
+      expect(mask.hitTestHandle(const Offset(52, 32)), HandlePosition.topLeft);
     });
 
     test('returns null when point is outside handle radius', () {
@@ -121,6 +125,10 @@ void main() => group('DrawElementExtension', () {
 
     test('RectElement returns true inside outer bounds', () {
       expect(rect.isPointOnShape(const Offset(150, 80)), isTrue);
+    });
+
+    test('MaskRegionElement returns true inside outer bounds', () {
+      expect(mask.isPointOnShape(const Offset(150, 80)), isTrue);
     });
 
     test('OvalElement matches elliptical bounds correctly', () {

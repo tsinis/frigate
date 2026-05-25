@@ -220,10 +220,46 @@ void main() {
       expect(copiedDiffColor.hashCode, isNot(equals(baseHashCode)));
       expect(copiedDiffColor.fillColor, equals(transparentColor));
 
+      // Test copyWith with all fields.
+      final fullCopy = baseElement.copyWith(
+        blur: 15,
+        height: 100,
+        rotation: 45,
+        width: 150,
+        x: 30,
+        y: 40,
+      );
+      expect(fullCopy.blur, 15);
+      expect(fullCopy.height, 100);
+      expect(fullCopy.rotation, 45);
+      expect(fullCopy.width, 150);
+      expect(fullCopy.x, 30);
+      expect(fullCopy.y, 40);
+
       // Assert that attempting to change outline properties throws assertions.
       final throwsAssertion = throwsA(isA<AssertionError>());
       expect(() => baseElement.copyWith(outlineColor: blackColor), throwsAssertion);
       expect(() => baseElement.copyWith(outlineThickness: 2), throwsAssertion);
+    });
+
+    test('toString includes all properties', () {
+      const maskRegionElement = MaskRegionElement(
+        fillColor: .black,
+        height: 100,
+        rotation: 45,
+        width: 200,
+        x: 50,
+        y: 30,
+      );
+      final str = maskRegionElement.toString();
+      expect(str, contains('MaskRegionElement('));
+      expect(str, contains('x: 50.0'));
+      expect(str, contains('y: 30.0'));
+      expect(str, contains('width: 200.0'));
+      expect(str, contains('height: 100.0'));
+      expect(str, contains('blur: 10'));
+      expect(str, contains('rotation: 45'));
+      expect(str, contains('fillColor: FfiColor(0xFF000000)'));
     });
   });
 }

@@ -254,6 +254,26 @@ void main() {
       expect(find.byType(Image), findsOneWidget);
     });
 
+    testWidgets('shows error widget when probe fails and errorBuilder is provided', (tester) async {
+      final file = File('corrupted.jpg');
+      FfiImageFile.setInfoBuilder((_) => Future.error('Failed test error'));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FfiImageFile(
+              file,
+              errorBuilder: (context, error, stackTrace) => Text('Error: $error'),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Error: Failed test error'), findsOneWidget);
+      expect(find.byType(Image), findsNothing);
+    });
+
     test('debugFillProperties covers builder property', () {
       final file = File('test.jpg');
       final image = FfiImageFile(file, builder: (img, info, uiImage) => const SizedBox());
