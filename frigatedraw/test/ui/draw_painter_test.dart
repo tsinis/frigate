@@ -270,11 +270,7 @@ void main() => group(DrawPainter, () {
       final canvas = _DrawPainterTest();
       const mask = MaskRegionElement(height: 50, width: 100, x: 10, y: 20);
       const DrawPainter([mask]).paint(canvas, const Size(200, 200));
-      expect(
-        canvas.drawRectCount,
-        1,
-        reason: 'mask region element should hit drawRect once',
-      );
+      expect(canvas.drawRectCount, 1, reason: 'mask region element should hit drawRect once');
     });
   });
 

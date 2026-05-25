@@ -37,7 +37,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
 
   late File _bgImageFile; // ignore: avoid-late-keyword, it's fine for example purposes.
   late File _originalBgImageFile; // ignore: avoid-late-keyword, it's fine for example purposes.
-  DrawingStyleMode _selectedStyleMode = const BlurStyle(blur: 50);
+  double _selectedBlur = 50;
   DrawTool _selectedTool = .select;
 
   @override
@@ -55,20 +55,10 @@ class _DrawingScreenState extends State<DrawingScreen> {
   void _syncSelectedTool() => _selectedTool = _controller.activeTool;
 
   void _updateCreationTemplate() {
-    final (fill, outline, thickness, blur) = switch (_selectedStyleMode) {
-      ColorStyle(:final color, :final outlineColor, :final outlineThickness) => (
-        color,
-        outlineColor,
-        outlineThickness,
-        0,
-      ),
-      BlurStyle(blur: final styleBlur) => (
-        FfiColor.transparent,
-        FfiColor.transparent,
-        0,
-        styleBlur,
-      ),
-    };
+    final blurVal = _selectedBlur.round();
+    final (fill, outline, thickness, blur) = blurVal == 0
+        ? (FfiColor.black, FfiColor.transparent, 0, 0)
+        : (FfiColor.transparent, FfiColor.transparent, 0, blurVal);
 
     _controller.creationTemplate = switch (_selectedTool) {
       .rectangle => RectElement(
@@ -264,24 +254,37 @@ class _DrawingScreenState extends State<DrawingScreen> {
 
   void _handleBlurSliderChanged(double val) {
     final isSelected = _controller.selectedElement != null;
-    final mode = _selectedStyleMode;
-    final isBlurMode = mode is BlurStyle;
     if (isSelected) {
       final index = _controller.selectedIndex;
       final element = _controller.selectedElement;
       if (index != null && element != null) {
-        _controller.updateElement(element.copyWith(blur: val.round()), index);
+        final blurVal = val.round();
+        if (blurVal == 0) {
+          _controller.updateElement(
+            element.copyWith(
+              blur: 0,
+              fillColor: .black,
+              outlineColor: .transparent,
+              outlineThickness: 0,
+            ),
+            index,
+          );
+        } else {
+          _controller.updateElement(
+            element.copyWith(
+              blur: blurVal,
+              fillColor: .transparent,
+              outlineColor: .transparent,
+              outlineThickness: 0,
+            ),
+            index,
+          );
+        }
       }
-    } else if (isBlurMode) {
-      _selectedStyleMode = BlurStyle(blur: val.round());
+    } else {
+      _selectedBlur = val;
       setState(_updateCreationTemplate);
     }
-  }
-
-  void _handleStyleModeChanged(DrawingStyleMode? mode) {
-    if (mode == null) return;
-    _selectedStyleMode = mode;
-    setState(_updateCreationTemplate);
   }
 
   void _handleToolSelectionChanged(DrawTool tool) {
@@ -348,44 +351,34 @@ class _DrawingScreenState extends State<DrawingScreen> {
       child: ListenableBuilder(
         builder: (context, _) {
           final isSelected = _controller.selectedElement != null;
-          final mode = _selectedStyleMode;
-          final isBlurMode = mode is BlurStyle;
-          final shouldShowSlider = isSelected || isBlurMode;
-
-          double sliderValue = 0;
-          if (isSelected) {
-            sliderValue = _controller.selectedElement?.blur.toDouble() ?? 0;
-          } else if (mode is BlurStyle) {
-            sliderValue = mode.blur.toDouble();
-          }
+          final sliderValue = isSelected
+              ? (_controller.selectedElement?.blur.toDouble() ?? 0)
+              : _selectedBlur;
 
           return Column(
             mainAxisAlignment: .center,
             mainAxisSize: .min,
             children: [
-              if (shouldShowSlider)
-                Padding(
-                  padding: const .symmetric(horizontal: 8),
-                  child: Row(
-                    children: [
-                      Text('Blur: ${sliderValue.round()}px'),
-                      Expanded(
-                        child: Slider(
-                          divisions: 255,
-                          max: 255,
-                          onChanged: _handleBlurSliderChanged,
-                          value: sliderValue,
-                        ),
+              Padding(
+                padding: const .symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    Text('Blur: ${sliderValue.round()}px'),
+                    Expanded(
+                      child: Slider(
+                        divisions: 255,
+                        max: 255,
+                        onChanged: _handleBlurSliderChanged,
+                        value: sliderValue,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
+              ),
               SingleChildScrollView(
                 scrollDirection: .horizontal,
                 child: ToolsRow(
-                  onStyleModeChanged: _handleStyleModeChanged,
                   onToolSelectionChanged: _handleToolSelectionChanged,
-                  selectedStyleMode: _selectedStyleMode,
                   selectedTool: _selectedTool,
                 ),
               ),
