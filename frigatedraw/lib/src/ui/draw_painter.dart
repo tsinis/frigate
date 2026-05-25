@@ -287,7 +287,8 @@ class DrawPainter extends CustomPainter {
     for (final metric in path.computeMetrics()) {
       double distance = 0;
       while (distance < metric.length) {
-        dashedPath.addPath(metric.extractPath(distance, distance + dashWidth), .zero);
+        final end = (distance + dashWidth).clamp(0.0, metric.length);
+        dashedPath.addPath(metric.extractPath(distance, end), .zero);
         distance += dashWidth + dashSpace;
       }
     }
@@ -303,18 +304,37 @@ class DrawPainter extends CustomPainter {
   }) {
     if (blurSigma <= 0) return;
 
-    final imageRect = Rect.fromLTWH(0, 0, bgImage.width.toDouble(), bgImage.height.toDouble());
     final fullRect = Offset.zero & canvasSize;
+    final bounds = clipPath.getBounds().intersect(fullRect);
+    if (bounds.isEmpty || bounds.width <= 0 || bounds.height <= 0) return;
 
-    // 1. Save state and clip to the shape path.
+    final double padding = blurSigma * 3.0;
+    final paddedBounds = Rect.fromLTRB(
+      (bounds.left - padding).clamp(0.0, canvasSize.width),
+      (bounds.top - padding).clamp(0.0, canvasSize.height),
+      (bounds.right + padding).clamp(0.0, canvasSize.width),
+      (bounds.bottom + padding).clamp(0.0, canvasSize.height),
+    );
+
+    final scaleX = bgImage.width / canvasSize.width;
+    final scaleY = bgImage.height / canvasSize.height; // ignore: avoid-similar-names, it's math.
+
+    final srcRect = Rect.fromLTRB(
+      paddedBounds.left * scaleX,
+      paddedBounds.top * scaleY,
+      paddedBounds.right * scaleX,
+      paddedBounds.bottom * scaleY,
+    );
+
     canvas
-      ..save()
-      ..clipPath(clipPath)
+      ..saveLayer(paddedBounds, Paint())
+      ..drawPath(clipPath, Paint()..color = const Color(0xFFFFFFFF))
       ..drawImageRect(
         bgImage,
-        imageRect,
-        fullRect,
+        srcRect,
+        paddedBounds,
         Paint()
+          ..blendMode = BlendMode.srcIn
           ..imageFilter = ui.ImageFilter.blur(
             sigmaX: blurSigma,
             sigmaY: blurSigma,
@@ -326,6 +346,7 @@ class DrawPainter extends CustomPainter {
 
   void _paintElement(Canvas canvas, Size canvasSize, DrawElement element) => switch (element) {
     RectElement() => _paintRect(backgroundImage, canvas, canvasSize, element),
+    MaskRegionElement() => _paintRect(backgroundImage, canvas, canvasSize, element),
     OvalElement() => _paintOval(backgroundImage, canvas, canvasSize, element),
     PolygonElement() => _paintPolygon(backgroundImage, canvas, canvasSize, element),
     TextElement() => null, // TODO(tsinis): render TextElement in the preview painter.
@@ -340,7 +361,7 @@ class DrawPainter extends CustomPainter {
     if (element.vertices.length < 3) return;
     final path = DrawElementExtension.getPathForPolygon(element);
 
-    final bool shouldShowBlurPreview = element.uiFillColor.a == 0 && element.blur > 0;
+    final bool shouldShowBlurPreview = element.blur > 0;
 
     if (shouldShowBlurPreview) {
       if (bgImage == null) {
@@ -411,20 +432,27 @@ class DrawPainter extends CustomPainter {
     }
   }
 
-  static void _paintRect(ui.Image? bgImage, Canvas canvas, Size canvasSize, RectElement element) {
-    final RectElement(
-      :cornerRadius,
-      :height,
-      :outlineThickness,
-      :rect,
-      :uiFillColor,
-      :uiOutlineColor,
-      :width,
-    ) = element;
+  static void _paintRect(
+    ui.Image? bgImage,
+    Canvas canvas,
+    Size canvasSize,
+    ImmutableDrawElement element,
+  ) {
+    final width = element.width;
+    final height = element.height;
     if (width <= 0 || height <= 0) return;
 
+    final rect = element.rect;
+    final uiFillColor = element.uiFillColor;
+    final uiOutlineColor = element.uiOutlineColor;
+    final outlineThickness = element.outlineThickness;
+
+    final cornerRadius = switch (element) {
+      RectElement(cornerRadius: final rectCornerRadius) => rectCornerRadius,
+      MaskRegionElement() || OvalElement() || TextElement() => 0,
+    };
     final isRounded = cornerRadius > 0;
-    final bool shouldShowBlurPreview = uiFillColor.a == 0 && element.blur > 0;
+    final bool shouldShowBlurPreview = element.blur > 0;
 
     if (shouldShowBlurPreview) {
       if (bgImage == null) {
@@ -531,7 +559,7 @@ class DrawPainter extends CustomPainter {
         element;
     if (width <= 0 || height <= 0) return;
 
-    final bool shouldShowBlurPreview = uiFillColor.a == 0 && element.blur > 0;
+    final bool shouldShowBlurPreview = element.blur > 0;
 
     if (shouldShowBlurPreview) {
       if (bgImage == null) {

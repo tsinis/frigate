@@ -14,4 +14,7 @@ sealed class DrawConstants {
 
   /// Default output-image quality for `RenderImage.run` when callers omit the argument.
   static const defaultImageQuality = 90;
+
+  /// Default blur radius for blur area elements and regions.
+  static const defaultBlurRadius = 10;
 }

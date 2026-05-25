@@ -139,3 +139,14 @@ external int blur_region(
   RectanglePayload region,
   Pointer<FfiArena> arena,
 );
+
+/// Standalone full-image blur: applies a Gaussian blur to the entire image.
+///
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
+@Native<Uint8 Function(Pointer<Utf8>, Pointer<Utf8>, Uint8, Pointer<FfiArena>)>()
+external int blur(
+  Pointer<Utf8> imagePath,
+  Pointer<Utf8> outputPath,
+  int radiusPx,
+  Pointer<FfiArena> arena,
+);

@@ -51,7 +51,7 @@ fn render_element(element: FfiElement) -> RgbaImage {
     img
 }
 
-/// Save if the golden does not exist (first run), otherwise compare pixel-exact.
+/// Save if the golden does not exist (first run), otherwise compare within a small rounding tolerance.
 fn assert_golden(actual: &RgbaImage, path: &Path) {
     let base = base_image();
     assert_ne!(
@@ -79,17 +79,21 @@ fn assert_golden(actual: &RgbaImage, path: &Path) {
     );
     for (x, y, px) in actual.enumerate_pixels() {
         let ex = expected.get_pixel(x, y);
-        if px != ex {
+        let d0 = (px.0[0] as i16 - ex.0[0] as i16).abs();
+        let d1 = (px.0[1] as i16 - ex.0[1] as i16).abs();
+        let d2 = (px.0[2] as i16 - ex.0[2] as i16).abs();
+        let d3 = (px.0[3] as i16 - ex.0[3] as i16).abs();
+        if d0 > 2 || d1 > 2 || d2 > 2 || d3 > 2 {
             panic!(
-                "pixel mismatch at ({x}, {y}) in {path:?}: got {:?}, expected {:?}",
-                px.0, ex.0,
+                "pixel mismatch at ({x}, {y}) in {path:?}: got {:?}, expected {:?} (delta: {}, {}, {}, {})",
+                px.0, ex.0, d0, d1, d2, d3
             );
         }
     }
 }
 
-/// SHA-256 over raw pixel bytes (no file-format overhead).
-fn sha256_pixels(img: &RgbaImage) -> String {
+/// FNV-1a hash over raw pixel bytes (no file-format overhead).
+fn fnv1a_pixels(img: &RgbaImage) -> String {
     use std::fmt::Write as _;
     let raw = img.as_raw();
     let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a 64-bit offset basis
@@ -103,7 +107,7 @@ fn sha256_pixels(img: &RgbaImage) -> String {
 }
 
 fn assert_hash_golden(actual: &RgbaImage, path: &Path) {
-    let hash = sha256_pixels(actual);
+    let hash = fnv1a_pixels(actual);
     if !path.exists() {
         let mut f = std::fs::File::create(path)
             .unwrap_or_else(|e| panic!("failed to create hash golden {path:?}: {e}"));

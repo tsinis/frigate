@@ -19,7 +19,11 @@
 //! Flutter's Impeller applies blur in **linear-light** space.
 //! For annotation-board usage (radius ≤ ~30, sigma ≤ 10) the visual delta is imperceptible.
 //! If linear-light parity becomes a requirement, introduce a separate `blur_linear` entry point
-//! that linearises → blurs → re-encodes. This is a known, accepted divergence for v1.
+//! that linearizes → blurs → re-encodes. This is a known, accepted divergence for v1.
+//!
+//! # Performance note
+//!
+//! // PERF: CPU-only single-threaded blur is a bottleneck for high-res images. wgpu/fastblur can optimize.
 
 use image::{GenericImageView as _, RgbaImage};
 use tiny_skia::Pixmap;
@@ -48,7 +52,7 @@ pub fn blend_pixel(bg: image::Rgba<u8>, blurred: image::Rgba<u8>, alpha: u8) -> 
 
 /// Blur a shape-masked region of `img` in-place, reading pixels from `src`.
 ///
-/// `rect` defines the bounding box coordinates of the shape (clamped to image bounds).
+/// `rect` defines the bounding box coordinates of the shape.
 /// `blur_radius_px` is the blur radius (if 0, is a guaranteed immediate no-op).
 ///
 /// `draw_mask_fn` is a closure that draws the shape's relative mask in solid white onto a
@@ -61,51 +65,78 @@ pub fn blur_shape_rgba_from_src<F>(
     rect: RectanglePayload,
     blur_radius_px: u8,
     draw_mask_fn: F,
-) where
+) -> Result<(), (FfiErrorCode, String)>
+where
     F: FnOnce(&mut Pixmap, f64, f64) -> Result<(), (FfiErrorCode, String)>,
 {
     if blur_radius_px == 0 {
-        return;
+        return Ok(());
+    }
+
+    if rect.width <= 0.0 || rect.height <= 0.0 {
+        // Zero-area/collapsed shape is a safe no-op.
+        return Ok(());
     }
 
     let sigma = blur_radius_px as f32 / 3.0;
     let (iw, ih) = src.dimensions();
 
-    if rect.width <= 0.0 || rect.height <= 0.0 {
-        // Zero-area sentinel → full-image blur from src to img.
-        let blurred = image::imageops::blur(src, sigma);
-        use image::GenericImage as _;
-        img.copy_from(&blurred, 0, 0).ok();
-        return;
-    }
+    // Support flipped/negative dimensions robustly
+    let x_raw = (rect.x as i64).clamp(0, iw as i64) as u32;
+    let y_raw = (rect.y as i64).clamp(0, ih as i64) as u32;
+    let x2_raw = ((rect.x + rect.width) as i64).clamp(0, iw as i64) as u32;
+    let y2_raw = ((rect.y + rect.height) as i64).clamp(0, ih as i64) as u32;
 
-    // Clamp to image bounds.
-    let x = (rect.x as i64).clamp(0, iw as i64) as u32;
-    let y = (rect.y as i64).clamp(0, ih as i64) as u32;
-    let x2 = ((rect.x + rect.width) as i64).clamp(0, iw as i64) as u32;
-    let y2 = ((rect.y + rect.height) as i64).clamp(0, ih as i64) as u32;
+    let (x, x2) = if rect.width < 0.0 {
+        (x2_raw, x_raw)
+    } else {
+        (x_raw, x2_raw)
+    };
+    let (y, y2) = if rect.height < 0.0 {
+        (y2_raw, y_raw)
+    } else {
+        (y_raw, y2_raw)
+    };
+
     let (rx, ry, rw, rh) = (x, y, x2.saturating_sub(x), y2.saturating_sub(y));
 
     if rw == 0 || rh == 0 {
         // After clamping the region is empty — no-op.
-        return;
+        return Ok(());
     }
 
-    // Crop bounding box sub-image from src -> blur.
-    let sub = src.view(rx, ry, rw, rh).to_image();
+    // Gaussian Padding to eliminate boundary edge artifacts.
+    // Pad the crop bounding box by `pad = blur_radius_px * 3`.
+    let pad = (blur_radius_px as u32).saturating_mul(3);
+    let px_start = rx.saturating_sub(pad);
+    let py_start = ry.saturating_sub(pad);
+    let px_end = (rx + rw + pad).min(iw);
+    let py_end = (ry + rh + pad).min(ih);
+
+    let pw = px_end.saturating_sub(px_start);
+    let ph = py_end.saturating_sub(py_start);
+
+    if pw == 0 || ph == 0 {
+        return Ok(());
+    }
+
+    // Crop padded sub-image from src -> apply blur.
+    let sub = src.view(px_start, py_start, pw, ph).to_image();
     let blurred_sub = image::imageops::blur(&sub, sigma);
 
+    debug_assert_eq!(sub.dimensions(), blurred_sub.dimensions());
+
     // Create a relative tiny_skia Pixmap of the same size to serve as the shape mask.
-    let mut mask = match Pixmap::new(rw, rh) {
-        Some(m) => m,
-        None => return,
-    };
+    let mut mask = Pixmap::new(rw, rh).ok_or_else(|| {
+        (
+            FfiErrorCode::Render,
+            "Failed to allocate tiny_skia Pixmap for mask".to_string(),
+        )
+    })?;
 
     // Draw the shape mask in solid white inside the relative pixmap coordinates.
-    // The drawer translates by subtracting the offset of the crop origin (rx, ry).
-    if draw_mask_fn(&mut mask, rx as f64, ry as f64).is_err() {
-        return;
-    }
+    // Propagate errors from draw_mask_fn closure cleanly using ? operator.
+    draw_mask_fn(&mut mask, rx as f64, ry as f64)?;
 
     // Blend pixels back based on the shape's mask alpha.
     for y in 0..rh {
@@ -113,18 +144,24 @@ pub fn blur_shape_rgba_from_src<F>(
             if let Some(mask_px) = mask.pixel(x, y) {
                 let alpha = mask_px.alpha();
                 if alpha > 0 {
-                    let bg = img.get_pixel(rx + x, ry + y);
-                    let bl = blurred_sub.get_pixel(x, y);
-                    img.put_pixel(rx + x, ry + y, blend_pixel(*bg, *bl, alpha));
+                    let bx = (rx + x).saturating_sub(px_start);
+                    let by = (ry + y).saturating_sub(py_start);
+                    if bx < pw && by < ph {
+                        let bg = img.get_pixel(rx + x, ry + y);
+                        let bl = blurred_sub.get_pixel(bx, by);
+                        img.put_pixel(rx + x, ry + y, blend_pixel(*bg, *bl, alpha));
+                    }
                 }
             }
         }
     }
+
+    Ok(())
 }
 
 /// Blur a shape-masked region of `img` in-place.
 ///
-/// `rect` defines the bounding box coordinates of the shape (clamped to image bounds).
+/// `rect` defines the bounding box coordinates of the shape.
 /// `blur_radius_px` is the blur radius (if 0, is a guaranteed immediate no-op).
 ///
 /// `draw_mask_fn` is a closure that draws the shape's relative mask in solid white onto a
@@ -136,11 +173,12 @@ pub fn blur_shape_rgba<F>(
     rect: RectanglePayload,
     blur_radius_px: u8,
     draw_mask_fn: F,
-) where
+) -> Result<(), (FfiErrorCode, String)>
+where
     F: FnOnce(&mut Pixmap, f64, f64) -> Result<(), (FfiErrorCode, String)>,
 {
     let src = img.clone();
-    blur_shape_rgba_from_src(img, &src, rect, blur_radius_px, draw_mask_fn);
+    blur_shape_rgba_from_src(img, &src, rect, blur_radius_px, draw_mask_fn)
 }
 
 #[cfg(test)]
@@ -170,7 +208,7 @@ mod tests {
     fn blur_radius_zero_is_noop() {
         let mut img = solid_image(8, 8, [255, 0, 0, 255]);
         let before = img.clone();
-        blur_shape_rgba(&mut img, full_rect_payload(8, 8), 0, |_, _, _| Ok(()));
+        let _ = blur_shape_rgba(&mut img, full_rect_payload(8, 8), 0, |_, _, _| Ok(()));
         assert_eq!(
             img.as_raw(),
             before.as_raw(),
@@ -190,7 +228,7 @@ mod tests {
             };
         }
         let before = img.clone();
-        blur_shape_rgba(&mut img, full_rect_payload(16, 16), 6, |mask, _, _| {
+        let _ = blur_shape_rgba(&mut img, full_rect_payload(16, 16), 6, |mask, _, _| {
             mask.fill(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
             Ok(())
         });
@@ -203,7 +241,7 @@ mod tests {
 
     #[test]
     #[cfg(not(miri))]
-    fn blur_region_zero_area_blurs_whole_image() {
+    fn blur_region_zero_area_is_noop() {
         let mut img = RgbaImage::new(16, 16);
         for (x, _, px) in img.enumerate_pixels_mut() {
             px.0 = if x < 8 {
@@ -214,14 +252,14 @@ mod tests {
         }
         let before = img.clone();
         let zero_rect = RectanglePayload::new(0.0, 0.0, 0.0, 0.0, 0);
-        blur_shape_rgba(&mut img, zero_rect, 6, |mask, _, _| {
+        let _ = blur_shape_rgba(&mut img, zero_rect, 6, |mask, _, _| {
             mask.fill(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
             Ok(())
         });
-        assert_ne!(
+        assert_eq!(
             img.as_raw(),
             before.as_raw(),
-            "zero-area rect must trigger full-image blur"
+            "zero-area rect must be a safe no-op"
         );
     }
 
@@ -230,7 +268,7 @@ mod tests {
         let mut img = solid_image(16, 16, [100, 100, 100, 255]);
         let before = img.clone();
         let outside = RectanglePayload::new(1000.0, 0.0, 50.0, 50.0, 0);
-        blur_shape_rgba(&mut img, outside, 10, |_, _, _| Ok(()));
+        let _ = blur_shape_rgba(&mut img, outside, 10, |_, _, _| Ok(()));
         assert_eq!(
             img.as_raw(),
             before.as_raw(),

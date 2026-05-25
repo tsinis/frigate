@@ -1,20 +1,20 @@
 part of 'draw_element.dart';
 
 @pragma('vm:deeply-immutable')
-final class MaskRegionElement extends RectElement {
+final class MaskRegionElement extends ImmutableDrawElement {
   const MaskRegionElement({
     required super.height,
     required super.width,
     required super.x,
     required super.y,
-    super.blur = 10,
     super.rotation,
-  }) : super(fillColor: .transparent, outlineColor: .transparent, outlineThickness: 0);
+    super.blur = DrawConstants.defaultBlurRadius,
+    super.fillColor = .transparent,
+  }) : super(outlineColor: .transparent, outlineThickness: 0);
 
   @override
   MaskRegionElement copyWith({
     int? blur,
-    int? cornerRadius,
     FfiColor? fillColor,
     double? height,
     FfiColor? outlineColor,
@@ -34,5 +34,6 @@ final class MaskRegionElement extends RectElement {
 
   @override
   String toString() =>
-      'MaskRegionElement(x: $x, y: $y, width: $width, height: $height, blur: $blur, rotation: $rotation)';
+      'MaskRegionElement(x: $x, y: $y, width: $width, height: $height, blur: $blur, '
+      'rotation: $rotation, fillColor: $fillColor)';
 }

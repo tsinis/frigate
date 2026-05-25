@@ -166,6 +166,56 @@ void main() {
       );
       outFile.deleteSync();
     });
+
+    test('blur applies full image blur when region size is 0x0', () async {
+      final outPath = _ensureTempFileAbsent('frigate_blur_full.jpg');
+      await RenderImage.blur(
+        imagePath: imagePath,
+        outputPath: outPath,
+        region: const RectElement(blur: 10, height: 0, width: 0, x: 0, y: 0),
+      );
+
+      final outFile = File(outPath);
+      expect(outFile.existsSync(), isTrue);
+      outFile.deleteSync();
+    });
+
+    test('blur applies region blur when region size is > 0', () async {
+      final outPath = _ensureTempFileAbsent('frigate_blur_region.jpg');
+      await RenderImage.blur(
+        imagePath: imagePath,
+        outputPath: outPath,
+        region: const RectElement(blur: 15, height: 50, width: 80, x: 10, y: 20),
+      );
+
+      final outFile = File(outPath);
+      expect(outFile.existsSync(), isTrue);
+      outFile.deleteSync();
+    });
+
+    test('blur throws RenderException for non-existent image', () async {
+      final future = RenderImage.blur(
+        imagePath: '/does/not/exist.jpg',
+        region: const RectElement(blur: 10, height: 0, width: 0, x: 0, y: 0),
+      );
+      await expectLater(
+        future,
+        throwsA(isA<RenderException>().having((e) => e.code, 'code', FfiErrorCode.decode)),
+      );
+    });
+
+    test('blur throws RenderException for empty imagePath', () {
+      const emptyPath = '';
+      expect(
+        () =>
+            // ignore: avoid-async-call-in-sync-function, it throws synchronously before returning Future.
+            RenderImage.blur(
+              imagePath: emptyPath,
+              region: const RectElement(blur: 10, height: 0, width: 0, x: 0, y: 0),
+            ),
+        throwsA(isA<RenderException>().having((e) => e.code, 'code', FfiErrorCode.invalidArg)),
+      );
+    });
   });
 }
 

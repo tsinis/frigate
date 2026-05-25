@@ -59,6 +59,7 @@ extension DrawElementExtension on DrawElement {
     RectElement() => .rectangle,
     OvalElement() => .oval,
     PolygonElement() => .polygon,
+    MaskRegionElement() => .rectangle,
   };
 
   Offset handleCenter(HandlePosition handle) {
@@ -96,6 +97,7 @@ extension DrawElementExtension on DrawElement {
       case RectElement():
       case OvalElement():
       case PolygonElement():
+      case MaskRegionElement():
         for (final handle in HandlePosition.values) {
           final center = handleCenter(handle);
           if ((point - center).distance <= handleRadius) return handle;
@@ -118,7 +120,7 @@ extension DrawElementExtension on DrawElement {
     return switch (self) {
       OvalElement() => _isPointInEllipse(outer, point),
       PolygonElement() => _isPointInPolygon(point, self),
-      RectElement() || TextElement() => true,
+      RectElement() || TextElement() || MaskRegionElement() => true,
     };
   }
 

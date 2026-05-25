@@ -1,4 +1,3 @@
-// ignore_for_file: avoid-long-functions
 import 'dart:math' show max;
 import 'dart:typed_data' show Float64x2, Float64x2List;
 
@@ -8,6 +7,12 @@ import 'handle_position.dart';
 /// Pure Dart extensions to move and resize [DrawElement] shapes.
 extension DrawElementResizeExtension on DrawElement {
   /// Moves the shape by [dx] and [dy] offsets in document space.
+  ///
+  /// NOTE: For [PolygonElement], moving the shape allocates a new [Float64x2List]
+  /// representing the absolute coordinates of the shifted vertices on every frame of drag.
+  /// While this is simple and keeps FFI copies extremely fast, it introduces minor garbage collection
+  /// pressure during continuous drag. A future optimization could store vertices as relative offsets
+  /// from [x, y], which would make [moved] an O(1) field updates only.
   DrawElement moved(double dx, double dy) {
     final self = this;
     if (self is PolygonElement) {
@@ -30,30 +35,8 @@ extension DrawElementResizeExtension on DrawElement {
     required HandlePosition handle,
     double minSize = 10.0,
   }) {
-    final newHeight = switch (handle) {
-      .topLeft || .topCenter || .topRight => max(height - dy, minSize),
-      .bottomLeft || .bottomCenter || .bottomRight => max(height + dy, minSize),
-      .centerLeft || .centerRight => height,
-    };
-
-    final newWidth = switch (handle) {
-      .topLeft || .centerLeft || .bottomLeft => max(width - dx, minSize),
-      .topRight || .centerRight || .bottomRight => max(width + dx, minSize),
-      .topCenter || .bottomCenter => width,
-    };
-
-    final appliedHeightDelta = newHeight - height;
-    final appliedWidthDelta = newWidth - width;
-
-    final newX = switch (handle) {
-      .topLeft || .centerLeft || .bottomLeft => x - appliedWidthDelta,
-      .topCenter || .topRight || .centerRight || .bottomCenter || .bottomRight => x,
-    };
-
-    final newY = switch (handle) {
-      .topLeft || .topCenter || .topRight => y - appliedHeightDelta,
-      .centerLeft || .centerRight || .bottomLeft || .bottomCenter || .bottomRight => y,
-    };
+    final (newWidth, newHeight) = _calculateResizedDimensions(dx, dy, handle, minSize);
+    final (newX, newY) = _calculateResizedPosition(handle, newHeight, newWidth);
 
     final self = this;
     if (self is PolygonElement) {
@@ -79,5 +62,47 @@ extension DrawElementResizeExtension on DrawElement {
     }
 
     return copyWith(height: newHeight, width: newWidth, x: newX, y: newY);
+  }
+
+  (double, double) _calculateResizedDimensions(
+    double dx,
+    double dy,
+    HandlePosition handle,
+    double minSize,
+  ) {
+    final newHeight = switch (handle) {
+      .topLeft || .topCenter || .topRight => max(height - dy, minSize),
+      .bottomLeft || .bottomCenter || .bottomRight => max(height + dy, minSize),
+      .centerLeft || .centerRight => height,
+    };
+
+    final newWidth = switch (handle) {
+      .topLeft || .centerLeft || .bottomLeft => max(width - dx, minSize),
+      .topRight || .centerRight || .bottomRight => max(width + dx, minSize),
+      .topCenter || .bottomCenter => width,
+    };
+
+    return (newWidth, newHeight);
+  }
+
+  (double, double) _calculateResizedPosition(
+    HandlePosition handle,
+    double newHeight,
+    double newWidth,
+  ) {
+    final appliedHeightDelta = newHeight - height;
+    final appliedWidthDelta = newWidth - width;
+
+    final newX = switch (handle) {
+      .topLeft || .centerLeft || .bottomLeft => x - appliedWidthDelta,
+      .topCenter || .topRight || .centerRight || .bottomCenter || .bottomRight => x,
+    };
+
+    final newY = switch (handle) {
+      .topLeft || .topCenter || .topRight => y - appliedHeightDelta,
+      .centerLeft || .centerRight || .bottomLeft || .bottomCenter || .bottomRight => y,
+    };
+
+    return (newX, newY);
   }
 }

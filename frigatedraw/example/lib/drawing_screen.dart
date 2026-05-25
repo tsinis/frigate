@@ -1,4 +1,3 @@
-// ignore_for_file: prefer-shorthands-with-enums, avoid-long-functions, prefer-class-destructuring, prefer-switch-with-sealed-classes, prefer-shorthands-with-static-fields, prefer-switch-expression, prefer-extracting-callbacks, prefer-shorthands-with-constructors, prefer-boolean-prefixes, avoid-type-casts, arguments-ordering, prefer-static-class, parameters-ordering, prefer-single-declaration-per-file, prefer-match-file-name, diagnostic_describe_all_properties
 import 'dart:async';
 import 'dart:io' show Directory, File, Platform;
 import 'dart:typed_data' show Float64x2, Float64x2List, Uint8List;
@@ -11,9 +10,8 @@ import 'package:image_picker/image_picker.dart';
 import 'utils.dart';
 import 'widgets/blur_background_dialog.dart';
 import 'widgets/export_confirmation_dialog.dart';
-import 'widgets/style_dropdown.dart';
 import 'widgets/text_annotation_dialog.dart';
-import 'widgets/tool_segmented_button.dart';
+import 'widgets/tools_row.dart';
 
 class DrawingScreen extends StatefulWidget {
   const DrawingScreen({
@@ -40,7 +38,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
   late File _bgImageFile; // ignore: avoid-late-keyword, it's fine for example purposes.
   late File _originalBgImageFile; // ignore: avoid-late-keyword, it's fine for example purposes.
   DrawingStyleMode _selectedStyleMode = const BlurStyle(blur: 50);
-  DrawTool _selectedTool = DrawTool.select;
+  DrawTool _selectedTool = .select;
 
   @override
   void initState() {
@@ -57,68 +55,60 @@ class _DrawingScreenState extends State<DrawingScreen> {
   void _syncSelectedTool() => _selectedTool = _controller.activeTool;
 
   void _updateCreationTemplate() {
-    final mode = _selectedStyleMode;
-    final FfiColor fill;
-    final outline = mode.outlineColor;
-    final thickness = mode.outlineThickness;
-    final int blur;
+    final (fill, outline, thickness, blur) = switch (_selectedStyleMode) {
+      ColorStyle(:final color, :final outlineColor, :final outlineThickness) => (
+        color,
+        outlineColor,
+        outlineThickness,
+        0,
+      ),
+      BlurStyle(blur: final styleBlur) => (
+        FfiColor.transparent,
+        FfiColor.transparent,
+        0,
+        styleBlur,
+      ),
+    };
 
-    if (mode is ColorStyle) {
-      fill = mode.color;
-      blur = 0;
-    } else if (mode is BlurStyle) {
-      fill = FfiColor.transparent;
-      blur = mode.blur;
-    } else {
-      return;
-    }
-
-    switch (_selectedTool) {
-      case DrawTool.rectangle:
-        _controller.creationTemplate = RectElement(
-          blur: blur,
-          fillColor: fill,
-          height: 0,
-          outlineColor: outline,
-          outlineThickness: thickness,
-          width: 0,
-          x: 0,
-          y: 0,
-        );
-
-      case DrawTool.oval:
-        _controller.creationTemplate = OvalElement(
-          blur: blur,
-          fillColor: fill,
-          height: 0,
-          outlineColor: outline,
-          outlineThickness: thickness,
-          width: 0,
-          x: 0,
-          y: 0,
-        );
-
-      case DrawTool.polygon:
-        _controller.creationTemplate = PolygonElement(
-          blur: blur,
-          fillColor: fill,
-          height: 0,
-          outlineColor: outline,
-          outlineThickness: thickness,
-          vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(0, 0), Float64x2(0, 0)]),
-          width: 0,
-          x: 0,
-          y: 0,
-        );
-
-      case DrawTool.select || DrawTool.text:
-        _controller.creationTemplate = null;
-    }
+    _controller.creationTemplate = switch (_selectedTool) {
+      .rectangle => RectElement(
+        blur: blur,
+        fillColor: fill,
+        height: 0,
+        outlineColor: outline,
+        outlineThickness: thickness,
+        width: 0,
+        x: 0,
+        y: 0,
+      ),
+      .oval => OvalElement(
+        blur: blur,
+        fillColor: fill,
+        height: 0,
+        outlineColor: outline,
+        outlineThickness: thickness,
+        width: 0,
+        x: 0,
+        y: 0,
+      ),
+      .polygon => PolygonElement(
+        blur: blur,
+        fillColor: fill,
+        height: 0,
+        outlineColor: outline,
+        outlineThickness: thickness,
+        vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(0, 0), Float64x2(0, 0)]),
+        width: 0,
+        x: 0,
+        y: 0,
+      ),
+      .select || .text => null,
+    };
   }
 
   Future<void> _handleReplaceImage() async {
     final picker = ImagePicker();
-    final pickedImage = await picker.pickImage(source: ImageSource.gallery);
+    final pickedImage = await picker.pickImage(source: .gallery);
     if (pickedImage != null && mounted) {
       _bgImageFile = File(pickedImage.path);
       setState(() => _originalBgImageFile = File(pickedImage.path));
@@ -127,6 +117,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
   }
 
   Future<void> _handleBlurBackground() async {
+    if (_isExporting.value) return;
     final resultBlur = await showDialog<double>(
       builder: (context) => const BlurBackgroundDialog(),
       context: context,
@@ -154,7 +145,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
       } on Object catch (error) {
         _showSnackBar('Failed to blur: $error');
       } finally {
-        _isExporting.value = false;
+        if (mounted) _isExporting.value = false;
       }
     }
   }
@@ -210,11 +201,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
   }
 
   Future<void> _handleSave() async {
-    if (_controller.elements.isEmpty) {
-      _showSnackBar('No elements to export');
-
-      return;
-    }
+    if (_controller.elements.isEmpty) return _showSnackBar('No elements to export');
     _isExporting.value = true;
 
     try {
@@ -267,6 +254,45 @@ class _DrawingScreenState extends State<DrawingScreen> {
       ..showSnackBar(SnackBar(content: SelectableText(message)));
   }
 
+  void _handlePopupMenuSelected(String value) {
+    if (value == 'replace') {
+      unawaited(_handleReplaceImage());
+    } else if (value == 'blur_bg') {
+      unawaited(_handleBlurBackground());
+    }
+  }
+
+  void _handleBlurSliderChanged(double val) {
+    final isSelected = _controller.selectedElement != null;
+    final mode = _selectedStyleMode;
+    final isBlurMode = mode is BlurStyle;
+    if (isSelected) {
+      final index = _controller.selectedIndex;
+      final element = _controller.selectedElement;
+      if (index != null && element != null) {
+        _controller.updateElement(element.copyWith(blur: val.round()), index);
+      }
+    } else if (isBlurMode) {
+      _selectedStyleMode = BlurStyle(blur: val.round());
+      setState(_updateCreationTemplate);
+    }
+  }
+
+  void _handleStyleModeChanged(DrawingStyleMode? mode) {
+    if (mode == null) return;
+    _selectedStyleMode = mode;
+    setState(_updateCreationTemplate);
+  }
+
+  void _handleToolSelectionChanged(DrawTool tool) {
+    if (tool == .text) {
+      unawaited(_handleRenderText());
+    } else {
+      _selectedTool = tool;
+      setState(_updateCreationTemplate);
+    }
+  }
+
   @override
   void dispose() {
     _controller
@@ -295,18 +321,12 @@ class _DrawingScreenState extends State<DrawingScreen> {
               child: ListTile(leading: Icon(Icons.blur_on), title: Text('Blur background')),
             ),
           ],
-          onSelected: (value) {
-            if (value == 'replace') {
-              unawaited(_handleReplaceImage());
-            } else if (value == 'blur_bg') {
-              unawaited(_handleBlurBackground());
-            }
-          },
+          onSelected: _handlePopupMenuSelected,
         ),
         ValueListenableBuilder<bool>(
           builder: (context, isExporting, _) => isExporting
               ? const Padding(
-                  padding: EdgeInsets.all(12),
+                  padding: .all(12),
                   child: SizedBox.square(
                     dimension: 24,
                     child: CircularProgressIndicator(strokeWidth: 2),
@@ -328,23 +348,24 @@ class _DrawingScreenState extends State<DrawingScreen> {
       child: ListenableBuilder(
         builder: (context, _) {
           final isSelected = _controller.selectedElement != null;
-          final isBlurMode = _selectedStyleMode is BlurStyle;
-          final toShowSlider = isSelected || isBlurMode;
+          final mode = _selectedStyleMode;
+          final isBlurMode = mode is BlurStyle;
+          final shouldShowSlider = isSelected || isBlurMode;
 
           double sliderValue = 0;
           if (isSelected) {
             sliderValue = _controller.selectedElement?.blur.toDouble() ?? 0;
-          } else if (isBlurMode) {
-            sliderValue = (_selectedStyleMode as BlurStyle).blur.toDouble();
+          } else if (mode is BlurStyle) {
+            sliderValue = mode.blur.toDouble();
           }
 
           return Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: .center,
+            mainAxisSize: .min,
             children: [
-              if (toShowSlider)
+              if (shouldShowSlider)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  padding: const .symmetric(horizontal: 8),
                   child: Row(
                     children: [
                       Text('Blur: ${sliderValue.round()}px'),
@@ -352,21 +373,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
                         child: Slider(
                           divisions: 255,
                           max: 255,
-                          onChanged: (val) {
-                            if (isSelected) {
-                              final index = _controller.selectedIndex;
-                              final element = _controller.selectedElement;
-                              if (index != null && element != null) {
-                                _controller.updateElement(
-                                  element.copyWith(blur: val.round()),
-                                  index,
-                                );
-                              }
-                            } else if (isBlurMode) {
-                              _selectedStyleMode = BlurStyle(blur: val.round());
-                              setState(_updateCreationTemplate);
-                            }
-                          },
+                          onChanged: _handleBlurSliderChanged,
                           value: sliderValue,
                         ),
                       ),
@@ -374,30 +381,12 @@ class _DrawingScreenState extends State<DrawingScreen> {
                   ),
                 ),
               SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    StyleDropdown(
-                      selectedStyleMode: _selectedStyleMode,
-                      onChanged: (mode) {
-                        if (mode == null) return;
-                        _selectedStyleMode = mode;
-                        setState(_updateCreationTemplate);
-                      },
-                    ),
-                    ToolSegmentedButton(
-                      selectedTool: _selectedTool,
-                      onSelectionChanged: (tool) {
-                        if (tool == DrawTool.text) {
-                          unawaited(_handleRenderText());
-                        } else {
-                          _selectedTool = tool;
-                          setState(_updateCreationTemplate);
-                        }
-                      },
-                    ),
-                  ],
+                scrollDirection: .horizontal,
+                child: ToolsRow(
+                  onStyleModeChanged: _handleStyleModeChanged,
+                  onToolSelectionChanged: _handleToolSelectionChanged,
+                  selectedStyleMode: _selectedStyleMode,
+                  selectedTool: _selectedTool,
                 ),
               ),
             ],

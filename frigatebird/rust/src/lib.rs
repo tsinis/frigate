@@ -441,6 +441,55 @@ pub unsafe extern "C" fn draw_elements(
     }
 }
 
+fn get_rotated_aabb(
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    rotation_deg: i32,
+) -> RectanglePayload {
+    if rotation_deg == 0 {
+        return RectanglePayload::new(x, y, width, height, 0);
+    }
+    let rad = (rotation_deg as f64).to_radians();
+    let cos_theta = rad.cos();
+    let sin_theta = rad.sin();
+
+    let cx = x + width / 2.0;
+    let cy = y + height / 2.0;
+
+    let dx1 = -width / 2.0;
+    let dx2 = width / 2.0;
+    let dy1 = -height / 2.0;
+    let dy2 = height / 2.0;
+
+    let pts = [
+        (
+            dx1 * cos_theta - dy1 * sin_theta,
+            dx1 * sin_theta + dy1 * cos_theta,
+        ),
+        (
+            dx2 * cos_theta - dy1 * sin_theta,
+            dx2 * sin_theta + dy1 * cos_theta,
+        ),
+        (
+            dx1 * cos_theta - dy2 * sin_theta,
+            dx1 * sin_theta + dy2 * cos_theta,
+        ),
+        (
+            dx2 * cos_theta - dy2 * sin_theta,
+            dx2 * sin_theta + dy2 * cos_theta,
+        ),
+    ];
+
+    let min_x = cx + pts.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
+    let max_x = cx + pts.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
+    let min_y = cy + pts.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+    let max_y = cy + pts.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+
+    RectanglePayload::new(min_x, min_y, max_x - min_x, max_y - min_y, 0)
+}
+
 #[allow(unsafe_code)]
 fn draw_elements_safe(
     image_path: &str,
@@ -470,13 +519,24 @@ fn draw_elements_safe(
         .map_err(|_| (FfiErrorCode::Decode, "Failed to decode image".to_string()))?
         .into_rgba8();
 
-    let clean_img = img.clone();
+    // Optimize cloning: clone full RGBA buffer only if a shape requires a blur operation.
+    let needs_clean_img = elements.iter().any(|e| match e {
+        FfiElement::Rectangle(p) => p.blur > 0,
+        FfiElement::Oval(p) => p.blur > 0,
+        FfiElement::Polygon(p) => p.blur > 0,
+        FfiElement::Text(_) => false,
+    });
+    let clean_img = if needs_clean_img {
+        Some(img.clone())
+    } else {
+        None
+    };
     let mut surface = Surface::Rgba(img);
 
     for element in elements {
         draw_element_on_surface(
             &mut surface,
-            &clean_img,
+            clean_img.as_ref(),
             element,
             font.as_ref(),
             text_buffer,
@@ -495,7 +555,7 @@ fn draw_elements_safe(
 
 fn draw_element_on_surface(
     surface: &mut Surface,
-    clean_img: &image::RgbaImage,
+    clean_img: Option<&image::RgbaImage>,
     element: &FfiElement,
     font: Option<&ab_glyph::FontRef<'_>>,
     text_buffer: &[u8],
@@ -503,11 +563,18 @@ fn draw_element_on_surface(
     match element {
         FfiElement::Rectangle(p) => {
             if p.blur > 0 {
+                let clean = clean_img.ok_or_else(|| {
+                    (
+                        FfiErrorCode::Panic,
+                        "Missing clean source image for blur".to_string(),
+                    )
+                })?;
+                let aabb = get_rotated_aabb(p.x, p.y, p.width, p.height, p.rotation_deg);
                 let rect = *p;
                 ops::blur::blur_shape_rgba_from_src(
                     surface.as_rgba(),
-                    clean_img,
-                    rect,
+                    clean,
+                    aabb,
                     p.blur,
                     |mask, dx, dy| {
                         let style = ShapeStyle {
@@ -517,7 +584,7 @@ fn draw_element_on_surface(
                         };
                         draw_rect_on_pixmap(mask, &rect, &style, dx, dy)
                     },
-                );
+                )?;
             }
             let style: ShapeStyle = p.into();
             if style.paints_anything() {
@@ -526,12 +593,18 @@ fn draw_element_on_surface(
         }
         FfiElement::Oval(p) => {
             if p.blur > 0 {
-                let bbox = RectanglePayload::new(p.x, p.y, p.width, p.height, 0);
+                let clean = clean_img.ok_or_else(|| {
+                    (
+                        FfiErrorCode::Panic,
+                        "Missing clean source image for blur".to_string(),
+                    )
+                })?;
+                let aabb = get_rotated_aabb(p.x, p.y, p.width, p.height, p.rotation_deg);
                 let oval = *p;
                 ops::blur::blur_shape_rgba_from_src(
                     surface.as_rgba(),
-                    clean_img,
-                    bbox,
+                    clean,
+                    aabb,
                     p.blur,
                     |mask, dx, dy| {
                         let style = ShapeStyle {
@@ -541,7 +614,7 @@ fn draw_element_on_surface(
                         };
                         draw_oval_on_pixmap(mask, &oval, &style, dx, dy)
                     },
-                );
+                )?;
             }
             let style: ShapeStyle = p.into();
             if style.paints_anything() {
@@ -566,12 +639,18 @@ fn draw_element_on_surface(
         }
         FfiElement::Polygon(p) => {
             if p.blur > 0 {
-                let bbox = RectanglePayload::new(p.x, p.y, p.width, p.height, 0);
+                let clean = clean_img.ok_or_else(|| {
+                    (
+                        FfiErrorCode::Panic,
+                        "Missing clean source image for blur".to_string(),
+                    )
+                })?;
+                let aabb = get_rotated_aabb(p.x, p.y, p.width, p.height, p.rotation_deg);
                 let poly = *p;
                 ops::blur::blur_shape_rgba_from_src(
                     surface.as_rgba(),
-                    clean_img,
-                    bbox,
+                    clean,
+                    aabb,
                     p.blur,
                     |mask, dx, dy| {
                         let style = ShapeStyle {
@@ -581,7 +660,7 @@ fn draw_element_on_surface(
                         };
                         draw_polygon_on_pixmap(mask, &poly, &style, dx, dy)
                     },
-                );
+                )?;
             }
             let style: ShapeStyle = p.into();
             if style.paints_anything() {
@@ -600,7 +679,7 @@ pub fn draw_element(
 ) {
     let clean_img = img.clone();
     let mut surface = Surface::Rgba(std::mem::take(img));
-    let _ = draw_element_on_surface(&mut surface, &clean_img, element, font, text_buffer);
+    let _ = draw_element_on_surface(&mut surface, Some(&clean_img), element, font, text_buffer);
     *img = surface.into_rgba();
 }
 
@@ -963,6 +1042,11 @@ pub fn blur_region(
                 return Ok(());
             }
 
+            // If width or height is zero or negative, it is a safe no-op.
+            if region.width <= 0.0 || region.height <= 0.0 {
+                return Ok(());
+            }
+
             let mut img = io::read_image(Path::new(img_p))
                 .map_err(|_| (FfiErrorCode::Decode, "Failed to decode image".to_string()))?
                 .into_rgba8();
@@ -975,10 +1059,68 @@ pub fn blur_region(
                     thickness: 0.0,
                 };
                 draw_rect_on_pixmap(mask, &region, &style, dx, dy)
-            });
+            })?;
 
             // Re-save image
             io::write_image(Path::new(out_p), &img, 100).map_err(|e| {
+                let code = match e {
+                    io::IoError::UnsupportedFormat | io::IoError::Encode => FfiErrorCode::Encode,
+                    _ => FfiErrorCode::Io,
+                };
+                (code, "Failed to write image".to_string())
+            })?;
+
+            Ok(())
+        })();
+        inner
+    }));
+
+    match result {
+        Ok(Ok(())) => FfiErrorCode::Success as u8,
+        Ok(Err((code, msg))) => write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code,
+        Err(payload) => handle_panic(arena_opt, payload),
+    }
+}
+
+/// Applies Gaussian blur to the entire image.
+///
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
+#[ffi_export]
+pub fn blur(
+    image_path: Option<char_p::Ref<'_>>,
+    output_path: Option<char_p::Ref<'_>>,
+    radius_px: u8,
+    arena: Option<&mut FfiArena>,
+) -> u8 {
+    let mut arena_opt = arena;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let inner: Result<(), (FfiErrorCode, String)> = (|| {
+            let img_p = if let Some(p) = image_path {
+                p.to_str()
+            } else {
+                return Err((FfiErrorCode::InvalidArg, "Missing image path".to_string()));
+            };
+
+            let out_p = if let Some(p) = output_path {
+                p.to_str()
+            } else {
+                img_p
+            };
+
+            if radius_px == 0 {
+                return Ok(());
+            }
+
+            let img = io::read_image(Path::new(img_p))
+                .map_err(|_| (FfiErrorCode::Decode, "Failed to decode image".to_string()))?
+                .into_rgba8();
+
+            let sigma = radius_px as f32 / 3.0;
+            let blurred = image::imageops::blur(&img, sigma);
+
+            // Re-save image
+            io::write_image(Path::new(out_p), &blurred, 100).map_err(|e| {
                 let code = match e {
                     io::IoError::UnsupportedFormat | io::IoError::Encode => FfiErrorCode::Encode,
                     _ => FfiErrorCode::Io,

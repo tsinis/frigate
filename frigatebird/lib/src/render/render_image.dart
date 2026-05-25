@@ -151,20 +151,25 @@ sealed class RenderImage {
       outputCStr = outputPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
       arena = FfiArenaHandle.allocate(errorCapacity: FfiAbi.errorCapBytes);
 
-      // Allocate a native RectanglePayload to pass by value over FFI.
-      payloadPtr = calloc<RectanglePayload>()
-        ..ref.x = region.x
-        ..ref.y = region.y
-        ..ref.width = region.width
-        ..ref.height = region.height
-        ..ref.rotationDeg = region.rotation
-        ..ref.fillColorArgb = region.fillColor.argb
-        ..ref.outlineColorArgb = region.outlineColor.argb
-        ..ref.outlineThickness = region.outlineThickness
-        ..ref.blur = region.blur
-        ..ref.cornerRadius = region.cornerRadius;
+      final int code;
+      if (region.width == 0 && region.height == 0) {
+        code = ffi.blur(imageCStr, outputCStr, region.blur, arena.ptr);
+      } else {
+        // Allocate a native RectanglePayload to pass by value over FFI.
+        payloadPtr = calloc<RectanglePayload>()
+          ..ref.x = region.x
+          ..ref.y = region.y
+          ..ref.width = region.width
+          ..ref.height = region.height
+          ..ref.rotationDeg = region.rotation
+          ..ref.fillColorArgb = region.fillColor.argb
+          ..ref.outlineColorArgb = region.outlineColor.argb
+          ..ref.outlineThickness = region.outlineThickness
+          ..ref.blur = region.blur
+          ..ref.cornerRadius = region.cornerRadius;
 
-      final code = ffi.blur_region(imageCStr, outputCStr, payloadPtr.ref, arena.ptr);
+        code = ffi.blur_region(imageCStr, outputCStr, payloadPtr.ref, arena.ptr);
+      }
 
       final domainResult = arena.readResult(code);
       if (domainResult is ErrUnit) throw RenderException(domainResult.code, domainResult.message);

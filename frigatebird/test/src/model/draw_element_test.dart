@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:frigatebird/src/constants/draw_constants.dart';
 import 'package:frigatebird/src/model/draw_element.dart';
 import 'package:frigatebird/src/model/ffi_color.dart';
 import 'package:test/test.dart';
@@ -107,6 +108,7 @@ void main() {
           x: 0,
           y: 0,
         ),
+        const MaskRegionElement(height: 1, width: 1, x: 0, y: 0),
       ];
       final types = elements
           .map(
@@ -115,14 +117,47 @@ void main() {
               TextElement() => 'text',
               OvalElement() => 'oval',
               PolygonElement() => 'polygon',
+              MaskRegionElement() => 'mask',
             },
           )
           .toSet();
       expect(
         types,
-        const {'rect', 'text', 'oval', 'polygon'}, // Dart 3.8 format.
+        const {'rect', 'text', 'oval', 'polygon', 'mask'}, // Dart 3.8 format.
         reason: 'switch is exhaustive over all types',
       );
+    });
+  });
+
+  group('MaskRegionElement copyWith and toString', () {
+    test('default properties are set correctly', () {
+      const mask = MaskRegionElement(height: 50, width: 80, x: 10, y: 20);
+      expect(mask.blur, equals(DrawConstants.defaultBlurRadius));
+      expect(mask.fillColor, equals(FfiColor.transparent));
+      expect(mask.outlineColor, FfiColor.transparent);
+      expect(mask.outlineThickness, isZero);
+    });
+
+    test('copyWith works correctly', () {
+      const mask = MaskRegionElement(height: 50, width: 80, x: 10, y: 20);
+      final updated = mask.copyWith(blur: 25, height: 100, rotation: 90, width: 200, x: 5, y: 15);
+
+      expect(updated.blur, equals(25));
+      expect(updated.height, equals(100));
+      expect(updated.rotation, equals(90));
+      expect(updated.width, equals(200));
+      expect(updated.x, equals(5));
+      expect(updated.y, equals(15));
+    });
+
+    test('toString contains correct values', () {
+      const mask = MaskRegionElement(height: 50, width: 80, x: 10, y: 20);
+      final str = mask.toString();
+      expect(str, contains('MaskRegionElement'));
+      expect(str, contains('x: 10.0'));
+      expect(str, contains('y: 20.0'));
+      expect(str, contains('width: 80.0'));
+      expect(str, contains('height: 50.0'));
     });
   });
 }

@@ -265,6 +265,17 @@ void main() => group(DrawPainter, () {
         reason: 'drawPath should be called twice (fill + dashed outline)',
       );
     });
+
+    test('uses drawRect for MaskRegionElement', () {
+      final canvas = _DrawPainterTest();
+      const mask = MaskRegionElement(height: 50, width: 100, x: 10, y: 20);
+      const DrawPainter([mask]).paint(canvas, const Size(200, 200));
+      expect(
+        canvas.drawRectCount,
+        1,
+        reason: 'mask region element should hit drawRect once',
+      );
+    });
   });
 
   group('isPointOnShape', () {

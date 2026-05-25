@@ -81,6 +81,9 @@ void main() {
 
         case TextElement():
           fail('movedPoly is a TextElement');
+
+        case MaskRegionElement():
+          fail('movedPoly is a MaskRegionElement');
       }
     });
   });
@@ -169,6 +172,9 @@ void main() {
 
         case TextElement():
           fail('resizedPoly is a TextElement');
+
+        case MaskRegionElement():
+          fail('resizedPoly is a MaskRegionElement');
       }
     });
 
@@ -221,7 +227,40 @@ void main() {
 
           case TextElement():
             fail('resizedPoly is a TextElement');
+
+          case MaskRegionElement():
+            fail('resizedPoly is a MaskRegionElement');
         }
+      },
+    );
+    test(
+      'resizes a RectElement from centerLeft, centerRight, topCenter, and bottomCenter correctly',
+      () {
+        const rect = RectElement(height: 50, width: 50, x: 10, y: 20);
+
+        final leftResized = rect.resized(dx: -10, dy: 10, handle: .centerLeft);
+        expect(leftResized.x, equals(0));
+        expect(leftResized.y, equals(20));
+        expect(leftResized.width, equals(60));
+        expect(leftResized.height, equals(50));
+
+        final rightResized = rect.resized(dx: 10, dy: 10, handle: .centerRight);
+        expect(rightResized.x, equals(10));
+        expect(rightResized.y, equals(20));
+        expect(rightResized.width, equals(60));
+        expect(rightResized.height, equals(50));
+
+        final topResized = rect.resized(dx: 10, dy: -10, handle: .topCenter);
+        expect(topResized.x, equals(10));
+        expect(topResized.y, equals(10));
+        expect(topResized.width, equals(50));
+        expect(topResized.height, equals(60));
+
+        final bottomResized = rect.resized(dx: 10, dy: 10, handle: .bottomCenter);
+        expect(bottomResized.x, equals(10));
+        expect(bottomResized.y, equals(20));
+        expect(bottomResized.width, equals(50));
+        expect(bottomResized.height, equals(60));
       },
     );
   });

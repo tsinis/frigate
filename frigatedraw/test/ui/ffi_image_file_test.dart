@@ -1,4 +1,4 @@
-// ignore_for_file: avoid-ignoring-return-values, prefer-moving-to-variable, avoid-duplicate-test-assertions, format-comment, avoid-similar-names, prefer-extracting-function-callbacks
+// ignore_for_file: avoid-ignoring-return-values, prefer-moving-to-variable, avoid-duplicate-test-assertions, format-comment, avoid-similar-names, prefer-extracting-function-callbacks, avoid-duplicate-collection-elements, unnecessary-trailing-comma
 
 import 'dart:async';
 import 'dart:io';
@@ -262,6 +262,99 @@ void main() {
 
       final props = propertiesBuilder.properties.map((i) => i.name).toList(growable: false);
       expect(props, contains('builder'));
+    });
+
+    testWidgets('successfully loads valid image bytes and uses Image.memory', (tester) async {
+      final transparentPng = Uint8List.fromList([
+        0x89,
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A,
+        0x00,
+        0x00,
+        0x00,
+        0x0D,
+        0x49,
+        0x48,
+        0x44,
+        0x52,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x08,
+        0x06,
+        0x00,
+        0x00,
+        0x00,
+        0x1F,
+        0x15,
+        0xC4,
+        0x89,
+        0x00,
+        0x00,
+        0x00,
+        0x0D,
+        0x49,
+        0x44,
+        0x41,
+        0x54,
+        0x18,
+        0x57,
+        0x63,
+        0x60,
+        0x60,
+        0x60,
+        0x60,
+        0x00,
+        0x00,
+        0x00,
+        0x05,
+        0x00,
+        0x01,
+        0x24,
+        0xAA,
+        0x86,
+        0xC8,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x49,
+        0x45,
+        0x4E,
+        0x44,
+        0xAE,
+        0x42,
+        0x60,
+        0x82,
+      ]);
+
+      final tempDir = Directory.systemTemp.createTempSync();
+      final file = File('${tempDir.path}/valid.png')..writeAsBytesSync(transparentPng);
+
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) async => const ImageInformation(height: 1, width: 1),
+      );
+      addTearDown(() {
+        restore();
+        if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+      });
+
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: FfiImageFile(file))));
+
+      await tester.pumpAndSettle();
+
+      final imageFinder = find.byType(Image);
+      expect(imageFinder, findsOneWidget);
     });
   });
 }

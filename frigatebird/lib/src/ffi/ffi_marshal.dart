@@ -162,6 +162,20 @@ sealed class FfiMarshal {
               ..outlineThickness = item.outlineThickness.clamp(0, 255)
               ..rotationDeg = item.rotation
               ..blur = item.blur.clamp(0, 255);
+
+          case MaskRegionElement():
+            assert(item.blur >= 0 && item.blur <= 255, 'blur must be in 0..255');
+            (ref..tag = FfiElementType.rectangle.value).payload.rectangle
+              ..x = item.x
+              ..y = item.y
+              ..width = item.width
+              ..height = item.height
+              ..rotationDeg = item.rotation
+              ..fillColorArgb = item.fillColor.argb
+              ..outlineColorArgb = item.outlineColor.argb
+              ..outlineThickness = item.outlineThickness.clamp(0, 255)
+              ..blur = item.blur.clamp(0, 255)
+              ..cornerRadius = 0;
         }
       }
 
@@ -252,20 +266,39 @@ sealed class FfiMarshal {
       switch (FfiElementType.values[tag]) {
         case .rectangle:
           final rect = element.payload.rectangle;
-          outElements.add(
-            RectElement(
-              blur: rect.blur,
-              cornerRadius: rect.cornerRadius,
-              fillColor: FfiColor(rect.fillColorArgb),
-              height: rect.height,
-              outlineColor: FfiColor(rect.outlineColorArgb),
-              outlineThickness: rect.outlineThickness,
-              rotation: rect.rotationDeg,
-              width: rect.width,
-              x: rect.x,
-              y: rect.y,
-            ),
-          );
+          // ignore: prefer-moving-to-variable, clarity over micro-optimization in a hot path.
+          if (rect.fillColorArgb == FfiColor.transparent.argb &&
+              // ignore: prefer-moving-to-variable, clarity over micro-optimization in a hot path.
+              rect.outlineColorArgb == FfiColor.transparent.argb &&
+              rect.outlineThickness == 0 &&
+              rect.cornerRadius == 0 &&
+              rect.blur > 0) {
+            outElements.add(
+              MaskRegionElement(
+                blur: rect.blur,
+                height: rect.height,
+                rotation: rect.rotationDeg,
+                width: rect.width,
+                x: rect.x,
+                y: rect.y,
+              ),
+            );
+          } else {
+            outElements.add(
+              RectElement(
+                blur: rect.blur,
+                cornerRadius: rect.cornerRadius,
+                fillColor: FfiColor(rect.fillColorArgb),
+                height: rect.height,
+                outlineColor: FfiColor(rect.outlineColorArgb),
+                outlineThickness: rect.outlineThickness,
+                rotation: rect.rotationDeg,
+                width: rect.width,
+                x: rect.x,
+                y: rect.y,
+              ),
+            );
+          }
 
         case .oval:
           final oval = element.payload.oval;
