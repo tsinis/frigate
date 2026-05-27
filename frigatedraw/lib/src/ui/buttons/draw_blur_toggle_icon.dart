@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../draw_controller.dart';
 import 'draw_blur_toggle_button.dart';
@@ -26,14 +27,38 @@ class DrawBlurToggleIcon extends StatelessWidget {
   final AnimatedSwitcherLayoutBuilder _layoutBuilder;
 
   @override
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
+    super.debugFillProperties(properties);
+    properties
+      ..add(DiagnosticsProperty<DrawController>('_controller', _controller))
+      ..add(IntProperty('_minValue', _minValue))
+      ..add(DiagnosticsProperty<Duration>('_duration', _duration))
+      ..add(DiagnosticsProperty<Duration?>('_reverseDuration', _reverseDuration))
+      ..add(DiagnosticsProperty<Curve>('_switchInCurve', _switchInCurve))
+      ..add(DiagnosticsProperty<Curve>('_switchOutCurve', _switchOutCurve))
+      ..add(
+        ObjectFlagProperty.has(
+          '_transitionBuilder',
+          _transitionBuilder != AnimatedSwitcher.defaultTransitionBuilder,
+        ),
+      )
+      ..add(
+        ObjectFlagProperty.has(
+          '_layoutBuilder',
+          _layoutBuilder != AnimatedSwitcher.defaultLayoutBuilder,
+        ),
+      );
+  }
+
+  @override
   Widget build(BuildContext context) => ListenableBuilder(
     builder: (bc, _) {
       final selected = _controller.selectedElement;
       final isBlurOn = selected == null ? null : selected.blur > _minValue;
       final iconData = switch (isBlurOn) {
-        true => Icons.blur_on,
-        false => Icons.blur_off,
         null => Icons.blur_circular,
+        false => Icons.blur_off,
+        true => Icons.blur_on,
       };
 
       return AnimatedSwitcher(
