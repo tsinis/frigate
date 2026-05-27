@@ -12,12 +12,32 @@ import 'draw_controller.dart';
 import 'draw_painter.dart';
 import 'ffi_image_file.dart';
 
-class DrawEditor extends StatefulWidget {
-  const DrawEditor(this.image, {required this.controller, this.size, super.key});
+class DrawEditor extends InteractiveViewer {
+  DrawEditor(
+    this._image, {
+    required this._controller,
+    this._minShapeSize = 10.0,
+    this._size,
+    super.alignment,
+    super.boundaryMargin = const .all(.infinity),
+    super.clipBehavior,
+    super.interactionEndFrictionCoefficient,
+    super.key,
+    super.maxScale = 5,
+    super.minScale = 1 / 2,
+    super.onInteractionEnd,
+    super.onInteractionStart,
+    super.onInteractionUpdate,
+    super.panAxis,
+    super.scaleEnabled,
+    super.scaleFactor,
+    super.trackpadScrollCausesScale,
+  }) : super(child: const SizedBox.shrink(), constrained: false);
 
-  final DrawController controller;
-  final File image;
-  final Size? size;
+  final DrawController _controller;
+  final File _image;
+  final Size? _size;
+  final double _minShapeSize;
 
   @override
   State<DrawEditor> createState() => _DrawEditorState();
@@ -26,21 +46,19 @@ class DrawEditor extends StatefulWidget {
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties
-      ..add(DiagnosticsProperty<DrawController>('controller', controller))
-      ..add(StringProperty('image', image.path))
-      ..add(DoubleProperty('size.height', size?.height))
-      ..add(DoubleProperty('size.width', size?.width));
+      ..add(DiagnosticsProperty<DrawController>('_controller', _controller))
+      ..add(StringProperty('_image', _image.path))
+      ..add(DoubleProperty('_size.height', _size?.height))
+      ..add(DoubleProperty('_size.width', _size?.width));
   }
 }
 
 class _DrawEditorState extends State<DrawEditor> {
-  /// Floor for rect width/height while the user is resizing via a handle. Below ~10 px the rect
-  /// becomes impossible to grab again because the 8 handles start overlapping each other.
-  static const _minSize = 10.0;
-  static const _closeTolerance = 20.0;
-
   final _transformController = TransformationController();
   final _isDragging = ValueNotifier<bool>(false);
+
+  // ignore: avoid-explicit-type-declaration, avoid-late-keyword, it's safe for an unboxed value.
+  late final double _closeTolerance = widget._minShapeSize * 2;
 
   bool _isCreating = false;
   HandlePosition? _activeHandle;
@@ -60,7 +78,7 @@ class _DrawEditorState extends State<DrawEditor> {
   /// The ID of the pointer currently owning the drag/creation interaction.
   int? _activePointerId;
 
-  DrawController get _controller => widget.controller;
+  DrawController get _controller => widget._controller;
 
   @override
   void initState() {
@@ -272,7 +290,7 @@ class _DrawEditorState extends State<DrawEditor> {
       if (current == null || pIndex == null) return _abortCreation();
 
       // If it's too small, just drop it. We consider < 10px as an accidental press.
-      if (current.width >= _minSize && current.height >= _minSize) {
+      if (current.width >= widget._minShapeSize && current.height >= widget._minShapeSize) {
         _controller.replacePreviewAndCommit(current, pIndex);
       } else {
         _controller.dropElementAt(pIndex);
@@ -350,11 +368,21 @@ class _DrawEditorState extends State<DrawEditor> {
           final isInteracting = isDragging || _isCreating || _controller.creationTemplate != null;
 
           return InteractiveViewer(
-            boundaryMargin: const .all(.infinity),
-            constrained: false,
-            maxScale: 5,
-            minScale: 0.5,
+            alignment: widget.alignment,
+            boundaryMargin: widget.boundaryMargin,
+            clipBehavior: widget.clipBehavior,
+            constrained: widget.constrained,
+            interactionEndFrictionCoefficient: widget.interactionEndFrictionCoefficient,
+            maxScale: widget.maxScale,
+            minScale: widget.minScale,
+            onInteractionEnd: widget.onInteractionEnd,
+            onInteractionStart: widget.onInteractionStart,
+            onInteractionUpdate: widget.onInteractionUpdate,
+            panAxis: widget.panAxis,
             panEnabled: !isInteracting,
+            scaleEnabled: widget.scaleEnabled,
+            scaleFactor: widget.scaleFactor,
+            trackpadScrollCausesScale: widget.trackpadScrollCausesScale,
             transformationController: _transformController,
             child: child ?? const SizedBox.shrink(),
           );
@@ -363,7 +391,7 @@ class _DrawEditorState extends State<DrawEditor> {
       ),
       valueListenable: _isDragging,
       child: FfiImageFile(
-        widget.image,
+        widget._image,
         builder: (displayImage, info, uiImage) => ListenableBuilder(
           builder: (_, child) => CustomPaint(
             foregroundPainter: DrawPainter(
@@ -384,7 +412,7 @@ class _DrawEditorState extends State<DrawEditor> {
           child: displayImage,
         ),
         fit: .fill,
-        size: widget.size,
+        size: widget._size,
       ),
     ),
   );

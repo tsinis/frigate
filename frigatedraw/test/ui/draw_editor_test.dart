@@ -457,10 +457,10 @@ void main() => group(DrawEditor, () {
     final builder = DiagnosticPropertiesBuilder();
     DrawEditor(file, controller: draw, size: const .new(100, 200)).debugFillProperties(builder);
     final props = builder.properties.map((i) => i.name).toList();
-    expect(props, contains('controller'));
-    expect(props, contains('image'));
-    expect(props, contains('size.height'));
-    expect(props, contains('size.width'));
+    expect(props, contains('_controller'));
+    expect(props, contains('_image'));
+    expect(props, contains('_size.height'));
+    expect(props, contains('_size.width'));
   });
   testWidgets('moves PolygonElement on drag', (tester) async {
     final controller = DrawController();
