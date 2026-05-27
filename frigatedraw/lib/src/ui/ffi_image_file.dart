@@ -16,14 +16,14 @@ class FfiImageFile extends Image {
   FfiImageFile(
     this._image, {
     this.builder,
+    this.size,
     super.errorBuilder,
     super.excludeFromSemantics,
     super.filterQuality,
     super.fit,
+    super.gaplessPlayback = true,
     super.key,
     super.semanticLabel,
-    this.size,
-    super.gaplessPlayback = true,
   }) : super.file(_image, height: size?.height, width: size?.width);
 
   /// Sets a test-only builder and returns a function to restore the previous builder.

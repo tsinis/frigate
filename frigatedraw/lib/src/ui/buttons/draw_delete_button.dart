@@ -15,6 +15,7 @@ class DrawDeleteButton extends DrawIconButton {
     super.focusNode,
     super.highlightColor,
     super.hoverColor,
+    super.icon = const Icon(Icons.delete_outline),
     super.iconSize,
     super.isSelected,
     super.key,
@@ -29,7 +30,6 @@ class DrawDeleteButton extends DrawIconButton {
     super.style,
     super.tooltip,
     super.visualDensity,
-    super.icon = const Icon(Icons.delete_outline),
   });
 
   @override

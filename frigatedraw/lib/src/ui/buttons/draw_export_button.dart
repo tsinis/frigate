@@ -20,6 +20,7 @@ class DrawExportButton extends DrawIconButton {
     super.focusNode,
     super.highlightColor,
     super.hoverColor,
+    super.icon = const Icon(Icons.save_alt),
     super.iconSize,
     super.isSelected,
     super.key,
@@ -32,9 +33,8 @@ class DrawExportButton extends DrawIconButton {
     super.splashRadius,
     super.statesController,
     super.style,
+    super.tooltip,
     super.visualDensity,
-    super.icon = const Icon(Icons.save_alt),
-    super.tooltip = 'Export',
   });
 
   /// The callback to be executed when the button is pressed.

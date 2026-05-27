@@ -13,7 +13,7 @@ import 'draw_painter.dart';
 import 'ffi_image_file.dart';
 
 class DrawEditor extends StatefulWidget {
-  const DrawEditor(this.image, {required this.controller, super.key, this.size});
+  const DrawEditor(this.image, {required this.controller, this.size, super.key});
 
   final DrawController controller;
   final File image;

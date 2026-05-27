@@ -222,9 +222,9 @@ dart_code_metrics:
     - enum-constants-ordering: true
     - match-getter-setter-field-names: true
     - parameters-ordering:
-        default: "last"
-        super: "unset"
+        default: "unset"
         required: "first"
+        super: "last"
         ignore-overridden: false
         only-named: false
         alphabetize: true

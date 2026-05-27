@@ -15,6 +15,7 @@ class DrawRedoButton extends DrawIconButton {
     super.focusNode,
     super.highlightColor,
     super.hoverColor,
+    super.icon = const Icon(Icons.redo_outlined),
     super.iconSize,
     super.isSelected,
     super.key,
@@ -29,7 +30,6 @@ class DrawRedoButton extends DrawIconButton {
     super.style,
     super.tooltip,
     super.visualDensity,
-    super.icon = const Icon(Icons.redo_outlined),
   });
 
   @override

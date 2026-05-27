@@ -14,9 +14,9 @@ class DrawPainter extends CustomPainter {
     this.backgroundImage,
     this.creationTemplate,
     this.cursorPosition,
+    this.handleRadius = 12.0,
     this.pendingVertices,
     this.selectedIndex,
-    this.handleRadius = 12.0,
     this.tolerance = 20.0,
   });
 

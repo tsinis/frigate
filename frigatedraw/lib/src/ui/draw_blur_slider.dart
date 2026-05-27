@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:frigatebird/frigatebird.dart';
+
 import 'draw_controller.dart';
 
 /// A high-level Material 2023+ styled slider that integrates directly with a [DrawController].
@@ -12,6 +13,7 @@ class DrawBlurSlider extends Slider {
   const DrawBlurSlider(
     this._controller, {
     required super.value,
+    this._minColor,
     super.activeColor,
     super.allowedInteraction,
     super.autofocus,
@@ -20,6 +22,7 @@ class DrawBlurSlider extends Slider {
     super.inactiveColor,
     super.key,
     super.label,
+    super.max = 255,
     super.min,
     super.mouseCursor,
     super.onChangeEnd,
@@ -32,13 +35,11 @@ class DrawBlurSlider extends Slider {
     super.semanticFormatterCallback,
     super.showValueIndicator,
     super.thumbColor,
-    this._minColor = .transparent,
-    super.max = 255,
   }) : assert(min >= 0, 'min must be >= 0'),
        assert(max <= 255, 'max must be <= 255');
 
   final DrawController _controller;
-  final FfiColor _minColor;
+  final FfiColor? _minColor;
 
   @override
   State<DrawBlurSlider> createState() => _DrawBlurSliderState();
@@ -46,9 +47,10 @@ class DrawBlurSlider extends Slider {
   @override
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
+    final minCol = _minColor;
     properties
       ..add(DiagnosticsProperty<DrawController>('_controller', _controller))
-      ..add(ColorProperty('_minColor', Color(_minColor.argb)));
+      ..add(ColorProperty('_minColor', minCol == null ? null : Color(minCol.argb)));
   }
 }
 
@@ -56,11 +58,6 @@ class _DrawBlurSliderState extends State<DrawBlurSlider> {
   DrawElement? _sliderDragSnapshot;
 
   DrawController get _controller => widget._controller;
-
-  void _handleBlurChangeStart(double value) {
-    if (_controller.selectedElement != null) _sliderDragSnapshot = _controller.selectedElement;
-    widget.onChangeStart?.call(value);
-  }
 
   void _handleBlurChanged(double value) {
     if (_controller.selectedElement == null) return widget.onChanged?.call(value);
@@ -88,6 +85,11 @@ class _DrawBlurSliderState extends State<DrawBlurSlider> {
     }
     _sliderDragSnapshot = null;
     widget.onChangeEnd?.call(value);
+  }
+
+  void _handleBlurChangeStart(double value) {
+    if (_controller.selectedElement != null) _sliderDragSnapshot = _controller.selectedElement;
+    widget.onChangeStart?.call(value);
   }
 
   @override

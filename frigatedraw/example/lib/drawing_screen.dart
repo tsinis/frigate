@@ -361,7 +361,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
                 child: Row(
                   spacing: 4,
                   children: [
-                    const Icon(Icons.blur_on, size: 24),
+                    DrawBlurToggleButton(_controller, minColor: .black),
                     Expanded(
                       child: DrawBlurSlider(
                         _controller,

@@ -9,15 +9,15 @@ import '../draw_tool.dart';
 class DrawToolSegmentedButton extends StatelessWidget {
   const DrawToolSegmentedButton(
     this._controller, {
+    this._direction = .horizontal,
     this._expandedInsets,
+    this._isEmptySelectionAllowed = true,
     this._onSelectionChanged,
     this._selectedIcon,
-    this._style,
-    super.key,
-    this._direction = .horizontal,
-    this._isEmptySelectionAllowed = true,
     this._shouldShowSelectedIcon = true,
+    this._style,
     this._tools = defaultTools,
+    super.key,
   });
 
   /// Default icon mapping for each drawing tool.
@@ -39,14 +39,15 @@ class DrawToolSegmentedButton extends StatelessWidget {
   final ButtonStyle? _style;
   final Map<DrawTool, IconData?> _tools;
 
-  /// Builds the [ButtonSegment] list for each drawing tool.
-  List<ButtonSegment<DrawTool>> get _segments => _tools.keys
-      .map((tool) {
-        final icon = _tools[tool] ?? defaultTools[tool];
+  ButtonSegment<DrawTool> _buildSegment(DrawTool tool) {
+    final icon = _tools[tool] ?? defaultTools[tool];
 
-        return ButtonSegment(enabled: icon != null, icon: Icon(icon), value: tool);
-      })
-      .toList(growable: false);
+    return ButtonSegment(enabled: icon != null, icon: Icon(icon), value: tool);
+  }
+
+  /// Builds the [ButtonSegment] list for each drawing tool.
+  List<ButtonSegment<DrawTool>> get _segments =>
+      _tools.keys.map(_buildSegment).toList(growable: false);
 
   @override
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {

@@ -4,6 +4,8 @@ export 'package:frigatebird/frigatebird.dart';
 
 export 'src/helpers/draw_element_extension.dart';
 export 'src/helpers/image_information_extension.dart';
+export 'src/ui/buttons/draw_blur_toggle_button.dart';
+export 'src/ui/buttons/draw_blur_toggle_icon.dart';
 export 'src/ui/buttons/draw_delete_button.dart';
 export 'src/ui/buttons/draw_export_button.dart';
 export 'src/ui/buttons/draw_icon_button.dart';
