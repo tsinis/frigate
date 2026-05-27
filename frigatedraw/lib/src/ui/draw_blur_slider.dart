@@ -32,11 +32,13 @@ class DrawBlurSlider extends Slider {
     super.semanticFormatterCallback,
     super.showValueIndicator,
     super.thumbColor,
+    this._minColor = .transparent,
     super.max = 255,
   }) : assert(min >= 0, 'min must be >= 0'),
        assert(max <= 255, 'max must be <= 255');
 
   final DrawController _controller;
+  final FfiColor _minColor;
 
   @override
   State<DrawBlurSlider> createState() => _DrawBlurSliderState();
@@ -44,7 +46,9 @@ class DrawBlurSlider extends Slider {
   @override
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
-    properties.add(DiagnosticsProperty<DrawController>('_controller', _controller));
+    properties
+      ..add(DiagnosticsProperty<DrawController>('_controller', _controller))
+      ..add(ColorProperty('_minColor', Color(_minColor.argb)));
   }
 }
 
@@ -64,9 +68,11 @@ class _DrawBlurSliderState extends State<DrawBlurSlider> {
     final index = _controller.selectedIndex;
     if (index != null && element != null) {
       final blurVal = value.round();
-      final updated = blurVal == 0
-          ? element.copyWith(blur: blurVal, fillColor: .black, outlineThickness: blurVal)
-          : element.copyWith(blur: blurVal, fillColor: .transparent, outlineThickness: 0);
+      final updated = element.copyWith(
+        blur: blurVal,
+        fillColor: blurVal <= widget.min ? widget._minColor : .transparent,
+        outlineThickness: 0,
+      );
       _controller.updateElement(updated.copyWith(outlineColor: .transparent), index);
     }
     widget.onChanged?.call(value);

@@ -11,7 +11,6 @@ import 'utils.dart';
 import 'widgets/blur_background_dialog.dart';
 import 'widgets/export_confirmation_dialog.dart';
 import 'widgets/text_annotation_dialog.dart';
-import 'widgets/tools_row.dart';
 
 class DrawingScreen extends StatefulWidget {
   const DrawingScreen({
@@ -38,7 +37,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
   late File _bgImageFile; // ignore: avoid-late-keyword, it's fine for example purposes.
   late File _originalBgImageFile; // ignore: avoid-late-keyword, it's fine for example purposes.
   double _selectedBlur = 50;
-  DrawTool _selectedTool = .select;
+  DrawTool? _selectedTool;
 
   @override
   void initState() {
@@ -92,7 +91,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
         x: 0,
         y: 0,
       ),
-      .select || .text => null,
+      .select || .text || null => null,
     };
   }
 
@@ -289,7 +288,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
     }
   }
 
-  void _handleToolSelectionChanged(DrawTool tool) {
+  void _handleToolSelectionChanged(DrawTool? tool) {
     if (tool == .text) {
       unawaited(_handleRenderText());
     } else {
@@ -337,11 +336,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 )
-              : IconButton(
-                  icon: const Icon(Icons.save),
-                  onPressed: _handleSavePressed,
-                  tooltip: 'Export composition',
-                ),
+              : DrawExportButton(_controller, onExport: _handleSavePressed),
           valueListenable: _isExporting,
         ),
       ],
@@ -364,12 +359,13 @@ class _DrawingScreenState extends State<DrawingScreen> {
               Padding(
                 padding: const .symmetric(horizontal: 8),
                 child: Row(
+                  spacing: 4,
                   children: [
-                    Text('Blur: ${sliderValue.round()}px'),
+                    const Icon(Icons.blur_on, size: 24),
                     Expanded(
-                      child: Slider(
-                        divisions: 255,
-                        max: 255,
+                      child: DrawBlurSlider(
+                        _controller,
+                        minColor: .black,
                         onChanged: _handleBlurSliderChanged,
                         value: sliderValue,
                       ),
@@ -379,9 +375,11 @@ class _DrawingScreenState extends State<DrawingScreen> {
               ),
               SingleChildScrollView(
                 scrollDirection: .horizontal,
-                child: ToolsRow(
-                  onToolSelectionChanged: _handleToolSelectionChanged,
-                  selectedTool: _selectedTool,
+                child: Center(
+                  child: DrawToolSegmentedButton(
+                    _controller,
+                    onSelectionChanged: _handleToolSelectionChanged,
+                  ),
                 ),
               ),
             ],

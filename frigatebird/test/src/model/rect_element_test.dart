@@ -145,7 +145,7 @@ void main() => group(RectElement, () {
 
     final receivePort = ReceivePort();
     final result = await Isolate.spawn(
-      // ignore: prefer-extracting-function-callbacks, just a test.
+      // ignore: prefer-extracting-function-callbacks, it's ok for the test.
       (a) {
         // ignore: avoid-type-casts, avoid-unsafe-collection-methods, just a test.
         final sendPort = a.first as SendPort;
@@ -153,7 +153,7 @@ void main() => group(RectElement, () {
         final receivedList = a.elementAtOrNull(1) as List<RectElement>?;
         sendPort.send(identityHashCode(receivedList?.firstOrNull));
       },
-      [receivePort.sendPort, list],
+      [receivePort.sendPort, list], // Dart 3.8 formatting.
     );
 
     expect(result, isA<Isolate>(), reason: 'spawn returned an Isolate handle');

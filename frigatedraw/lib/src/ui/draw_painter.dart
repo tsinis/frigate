@@ -16,19 +16,19 @@ class DrawPainter extends CustomPainter {
     this.cursorPosition,
     this.pendingVertices,
     this.selectedIndex,
+    this.handleRadius = 12.0,
     this.tolerance = 20.0,
   });
 
-  static const double handleRadius = DrawElementExtension.handleRadius;
-
-  final List<DrawElement> elements;
-  final int? selectedIndex;
-  final List<Float64x2>? pendingVertices;
-  final Offset? cursorPosition;
   final DrawTool? activeTool;
-  final double tolerance;
-  final DrawElement? creationTemplate;
   final ui.Image? backgroundImage;
+  final DrawElement? creationTemplate;
+  final Offset? cursorPosition;
+  final List<DrawElement> elements;
+  final double handleRadius;
+  final List<Float64x2>? pendingVertices;
+  final int? selectedIndex;
+  final double tolerance;
 
   // Paint instances live at class scope so we don't rebuild them per handle, per frame.
   // Colors and stroke are constant, nothing to parameterize.
@@ -67,7 +67,7 @@ class DrawPainter extends CustomPainter {
         ..restore();
 
       for (final handle in HandlePosition.values) {
-        _paintHandle(canvas, selected.handleCenter(handle));
+        _paintHandle(canvas, selected.handleCenter(handle), handleRadius);
       }
     }
   }
@@ -630,6 +630,7 @@ class DrawPainter extends CustomPainter {
     if (!identical(oldDelegate.creationTemplate, creationTemplate)) return true;
     if (oldDelegate.tolerance != tolerance) return true;
     if (oldDelegate.backgroundImage != backgroundImage) return true;
+    if (oldDelegate.handleRadius != handleRadius) return true;
 
     return false;
   }
@@ -639,7 +640,7 @@ class DrawPainter extends CustomPainter {
     final index = selectedIndex;
     if (index != null && index >= 0 && index < elements.length) {
       final select = elements.elementAtOrNull(index);
-      if (select != null && select.hitTestHandle(position) != null) return true;
+      if (select != null && select.hitTestHandle(position, handleRadius) != null) return true;
     }
 
     for (int i = elements.length - 1; i >= 0; i -= 1) {
@@ -651,9 +652,9 @@ class DrawPainter extends CustomPainter {
     return false;
   }
 
-  static void _paintHandle(Canvas canvas, Offset center) {
+  static void _paintHandle(Canvas canvas, Offset center, double radius) {
     canvas
-      ..drawCircle(center, handleRadius, _handleFillPaint)
-      ..drawCircle(center, handleRadius, _handleBorderPaint);
+      ..drawCircle(center, radius, _handleFillPaint)
+      ..drawCircle(center, radius, _handleBorderPaint);
   }
 }
