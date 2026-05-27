@@ -141,9 +141,8 @@ class _DrawEditorState extends State<DrawEditor> {
           _controller.creationTemplate = null;
           _previewIndex = null;
         }
-        _controller.updateCursorPosition(null);
 
-        return;
+        return _controller.updateCursorPosition(null);
       }
     }
     _controller
@@ -208,11 +207,7 @@ class _DrawEditorState extends State<DrawEditor> {
 
     if (_isCreating && start != null) {
       final current = pIndex == null ? null : _controller.elements.elementAtOrNull(pIndex);
-      if (current == null || pIndex == null) {
-        _abortCreation();
-
-        return;
-      }
+      if (current == null || pIndex == null) return _abortCreation();
 
       final currentPoint = _transformController.toScene(event.localPosition);
       final updated = current.copyWithDrag(a: currentPoint, b: start);
@@ -223,9 +218,7 @@ class _DrawEditorState extends State<DrawEditor> {
     }
 
     if (_controller.activeTool == .polygon) {
-      _controller.updateCursorPosition(_transformController.toScene(event.localPosition));
-
-      return;
+      return _controller.updateCursorPosition(_transformController.toScene(event.localPosition));
     }
 
     if (!_isDragging.value) return;
@@ -269,19 +262,14 @@ class _DrawEditorState extends State<DrawEditor> {
     if (_controller.activeTool == .polygon) {
       final point = _transformController.toScene(event.localPosition);
       _didHandlePolygonUp(point);
-      _activePointerId = null;
 
-      return;
+      return _activePointerId = null;
     }
 
     final pIndex = _resolvePreviewIndex;
     if (_isCreating) {
       final current = pIndex == null ? null : _controller.elements.elementAtOrNull(pIndex);
-      if (current == null || pIndex == null) {
-        _abortCreation();
-
-        return;
-      }
+      if (current == null || pIndex == null) return _abortCreation();
 
       // If it's too small, just drop it. We consider < 10px as an accidental press.
       if (current.width >= _minSize && current.height >= _minSize) {
@@ -289,9 +277,8 @@ class _DrawEditorState extends State<DrawEditor> {
       } else {
         _controller.dropElementAt(pIndex);
       }
-      _abortCreation();
 
-      return;
+      return _abortCreation();
     }
 
     if (!_isDragging.value) return;
@@ -315,9 +302,8 @@ class _DrawEditorState extends State<DrawEditor> {
     if (_activePointerId != null && event.pointer != _activePointerId) return;
     if (_controller.activeTool == .polygon) {
       _controller.updateCursorPosition(null);
-      _activePointerId = null;
 
-      return;
+      return _activePointerId = null;
     }
 
     final pIndex = _resolvePreviewIndex;

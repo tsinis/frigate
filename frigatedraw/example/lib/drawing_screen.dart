@@ -224,8 +224,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
         }
       }
     } on Object catch (error) {
-      if (!mounted) return;
-      _showSnackBar('Failed: $error');
+      if (mounted) _showSnackBar('Failed: $error');
     } finally {
       if (mounted) _isExporting.value = false;
     }

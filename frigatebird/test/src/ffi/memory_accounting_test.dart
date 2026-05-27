@@ -99,9 +99,7 @@ class _TrackingAllocator implements Allocator {
   }
 
   void assertNoLeaks() {
-    if (outstandingCount == 0) {
-      return;
-    }
+    if (outstandingCount == 0) return;
 
     final leaks = _allocations.entries
         .map((e) => '0x${e.key.toRadixString(16)} (${e.value} bytes)')
