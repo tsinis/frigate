@@ -60,23 +60,24 @@ class _DrawBlurSliderState extends State<DrawBlurSlider> {
   DrawController get _controller => widget._controller;
 
   void _handleBlurChanged(double value) {
-    if (_controller.selectedElement == null) return widget.onChanged?.call(value);
     final element = _controller.selectedElement;
     final index = _controller.selectedIndex;
     if (index != null && element != null) {
       final blurVal = value.round();
-      final updated = element.copyWith(
-        blur: blurVal,
-        fillColor: blurVal <= widget.min ? widget._minColor : .transparent,
-        outlineThickness: 0,
+      _controller.updateElement(
+        element.copyWith(
+          blur: blurVal,
+          fillColor: blurVal <= widget.min ? widget._minColor : .transparent,
+          outlineColor: .transparent,
+          outlineThickness: 0,
+        ),
+        index,
       );
-      _controller.updateElement(updated.copyWith(outlineColor: .transparent), index);
     }
     widget.onChanged?.call(value);
   }
 
   void _handleBlurChangeEnd(double value) {
-    if (_controller.selectedElement == null) return widget.onChangeEnd?.call(value);
     final current = _controller.selectedElement;
     final index = _controller.selectedIndex;
     final snapshot = _sliderDragSnapshot;
@@ -88,17 +89,15 @@ class _DrawBlurSliderState extends State<DrawBlurSlider> {
   }
 
   void _handleBlurChangeStart(double value) {
-    if (_controller.selectedElement != null) _sliderDragSnapshot = _controller.selectedElement;
+    _sliderDragSnapshot = _controller.selectedElement;
     widget.onChangeStart?.call(value);
   }
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     builder: (bc, _) {
-      final isSelected = _controller.selectedElement != null;
-      final sliderValue = isSelected
-          ? (_controller.selectedElement?.blur.toDouble() ?? widget.min)
-          : widget.value;
+      final selected = _controller.selectedElement;
+      final sliderValue = (selected?.blur.toDouble() ?? widget.value).clamp(widget.min, widget.max);
 
       return SliderTheme(
         data: SliderTheme.of(bc).copyWith(year2023: false),
@@ -113,9 +112,9 @@ class _DrawBlurSliderState extends State<DrawBlurSlider> {
           max: widget.max,
           min: widget.min,
           mouseCursor: widget.mouseCursor,
-          onChangeEnd: widget.onChangeEnd ?? _handleBlurChangeEnd,
-          onChangeStart: widget.onChangeStart ?? _handleBlurChangeStart,
-          onChanged: widget.onChanged ?? _handleBlurChanged,
+          onChangeEnd: _handleBlurChangeEnd,
+          onChangeStart: _handleBlurChangeStart,
+          onChanged: _handleBlurChanged,
           overlayColor: widget.overlayColor,
           padding: widget.padding,
           secondaryActiveColor: widget.secondaryActiveColor,

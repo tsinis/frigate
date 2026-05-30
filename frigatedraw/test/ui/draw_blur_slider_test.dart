@@ -90,4 +90,69 @@ void main() => group(DrawBlurSlider, () {
     final revertedElement = controller.selectedElement;
     if (revertedElement != null) expect(revertedElement.blur, 10);
   });
+
+  testWidgets('external onChanged fires AND element blur updates when element is selected', (
+    tester,
+  ) async {
+    final controller = DrawController();
+    const rect = RectElement(height: 100, width: 100, x: 0, y: 0);
+    controller
+      ..addElement(rect)
+      ..selectedIndex = 0;
+
+    double? onChangedTriggeredValue;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DrawBlurSlider(controller, onChanged: (v) => onChangedTriggeredValue = v, value: 0),
+        ),
+      ),
+    );
+
+    await tester.drag(find.byType(Slider), const Offset(100, 0));
+    await tester.pumpAndSettle();
+
+    // ignore: avoid-unassigned-local-variable, false positive.
+    expect(onChangedTriggeredValue, isNotNull, reason: 'external onChanged must fire');
+    expect(
+      controller.selectedElement?.blur,
+      isNot(0),
+      reason: 'element blur must update even when external onChanged is provided',
+    );
+  });
+
+  testWidgets('external onChangeEnd fires AND command is committed when element is selected', (
+    tester,
+  ) async {
+    final controller = DrawController();
+    const rect = RectElement(height: 100, width: 100, x: 0, y: 0);
+    controller
+      ..addElement(rect)
+      ..selectedIndex = 0;
+
+    double? dragEndCallbackValue;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DrawBlurSlider(controller, onChangeEnd: (v) => dragEndCallbackValue = v, value: 0),
+        ),
+      ),
+    );
+
+    final center = tester.getCenter(find.byType(Slider));
+    final gesture = await tester.startGesture(center);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // ignore: avoid-unassigned-local-variable, false positive.
+    expect(dragEndCallbackValue, isNotNull, reason: 'external onChangeEnd must fire');
+    expect(
+      controller.commandStack.canUndo,
+      isTrue,
+      reason: 'command must be committed even when external onChangeEnd is provided',
+    );
+  });
 });
