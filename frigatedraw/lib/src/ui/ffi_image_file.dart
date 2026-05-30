@@ -16,6 +16,7 @@ class FfiImageFile extends Image {
   FfiImageFile(
     this._image, {
     this.builder,
+    this.onInfo,
     this.size,
     super.errorBuilder,
     super.excludeFromSemantics,
@@ -44,6 +45,7 @@ class FfiImageFile extends Image {
   /// If provided, this callback allows custom layout control by wrapping the pre-configured [Image].
   /// If not provided, returns the [Image] widget directly.
   final Widget Function(Image displayedImage, ImageInformation? info, ui.Image? uiImage)? builder;
+  final ValueChanged<ImageInformation>? onInfo;
 
   /// Optional fixed size. If provided, FFI probing is skipped.
   final Size? size; // ignore: diagnostic_describe_all_properties, shown via parent width/height.
@@ -51,7 +53,9 @@ class FfiImageFile extends Image {
   @override
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
-    properties.add(ObjectFlagProperty.has('builder', builder));
+    properties
+      ..add(ObjectFlagProperty.has('builder', builder))
+      ..add(ObjectFlagProperty.has('onInfo', onInfo));
   }
 
   @override
@@ -91,8 +95,9 @@ class _FfiImageFileState extends State<FfiImageFile> {
   Future<void> _load() async {
     final file = widget._image;
     _loadedImageFile = file;
+    final hadError = _error != null || _stackTrace != null;
     _error = null;
-    setState(() => _stackTrace = null);
+    if (hadError) setState(() => _stackTrace = null);
 
     // 1. Run the size probe first in Phase 1.
     ImageInformation? info;
@@ -102,7 +107,8 @@ class _FfiImageFileState extends State<FfiImageFile> {
           ? await FfiImageFile._infoBuilder(file.absolute.path)
           : ImageInformation(height: size.height.toInt(), width: size.width.toInt());
       if (!mounted || _loadedImageFile != file) return;
-      setState(() => _info = info);
+      widget.onInfo?.call(info);
+      if (info != _info) setState(() => _info = info);
 
       // 2. Decode the bytes inside Phase 2.
       try {

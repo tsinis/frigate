@@ -26,12 +26,254 @@ void main() => group(DrawEditor, () {
     expect(find.byType(CustomPaint), findsAtLeastNWidgets(1));
   });
 
+  testWidgets('applies initial fit transform from resolved image info', (tester) async {
+    final controller = DrawController();
+    final restore = FfiImageFile.setInfoBuilder(
+      (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+    );
+    addTearDown(restore);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              height: 300,
+              width: 400,
+              child: DrawEditor(file, controller: controller),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final interactiveViewer = tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
+    final matrix = interactiveViewer.transformationController?.value;
+
+    expect(matrix?.storage.firstOrNull, closeTo(0.5, 0.001));
+    expect(matrix?.storage.elementAtOrNull(5), closeTo(0.5, 0.001));
+    expect(matrix?.storage.elementAtOrNull(12), closeTo(0.0, 0.001));
+    expect(matrix?.storage.elementAtOrNull(13), closeTo(0.0, 0.001));
+  });
+
+  testWidgets('keeps user transform after initial fit is applied once', (tester) async {
+    final controller = DrawController();
+    final restore = FfiImageFile.setInfoBuilder(
+      (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+    );
+    addTearDown(restore);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              height: 300,
+              width: 400,
+              child: DrawEditor(file, controller: controller),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final interactiveViewer = tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
+    final transformationController = interactiveViewer.transformationController;
+    transformationController?.value = Matrix4.identity()
+      ..setEntry(0, 0, 2)
+      ..setEntry(1, 1, 2);
+    await tester.pump();
+    await tester.pump();
+
+    expect(transformationController?.value.storage.firstOrNull, closeTo(2.0, 0.001));
+    expect(transformationController?.value.storage.elementAtOrNull(5), closeTo(2.0, 0.001));
+  });
+
+  testWidgets('scales handle radius proportionally for large images', (tester) async {
+    final controller = DrawController();
+    // 3200x2400 image: max dimension = 3200, scale = 3200/800 = 4 -> handleRadius = 48.
+    final restore = FfiImageFile.setInfoBuilder(
+      (_) => Future.value(const ImageInformation(height: 2400, width: 3200)),
+    );
+    addTearDown(restore);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(height: 600, width: 800, child: DrawEditor(file, controller: controller)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final painter = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((customPaint) => customPaint.foregroundPainter)
+        .whereType<DrawPainter>()
+        .firstOrNull;
+
+    expect(
+      painter?.handleRadius,
+      closeTo(48.0, 0.001),
+      reason: 'handle radius should scale 4x for a 3200-wide image',
+    );
+  });
+
+  testWidgets('handle radius stays at 12 for 800x600 reference image', (tester) async {
+    final controller = DrawController();
+    final restore = FfiImageFile.setInfoBuilder(
+      (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+    );
+    addTearDown(restore);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(height: 600, width: 800, child: DrawEditor(file, controller: controller)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final painter = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((customPaint) => customPaint.foregroundPainter)
+        .whereType<DrawPainter>()
+        .firstOrNull;
+
+    expect(
+      painter?.handleRadius,
+      closeTo(12.0, 0.001),
+      reason: 'handle radius must not shrink below reference at 800x600',
+    );
+  });
+
+  testWidgets('handle radius does not shrink below 12 for small images', (tester) async {
+    final controller = DrawController();
+    // 320x240 is smaller than the 800x600 base — should clamp to 12.
+    final restore = FfiImageFile.setInfoBuilder(
+      (_) => Future.value(const ImageInformation(height: 240, width: 320)),
+    );
+    addTearDown(restore);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(height: 600, width: 800, child: DrawEditor(file, controller: controller)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final painter = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((customPaint) => customPaint.foregroundPainter)
+        .whereType<DrawPainter>()
+        .firstOrNull;
+
+    expect(
+      painter?.handleRadius,
+      closeTo(12.0, 0.001),
+      reason: 'handle radius must clamp to 12 for images smaller than the 800px reference',
+    );
+  });
+
+  testWidgets('scales outline stroke at half handle rate for large images', (tester) async {
+    final controller = DrawController();
+    // 3200x2400: handle scale = 3200/800 = 4x, outline scale = 3200/1600 = 2x -> strokeWidth = 8.
+    final restore = FfiImageFile.setInfoBuilder(
+      (_) => Future.value(const ImageInformation(height: 2400, width: 3200)),
+    );
+    addTearDown(restore);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(height: 600, width: 800, child: DrawEditor(file, controller: controller)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final painter = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((customPaint) => customPaint.foregroundPainter)
+        .whereType<DrawPainter>()
+        .firstOrNull;
+
+    expect(
+      painter?.outlineStrokeWidth,
+      closeTo(8.0, 0.001),
+      reason: 'outline stroke should scale 2x (half of handle 4x) for a 3200-wide image',
+    );
+  });
+
+  testWidgets('outline stroke stays at 4 for 800x600 reference image', (tester) async {
+    final controller = DrawController();
+    final restore = FfiImageFile.setInfoBuilder(
+      (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+    );
+    addTearDown(restore);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(height: 600, width: 800, child: DrawEditor(file, controller: controller)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final painter = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((customPaint) => customPaint.foregroundPainter)
+        .whereType<DrawPainter>()
+        .firstOrNull;
+
+    expect(
+      painter?.outlineStrokeWidth,
+      closeTo(4.0, 0.001),
+      reason: 'outline stroke must not shrink below reference at 800x600',
+    );
+  });
+
+  testWidgets('outline stroke does not shrink below 4 for small images', (tester) async {
+    final controller = DrawController();
+    final restore = FfiImageFile.setInfoBuilder(
+      (_) => Future.value(const ImageInformation(height: 240, width: 320)),
+    );
+    addTearDown(restore);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(height: 600, width: 800, child: DrawEditor(file, controller: controller)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final painter = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((customPaint) => customPaint.foregroundPainter)
+        .whereType<DrawPainter>()
+        .firstOrNull;
+
+    expect(
+      painter?.outlineStrokeWidth,
+      closeTo(4.0, 0.001),
+      reason: 'outline stroke must clamp to 4 for images smaller than the 800px reference',
+    );
+  });
+
   testWidgets('selects element on tap on outline', (tester) async {
     final controller = DrawController();
     const rect = RectElement(height: 100, width: 100, x: 50, y: 50);
     controller
       ..addElement(rect)
-      ..selectedIndex = null; // Ensure not already selected.
+      ..selectedIndex = null;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -427,10 +669,10 @@ void main() => group(DrawEditor, () {
       );
       await tester.pumpAndSettle();
 
-      final interactiveViewerFinder = find.byType(InteractiveViewer);
-      final viewerTopLeft = tester.getTopLeft(interactiveViewerFinder);
-      final interactViewer = tester.widget<InteractiveViewer>(interactiveViewerFinder);
-      final transformationController = interactViewer.transformationController;
+      final ivFinder = find.byType(InteractiveViewer);
+      final viewerTopLeft = tester.getTopLeft(ivFinder);
+      final ivWidget = tester.widget<InteractiveViewer>(ivFinder);
+      final transformationController = ivWidget.transformationController;
 
       // 1. Start a drag on the element center (100, 100) document space.
       final dragGesture = await tester.startGesture(viewerTopLeft + const Offset(100, 100));

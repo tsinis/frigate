@@ -157,6 +157,36 @@ void main() {
       expect(resolvedImage?.height, 400.0);
     });
 
+    testWidgets('calls onInfo when image information resolves', (tester) async {
+      final file = File('test.jpg');
+      ImageInformation? capturedInfo;
+      int callbackCount = 0;
+
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) => Future.value(const ImageInformation(height: 480, width: 640)),
+      );
+      addTearDown(restore);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FfiImageFile(
+              file,
+              onInfo: (info) {
+                callbackCount += 1;
+                capturedInfo = info;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(callbackCount, 1);
+      expect(capturedInfo?.width, 640);
+      expect(capturedInfo?.height, 480);
+    });
+
     testWidgets('re-probes when file path changes', (tester) async {
       final fileFirst = File('file1.jpg');
       final fileSecond = File('file2.jpg');

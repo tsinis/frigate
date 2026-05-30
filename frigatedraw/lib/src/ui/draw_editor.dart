@@ -1,3 +1,5 @@
+// ignore_for_file: prefer-extracting-function-callbacks, prefer-class-destructuring
+
 import 'dart:io' show File;
 import 'dart:math';
 import 'dart:typed_data' show Float64x2List;
@@ -77,13 +79,68 @@ class _DrawEditorState extends State<DrawEditor> {
 
   /// The ID of the pointer currently owning the drag/creation interaction.
   int? _activePointerId;
+  Size? _boardSize;
+  bool _didApplyInitialFit = false;
 
   DrawController get _controller => widget._controller;
+
+  // InteractiveViewer produces a pure 2D scale+translate matrix; the Z axis
+  // is always 1. getMaxScaleOnAxis() returns max(scaleXY, Z=1), so it always
+  // returns ≥ 1 and is wrong whenever the fit scale is < 1 (zoomed-out).
+  // Reading storage[0] gives the actual XY scale directly.
+  double get _viewScale => _transformController.value.storage.firstOrNull ?? 1;
+
+  // Handles are designed at 12px for 800×600 images. Scale proportionally
+  // so they remain visually consistent at any resolution. Never shrink below
+  // the reference size (800px max-dimension = scale ≥ 1).
+  double get _handleRadius {
+    final board = _boardSize;
+    if (board == null || board.isEmpty) return 12;
+    final maxDim = board.width > board.height ? board.width : board.height;
+
+    return (maxDim / 800.0).clamp(1.0, double.infinity) * 12.0;
+  }
+
+  // White XOR outline (selection box, polygon preview paths). Uses half the
+  // handle scale rate: handles use maxDim/800, outline uses maxDim/1600.
+  // At 4K (3840px): handles scale 4.8×, outline scales 2.4×.
+  double get _outlineStrokeWidth {
+    final board = _boardSize;
+    if (board == null || board.isEmpty) return 4;
+    final maxDim = board.width > board.height ? board.width : board.height;
+
+    return (maxDim / 1600.0).clamp(1.0, double.infinity) * 4.0;
+  }
 
   @override
   void initState() {
     super.initState();
+    _boardSize = widget._size;
     _transformController.addListener(_onTransformationChanged);
+  }
+
+  void _handleImageInfo(ImageInformation info) {
+    if (_boardSize != info.size) setState(() => _boardSize = info.size);
+  }
+
+  void _applyInitialFitIfReady(Size viewport) {
+    if (_didApplyInitialFit) return;
+    final board = _boardSize;
+    if (board == null || board.isEmpty || viewport.isInfinite || viewport.isEmpty) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _didApplyInitialFit) return;
+      _didApplyInitialFit = true;
+      final width = viewport.width;
+      final height = viewport.height;
+      final scale = min(1, min(width / board.width, height / board.height)).toDouble();
+
+      _transformController.value = Matrix4.identity()
+        ..setEntry(0, 0, scale)
+        ..setEntry(1, 1, scale)
+        ..setEntry(0, 3, (width - board.width * scale) / 2)
+        ..setEntry(1, 3, (height - board.height * scale) / 2);
+    });
   }
 
   /// Synchronously snaps the matrix back to its starting value if we are dragging
@@ -95,19 +152,6 @@ class _DrawEditorState extends State<DrawEditor> {
         (_transformController.value != startMatrix)) {
       _transformController.value = startMatrix;
     }
-  }
-
-  int? get _resolvePreviewIndex {
-    final idx = _previewIndex;
-    final token = _previewElement;
-    if (idx != null) {
-      final atIdx = _controller.elements.elementAtOrNull(idx);
-      if (token != null && identical(atIdx, token)) return idx;
-    }
-    if (token == null) return null;
-    final resolved = _controller.elements.indexWhere((e) => identical(e, token));
-
-    return resolved.isNegative ? null : resolved;
   }
 
   void _handlePointerDown(PointerDownEvent event) {
@@ -141,7 +185,7 @@ class _DrawEditorState extends State<DrawEditor> {
     if (pending.length >= 3) {
       final first = Offset(pending.first.x, pending.first.y);
       final distance = (point - first).distance;
-      if (distance < _closeTolerance / _transformController.value.getMaxScaleOnAxis()) {
+      if (distance < _closeTolerance / _viewScale) {
         final template = _controller.creationTemplate;
         if (template is PolygonElement) {
           final vertices = Float64x2List.fromList(pending);
@@ -190,7 +234,7 @@ class _DrawEditorState extends State<DrawEditor> {
     final selected = _controller.selectedElement;
     if (selected == null) return false;
 
-    final handle = selected.hitTestHandle(point);
+    final handle = selected.hitTestHandle(point, _handleRadius);
     if (handle == null) return false;
 
     if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
@@ -253,8 +297,7 @@ class _DrawEditorState extends State<DrawEditor> {
     };
     if (!canMove) return;
 
-    final scale = _transformController.value.getMaxScaleOnAxis();
-    final delta = event.delta / scale;
+    final delta = event.delta / _viewScale;
 
     final updated = handle == null
         ? selected.moved(delta.dx, delta.dy)
@@ -348,6 +391,14 @@ class _DrawEditorState extends State<DrawEditor> {
   }
 
   @override
+  void didUpdateWidget(DrawEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget._image.path == widget._image.path && oldWidget._size == widget._size) return;
+    _boardSize = widget._size;
+    _didApplyInitialFit = false;
+  }
+
+  @override
   void dispose() {
     _isDragging.dispose();
     _transformController
@@ -356,64 +407,88 @@ class _DrawEditorState extends State<DrawEditor> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) => Listener(
-    onPointerCancel: _handlePointerCancel,
-    onPointerDown: _handlePointerDown,
-    onPointerMove: _handlePointerMove,
-    onPointerUp: _handlePointerUp,
-    child: ValueListenableBuilder(
-      builder: (_, isDragging, child) => ListenableBuilder(
-        builder: (_, _) {
-          final isInteracting = isDragging || _isCreating || _controller.creationTemplate != null;
+  int? get _resolvePreviewIndex {
+    final idx = _previewIndex;
+    final token = _previewElement;
+    if (idx != null) {
+      final atIdx = _controller.elements.elementAtOrNull(idx);
+      if (token != null && identical(atIdx, token)) return idx;
+    }
+    if (token == null) return null;
+    final resolved = _controller.elements.indexWhere((e) => identical(e, token));
 
-          return InteractiveViewer(
-            alignment: widget.alignment,
-            boundaryMargin: widget.boundaryMargin,
-            clipBehavior: widget.clipBehavior,
-            constrained: widget.constrained,
-            interactionEndFrictionCoefficient: widget.interactionEndFrictionCoefficient,
-            maxScale: widget.maxScale,
-            minScale: widget.minScale,
-            onInteractionEnd: widget.onInteractionEnd,
-            onInteractionStart: widget.onInteractionStart,
-            onInteractionUpdate: widget.onInteractionUpdate,
-            panAxis: widget.panAxis,
-            panEnabled: !isInteracting,
-            scaleEnabled: widget.scaleEnabled,
-            scaleFactor: widget.scaleFactor,
-            trackpadScrollCausesScale: widget.trackpadScrollCausesScale,
-            transformationController: _transformController,
-            child: child ?? const SizedBox.shrink(),
-          );
-        },
-        listenable: _controller,
-      ),
-      valueListenable: _isDragging,
-      child: FfiImageFile(
-        widget._image,
-        builder: (displayImage, info, uiImage) => ListenableBuilder(
-          builder: (_, child) => CustomPaint(
-            foregroundPainter: DrawPainter(
-              _controller.elements,
-              activeTool: _controller.activeTool,
-              backgroundImage: uiImage,
-              creationTemplate: _controller.creationTemplate,
-              cursorPosition: _controller.cursorPosition,
-              pendingVertices: _controller.pendingVertices,
-              selectedIndex: _controller.selectedIndex,
-              tolerance: _closeTolerance / _transformController.value.getMaxScaleOnAxis(),
-            ),
-            size: info.size,
-            willChange: _isDragging.value || _isCreating,
-            child: child,
+    return resolved.isNegative ? null : resolved;
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    // ignore: avoid-long-functions, TODO(tsinis): Refactor it later.
+    builder: (_, constraints) {
+      _applyInitialFitIfReady(constraints.biggest);
+
+      return Listener(
+        onPointerCancel: _handlePointerCancel,
+        onPointerDown: _handlePointerDown,
+        onPointerMove: _handlePointerMove,
+        onPointerUp: _handlePointerUp,
+        child: ValueListenableBuilder(
+          builder: (_, isDragging, child) => ListenableBuilder(
+            builder: (_, _) {
+              final isInteracting =
+                  isDragging || _isCreating || _controller.creationTemplate != null;
+
+              return InteractiveViewer(
+                alignment: widget.alignment,
+                boundaryMargin: widget.boundaryMargin,
+                clipBehavior: widget.clipBehavior,
+                constrained: widget.constrained,
+                interactionEndFrictionCoefficient: widget.interactionEndFrictionCoefficient,
+                maxScale: widget.maxScale,
+                minScale: widget.minScale,
+                onInteractionEnd: widget.onInteractionEnd,
+                onInteractionStart: widget.onInteractionStart,
+                onInteractionUpdate: widget.onInteractionUpdate,
+                panAxis: widget.panAxis,
+                panEnabled: !isInteracting,
+                scaleEnabled: widget.scaleEnabled,
+                scaleFactor: widget.scaleFactor,
+                trackpadScrollCausesScale: widget.trackpadScrollCausesScale,
+                transformationController: _transformController,
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
+            listenable: _controller,
           ),
-          listenable: Listenable.merge([_controller, _isDragging, _transformController]),
-          child: displayImage,
+          valueListenable: _isDragging,
+          child: FfiImageFile(
+            widget._image,
+            builder: (displayImage, info, uiImage) => ListenableBuilder(
+              builder: (_, child) => CustomPaint(
+                foregroundPainter: DrawPainter(
+                  _controller.elements,
+                  activeTool: _controller.activeTool,
+                  backgroundImage: uiImage,
+                  creationTemplate: _controller.creationTemplate,
+                  cursorPosition: _controller.cursorPosition,
+                  handleRadius: _handleRadius,
+                  outlineStrokeWidth: _outlineStrokeWidth,
+                  pendingVertices: _controller.pendingVertices,
+                  selectedIndex: _controller.selectedIndex,
+                  tolerance: _closeTolerance / _viewScale,
+                ),
+                size: info.size,
+                willChange: _isDragging.value || _isCreating,
+                child: child,
+              ),
+              listenable: Listenable.merge([_controller, _isDragging, _transformController]),
+              child: displayImage,
+            ),
+            fit: .fill,
+            onInfo: _handleImageInfo,
+            size: _boardSize,
+          ),
         ),
-        fit: .fill,
-        size: widget._size,
-      ),
-    ),
+      );
+    },
   );
 }

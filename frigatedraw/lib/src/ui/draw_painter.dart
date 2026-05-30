@@ -15,6 +15,7 @@ class DrawPainter extends CustomPainter {
     this.creationTemplate,
     this.cursorPosition,
     this.handleRadius = 12.0,
+    this.outlineStrokeWidth = 4.0,
     this.pendingVertices,
     this.selectedIndex,
     this.tolerance = 20.0,
@@ -26,6 +27,7 @@ class DrawPainter extends CustomPainter {
   final Offset? cursorPosition;
   final List<DrawElement> elements;
   final double handleRadius;
+  final double outlineStrokeWidth;
   final List<Float64x2>? pendingVertices;
   final int? selectedIndex;
   final double tolerance;
@@ -41,10 +43,10 @@ class DrawPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     for (final element in elements) {
-      _paintElement(canvas, size, element);
+      _paintElement(canvas, size, element, outlineStrokeWidth);
     }
 
-    _paintPolygonPreview(canvas);
+    _paintPolygonPreview(canvas, outlineStrokeWidth);
 
     final index = selectedIndex;
     if (index == null || index.isNegative || index >= elements.length) return;
@@ -53,8 +55,9 @@ class DrawPainter extends CustomPainter {
     if (selected == null) return;
 
     if (selected is! TextElement && selected.width > 0 && selected.height > 0) {
-      // Draw straight thin lines between holders (4 pixels hardcoded, inverted to background)
-      final bounds = selected.rect.inflate(8);
+      // Draw straight thin lines between holders (inverted to background).
+      final stroke = outlineStrokeWidth;
+      final bounds = selected.rect.inflate(stroke * 2);
       canvas
         ..saveLayer(bounds, Paint()..blendMode = .difference)
         ..drawRect(
@@ -62,7 +65,7 @@ class DrawPainter extends CustomPainter {
           Paint()
             ..color = const Color(0xFFFFFFFF)
             ..style = .stroke
-            ..strokeWidth = 4,
+            ..strokeWidth = stroke,
         )
         ..restore();
 
@@ -72,20 +75,19 @@ class DrawPainter extends CustomPainter {
     }
   }
 
-  void _paintPolygonPreview(Canvas canvas) {
+  void _paintPolygonPreview(Canvas canvas, double outlineStroke) {
     final pending = pendingVertices;
     if (activeTool != .polygon || pending == null || pending.isEmpty) return;
 
     final template = creationTemplate;
-    final bool isBlur = template != null && template.blur > 0;
 
-    _paintOpenPath(canvas, pending, template, isBlur: isBlur);
+    _paintOpenPath(canvas, pending, template, outlineStroke: outlineStroke);
     if (cursorPosition == null) {
-      _paintClosingLine(canvas, pending, template, isBlur: isBlur);
+      _paintClosingLine(canvas, pending, template, outlineStroke: outlineStroke);
     } else {
-      _paintCursorLine(canvas, cursorPosition, pending, template, isBlur: isBlur);
+      _paintCursorLine(canvas, cursorPosition, pending, template, outlineStroke: outlineStroke);
     }
-    _paintVertexHandles(canvas, pending);
+    _paintVertexHandles(canvas, pending, handleRadius / 3);
     _paintCloseZone(canvas, pending, tolerance);
   }
 
@@ -93,10 +95,11 @@ class DrawPainter extends CustomPainter {
     Canvas canvas,
     List<Float64x2> pending,
     DrawElement? template, {
-    required bool isBlur,
+    required double outlineStroke,
   }) {
     if (pending.length < 2) return;
 
+    final isBlur = template != null && template.blur > 0;
     final color = isBlur
         ? const Color(0xFFFFFFFF)
         : (template?.uiOutlineColor ?? const Color(0xFF000000));
@@ -111,7 +114,7 @@ class DrawPainter extends CustomPainter {
       path.lineTo(v.x, v.y);
     }
 
-    final bounds = path.getBounds().inflate(8);
+    final bounds = path.getBounds().inflate(outlineStroke * 2);
     canvas
       ..saveLayer(bounds, Paint()..blendMode = .difference)
       ..drawPath(
@@ -119,7 +122,7 @@ class DrawPainter extends CustomPainter {
         Paint()
           ..color = const Color(0xFFFFFFFF)
           ..style = .stroke
-          ..strokeWidth = 4.0
+          ..strokeWidth = outlineStroke
           ..isAntiAlias = true,
       )
       ..restore()
@@ -138,19 +141,20 @@ class DrawPainter extends CustomPainter {
     Offset? cursor,
     List<Float64x2> pending,
     DrawElement? template, {
-    required bool isBlur,
+    required double outlineStroke,
   }) {
     if (cursor == null || pending.isEmpty) return;
     final lastVertex = pending.lastOrNull;
     if (lastVertex == null) return;
 
     final origin = Offset(lastVertex.x, lastVertex.y);
+    final isBlur = template != null && template.blur > 0;
     final color = isBlur
         ? const Color(0xFFFFFFFF)
         : (template?.uiOutlineColor ?? const Color(0xFF000000));
     final thickness = template?.outlineThickness.toDouble() ?? 2.0;
 
-    final bounds = Rect.fromPoints(origin, cursor).inflate(8);
+    final bounds = Rect.fromPoints(origin, cursor).inflate(outlineStroke * 2);
     canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.difference);
     _drawDashedLine(
       canvas,
@@ -158,7 +162,7 @@ class DrawPainter extends CustomPainter {
       Paint()
         ..color = const Color(0xFFFFFFFF)
         ..style = .stroke
-        ..strokeWidth = 4.0
+        ..strokeWidth = outlineStroke
         ..isAntiAlias = true,
       cursor,
     );
@@ -180,7 +184,7 @@ class DrawPainter extends CustomPainter {
     Canvas canvas,
     List<Float64x2> pending,
     DrawElement? template, {
-    required bool isBlur,
+    required double outlineStroke,
   }) {
     if (pending.length < 2) return;
 
@@ -190,12 +194,13 @@ class DrawPainter extends CustomPainter {
 
     final origin = Offset(firstVertex.x, firstVertex.y);
     final target = Offset(lastVertex.x, lastVertex.y);
+    final isBlur = template != null && template.blur > 0;
     final color = isBlur
         ? const Color(0xFFFFFFFF)
         : (template?.uiOutlineColor ?? const Color(0xFF000000));
     final thickness = template?.outlineThickness.toDouble() ?? 2.0;
 
-    final bounds = Rect.fromPoints(origin, target).inflate(8);
+    final bounds = Rect.fromPoints(origin, target).inflate(outlineStroke * 2);
     canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.difference);
     _drawDashedLine(
       canvas,
@@ -203,7 +208,7 @@ class DrawPainter extends CustomPainter {
       Paint()
         ..color = const Color(0xFFFFFFFF)
         ..style = .stroke
-        ..strokeWidth = 4.0
+        ..strokeWidth = outlineStroke
         ..isAntiAlias = true,
       target,
     );
@@ -221,10 +226,10 @@ class DrawPainter extends CustomPainter {
     );
   }
 
-  static void _paintVertexHandles(Canvas canvas, List<Float64x2> pending) {
+  static void _paintVertexHandles(Canvas canvas, List<Float64x2> pending, double vertexRadius) {
     final paint = Paint()..color = const Color(0xFF000000);
     for (final vertex in pending) {
-      canvas.drawCircle(Offset(vertex.x, vertex.y), 4, paint);
+      canvas.drawCircle(Offset(vertex.x, vertex.y), vertexRadius, paint);
     }
   }
 
@@ -344,19 +349,27 @@ class DrawPainter extends CustomPainter {
       ..restore();
   }
 
-  void _paintElement(Canvas canvas, Size canvasSize, DrawElement element) => switch (element) {
-    RectElement() => _paintRect(backgroundImage, canvas, canvasSize, element),
-    MaskRegionElement() => _paintRect(backgroundImage, canvas, canvasSize, element),
-    OvalElement() => _paintOval(backgroundImage, canvas, canvasSize, element),
-    PolygonElement() => _paintPolygon(backgroundImage, canvas, canvasSize, element),
-    TextElement() => null, // TODO(tsinis): render TextElement in the preview painter.
-  };
+  void _paintElement(Canvas canvas, Size canvasSize, DrawElement element, double outlineStroke) =>
+      switch (element) {
+        RectElement() => _paintRect(backgroundImage, canvas, canvasSize, element),
+        MaskRegionElement() => _paintRect(backgroundImage, canvas, canvasSize, element),
+        OvalElement() => _paintOval(backgroundImage, canvas, canvasSize, element),
+        PolygonElement() => _paintPolygon(
+          backgroundImage,
+          canvas,
+          canvasSize,
+          element,
+          outlineStroke,
+        ),
+        TextElement() => null, // TODO(tsinis): render TextElement in the preview painter.
+      };
 
   static void _paintPolygon(
     ui.Image? bgImage,
     Canvas canvas,
     Size canvasSize,
     PolygonElement element,
+    double outlineStroke,
   ) {
     if (element.vertices.length < 3) return;
     final path = DrawElementExtension.getPathForPolygon(element);
@@ -409,7 +422,7 @@ class DrawPainter extends CustomPainter {
     }
 
     if (element.outlineThickness > 0 && element.uiOutlineColor.a > 0) {
-      final bounds = path.getBounds().inflate(8);
+      final bounds = path.getBounds().inflate(outlineStroke * 2);
       canvas
         ..saveLayer(bounds, Paint()..blendMode = .difference)
         ..drawPath(
@@ -417,7 +430,7 @@ class DrawPainter extends CustomPainter {
           Paint()
             ..color = const Color(0xFFFFFFFF)
             ..style = .stroke
-            ..strokeWidth = 4.0
+            ..strokeWidth = outlineStroke
             ..isAntiAlias = true,
         )
         ..restore()
@@ -631,6 +644,7 @@ class DrawPainter extends CustomPainter {
     if (oldDelegate.tolerance != tolerance) return true;
     if (oldDelegate.backgroundImage != backgroundImage) return true;
     if (oldDelegate.handleRadius != handleRadius) return true;
+    if (oldDelegate.outlineStrokeWidth != outlineStrokeWidth) return true;
 
     return false;
   }
