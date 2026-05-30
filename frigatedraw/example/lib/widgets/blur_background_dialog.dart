@@ -13,28 +13,26 @@ class _BlurBackgroundDialogState extends State<BlurBackgroundDialog> {
   double _currentBlur = 10;
 
   @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(_currentBlur),
-          child: const Text('Apply'),
+  Widget build(BuildContext context) => AlertDialog(
+    actions: [
+      TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+      FilledButton(
+        onPressed: () => Navigator.of(context).pop(_currentBlur),
+        child: const Text('Apply'),
+      ),
+    ],
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('Blur radius: ${_currentBlur.round()} px'),
+        Slider(
+          divisions: 255,
+          max: 255,
+          onChanged: (val) => setState(() => _currentBlur = val),
+          value: _currentBlur,
         ),
       ],
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('Blur radius: ${_currentBlur.round()} px'),
-          Slider(
-            divisions: 255,
-            max: 255,
-            onChanged: (val) => setState(() => _currentBlur = val),
-            value: _currentBlur,
-          ),
-        ],
-      ),
-      title: const Text('Blur Background'),
-    );
-  }
+    ),
+    title: const Text('Blur Background'),
+  );
 }

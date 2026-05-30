@@ -48,45 +48,43 @@ class _TextAnnotationDialogState extends State<TextAnnotationDialog> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-        ListenableBuilder(
-          builder: (_, _) => FilledButton(
-            onPressed: _trimmedText.isEmpty ? null : _handleSubmit,
-            child: const Text('Render'),
-          ),
-          listenable: _textController,
+  Widget build(BuildContext context) => AlertDialog(
+    actions: [
+      TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+      ListenableBuilder(
+        builder: (_, _) => FilledButton(
+          onPressed: _trimmedText.isEmpty ? null : _handleSubmit,
+          child: const Text('Render'),
+        ),
+        listenable: _textController,
+      ),
+    ],
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextField(
+          autofocus: true,
+          controller: _textController,
+          decoration: const InputDecoration(labelText: 'Text to render'),
+          onSubmitted: _handleTextSubmitted,
+        ),
+        const SizedBox(height: 16),
+        Text('Font size: ${_fontSize.toStringAsFixed(0)} px'),
+        Slider(
+          max: 128,
+          min: 12,
+          onChanged: (value) => setState(() => _fontSize = value),
+          value: _fontSize,
+        ),
+        Text('Rotation: ${_rotation.toStringAsFixed(0)} deg'),
+        Slider(
+          max: 180,
+          min: -180,
+          onChanged: (value) => setState(() => _rotation = value),
+          value: _rotation,
         ),
       ],
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            autofocus: true,
-            controller: _textController,
-            decoration: const InputDecoration(labelText: 'Text to render'),
-            onSubmitted: _handleTextSubmitted,
-          ),
-          const SizedBox(height: 16),
-          Text('Font size: ${_fontSize.toStringAsFixed(0)} px'),
-          Slider(
-            max: 128,
-            min: 12,
-            onChanged: (value) => setState(() => _fontSize = value),
-            value: _fontSize,
-          ),
-          Text('Rotation: ${_rotation.toStringAsFixed(0)} deg'),
-          Slider(
-            max: 180,
-            min: -180,
-            onChanged: (value) => setState(() => _rotation = value),
-            value: _rotation,
-          ),
-        ],
-      ),
-      title: const Text('Render text annotation'),
-    );
-  }
+    ),
+    title: const Text('Render text annotation'),
+  );
 }

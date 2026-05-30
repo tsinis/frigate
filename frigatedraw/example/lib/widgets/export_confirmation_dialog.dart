@@ -9,16 +9,14 @@ class ExportConfirmationDialog extends StatelessWidget {
   final Uint8List jpegBytes;
 
   @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Close')),
-        FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Save')),
-      ],
-      clipBehavior: Clip.antiAlias,
-      content: Image.memory(jpegBytes, semanticLabel: 'Exported Image'),
-      contentPadding: EdgeInsets.zero,
-      title: const Text('Exported Image'),
-    );
-  }
+  Widget build(BuildContext context) => AlertDialog(
+    actions: [
+      TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Close')),
+      FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Save')),
+    ],
+    clipBehavior: Clip.antiAlias,
+    content: Image.memory(jpegBytes, semanticLabel: 'Exported Image'),
+    contentPadding: EdgeInsets.zero,
+    title: const Text('Exported Image'),
+  );
 }

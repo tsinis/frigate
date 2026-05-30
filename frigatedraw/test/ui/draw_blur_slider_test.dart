@@ -3,6 +3,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:frigatedraw/frigatedraw.dart';
 
 void main() => group(DrawBlurSlider, () {
+  testWidgets('does not duplicate a provided GlobalKey onto internal Slider', (tester) async {
+    final controller = DrawController();
+    final key = GlobalKey();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: DrawBlurSlider(controller, key: key, value: 1)),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('acts as normal stateless slider when no element is selected', (tester) async {
     final controller = DrawController();
     const value = 50.0;

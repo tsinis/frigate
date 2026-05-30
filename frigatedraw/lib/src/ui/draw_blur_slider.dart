@@ -109,7 +109,6 @@ class _DrawBlurSliderState extends State<DrawBlurSlider> {
           divisions: widget.divisions ?? (widget.max - widget.min).round(),
           focusNode: widget.focusNode,
           inactiveColor: widget.inactiveColor,
-          key: widget.key,
           label: widget.label ?? sliderValue.round().toString(),
           max: widget.max,
           min: widget.min,
