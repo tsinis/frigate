@@ -268,6 +268,49 @@ void main() => group(DrawEditor, () {
     );
   });
 
+  testWidgets('does not dispose external controller when parent rebuilds with controller: null', (
+    tester,
+  ) async {
+    final external = DrawController();
+    final key = GlobalKey();
+
+    // Mount with external controller.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            width: 800,
+            child: DrawEditor(file, controller: external, key: key),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Rebuild without external controller.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            width: 800,
+            child: DrawEditor(file, key: key),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // External controller must still be usable.
+    expect(
+      () => external.addElement(const RectElement(height: 10, width: 10, x: 0, y: 0)),
+      returnsNormally,
+      reason: 'external controller must not be disposed by DrawEditor',
+    );
+    external.dispose();
+  });
+
   testWidgets('builder overlay receives correct args after image loads', (tester) async {
     final restore = FfiImageFile.setInfoBuilder(
       (_) => Future.value(const ImageInformation(height: 600, width: 800)),

@@ -48,7 +48,7 @@ class DrawBlurToggleButton extends DrawIconButton {
 
     return () {
       final snapshot = selected;
-      final updated = snapshot.copyWith(blur: 0, fillColor: _minColor, outlineThickness: 0);
+      final updated = snapshot.copyWith(blur: 0, fillColor: _minColor);
       controller.updateElement(updated, index);
       final after = controller.elements.elementAtOrNull(index);
       if (after != null) controller.commitCommand(index, after: after, before: snapshot);

@@ -391,7 +391,7 @@ class _DrawEditorState extends State<DrawEditor> {
   void didUpdateWidget(DrawEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget._controller != oldWidget._controller) {
-      if (!identical(_controller, widget._controller)) _controller.dispose();
+      if (oldWidget._controller == null) _controller.dispose();
       _controller = widget._controller ?? DrawController();
     }
     if (oldWidget._image.path == widget._image.path && oldWidget._size == widget._size) return;

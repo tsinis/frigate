@@ -81,4 +81,22 @@ void main() => group(DrawBlurToggleButton, () {
       expect(undone.blur, 50);
     }
   });
+
+  testWidgets('does not zero outlineThickness on element that has one', (tester) async {
+    final controller = DrawController();
+    const rect = RectElement(blur: 50, height: 100, outlineThickness: 3, width: 100, x: 0, y: 0);
+    controller
+      ..addElement(rect)
+      ..selectedIndex = 0;
+
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: DrawBlurToggleButton(controller))));
+    await tester.tap(find.byType(IconButton));
+    await tester.pumpAndSettle();
+
+    expect(
+      controller.selectedElement?.outlineThickness,
+      3,
+      reason: 'toggling blur off must not destroy the element outline thickness',
+    );
+  });
 });
