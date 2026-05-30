@@ -14,10 +14,15 @@ import 'draw_controller.dart';
 import 'draw_painter.dart';
 import 'ffi_image_file.dart';
 
+/// Signature for the optional overlay builder in [DrawEditor].
+typedef DrawEditorBuilder =
+    Widget Function(DrawController draw, ImageInformation info, TransformationController transform);
+
 class DrawEditor extends InteractiveViewer {
   DrawEditor(
     this._image, {
-    required this._controller,
+    this._builder,
+    this._controller,
     this._minShapeSize = 10.0,
     this._size,
     super.alignment,
@@ -36,10 +41,11 @@ class DrawEditor extends InteractiveViewer {
     super.trackpadScrollCausesScale,
   }) : super(child: const SizedBox.shrink(), constrained: false);
 
-  final DrawController _controller;
+  final DrawEditorBuilder? _builder;
+  final DrawController? _controller;
   final File _image;
-  final Size? _size;
   final double _minShapeSize;
+  final Size? _size;
 
   @override
   State<DrawEditor> createState() => _DrawEditorState();
@@ -48,7 +54,8 @@ class DrawEditor extends InteractiveViewer {
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties
-      ..add(DiagnosticsProperty<DrawController>('_controller', _controller))
+      ..add(DiagnosticsProperty<DrawController?>('_controller', _controller))
+      ..add(ObjectFlagProperty<DrawEditorBuilder?>.has('_builder', _builder))
       ..add(StringProperty('_image', _image.path))
       ..add(DoubleProperty('_size.height', _size?.height))
       ..add(DoubleProperty('_size.width', _size?.width));
@@ -82,17 +89,15 @@ class _DrawEditorState extends State<DrawEditor> {
   Size? _boardSize;
   bool _didApplyInitialFit = false;
 
-  DrawController get _controller => widget._controller;
+  // ignore: avoid-late-keyword, it's needed because of the widget access.
+  late DrawController _controller = widget._controller ?? DrawController();
 
-  // InteractiveViewer produces a pure 2D scale+translate matrix; the Z axis
-  // is always 1. getMaxScaleOnAxis() returns max(scaleXY, Z=1), so it always
-  // returns ≥ 1 and is wrong whenever the fit scale is < 1 (zoomed-out).
-  // Reading storage[0] gives the actual XY scale directly.
+  /// InteractiveViewer produces a pure 2D scale+translate matrix; the Z axis
+  /// is always 1. getMaxScaleOnAxis() returns max(scaleXY, Z=1), so it always
+  /// returns ≥ 1 and is wrong whenever the fit scale is < 1 (zoomed-out).
+  /// Reading storage[0] gives the actual XY scale directly.
   double get _viewScale => _transformController.value.storage.firstOrNull ?? 1;
 
-  // Handles are designed at 12px for 800×600 images. Scale proportionally
-  // so they remain visually consistent at any resolution. Never shrink below
-  // the reference size (800px max-dimension = scale ≥ 1).
   double get _handleRadius {
     final board = _boardSize;
     if (board == null || board.isEmpty) return 12;
@@ -101,9 +106,6 @@ class _DrawEditorState extends State<DrawEditor> {
     return (maxDim / 800.0).clamp(1.0, double.infinity) * 12.0;
   }
 
-  // White XOR outline (selection box, polygon preview paths). Uses half the
-  // handle scale rate: handles use maxDim/800, outline uses maxDim/1600.
-  // At 4K (3840px): handles scale 4.8×, outline scales 2.4×.
   double get _outlineStrokeWidth {
     final board = _boardSize;
     if (board == null || board.isEmpty) return 4;
@@ -143,9 +145,6 @@ class _DrawEditorState extends State<DrawEditor> {
     });
   }
 
-  /// Synchronously snaps the matrix back to its starting value if we are dragging
-  /// an element with a single finger. This prevents the "panning jitter" that occurs
-  /// between the `onPointerDown` event and the subsequent UI rebuild.
   void _onTransformationChanged() {
     final startMatrix = _dragStartMatrix;
     if ((startMatrix != null && _pointerCount == 1 && (_isDragging.value || _isCreating)) &&
@@ -155,8 +154,7 @@ class _DrawEditorState extends State<DrawEditor> {
   }
 
   void _handlePointerDown(PointerDownEvent event) {
-    _pointerCount += 1;
-    // If a second finger lands, we are likely zooming, so stop locking the board.
+    _pointerCount += 1; // If a 2nd finger lands, we are likely zooming, so stop locking the board.
     if (_pointerCount > 1) _dragStartMatrix = null;
     if (_activePointerId != null) return;
 
@@ -290,7 +288,6 @@ class _DrawEditorState extends State<DrawEditor> {
     final handle = _activeHandle;
     if (index == null || selected == null) return;
     // TODO(tsinis): Enable TextElement movement once _paintElement supports text bounds/handles.
-    // Also remember to wire up hitTestHandle/hasHandles to allow text dragging.
     final canMove = switch (selected) {
       RectElement() || OvalElement() || PolygonElement() || MaskRegionElement() => true,
       TextElement() => false,
@@ -393,6 +390,10 @@ class _DrawEditorState extends State<DrawEditor> {
   @override
   void didUpdateWidget(DrawEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget._controller != oldWidget._controller) {
+      if (!identical(_controller, widget._controller)) _controller.dispose();
+      _controller = widget._controller ?? DrawController();
+    }
     if (oldWidget._image.path == widget._image.path && oldWidget._size == widget._size) return;
     _boardSize = widget._size;
     _didApplyInitialFit = false;
@@ -404,6 +405,8 @@ class _DrawEditorState extends State<DrawEditor> {
     _transformController
       ..removeListener(_onTransformationChanged)
       ..dispose();
+    // ignore: avoid-disposing-late-fields, it is assigned immidiately.
+    if (!identical(_controller, widget._controller)) _controller.dispose();
     super.dispose();
   }
 
@@ -463,22 +466,27 @@ class _DrawEditorState extends State<DrawEditor> {
           child: FfiImageFile(
             widget._image,
             builder: (displayImage, info, uiImage) => ListenableBuilder(
-              builder: (_, child) => CustomPaint(
-                foregroundPainter: DrawPainter(
-                  _controller.elements,
-                  activeTool: _controller.activeTool,
-                  backgroundImage: uiImage,
-                  creationTemplate: _controller.creationTemplate,
-                  cursorPosition: _controller.cursorPosition,
-                  handleRadius: _handleRadius,
-                  outlineStrokeWidth: _outlineStrokeWidth,
-                  pendingVertices: _controller.pendingVertices,
-                  selectedIndex: _controller.selectedIndex,
-                  tolerance: _closeTolerance / _viewScale,
-                ),
-                size: info.size,
-                willChange: _isDragging.value || _isCreating,
-                child: child,
+              builder: (_, image) => Stack(
+                children: [
+                  CustomPaint(
+                    foregroundPainter: DrawPainter(
+                      _controller.elements,
+                      activeTool: _controller.activeTool,
+                      backgroundImage: uiImage,
+                      creationTemplate: _controller.creationTemplate,
+                      cursorPosition: _controller.cursorPosition,
+                      handleRadius: _handleRadius,
+                      outlineStrokeWidth: _outlineStrokeWidth,
+                      pendingVertices: _controller.pendingVertices,
+                      selectedIndex: _controller.selectedIndex,
+                      tolerance: _closeTolerance / _viewScale,
+                    ),
+                    size: info.size,
+                    willChange: _isDragging.value || _isCreating,
+                    child: image,
+                  ),
+                  if (info != null) ?widget._builder?.call(_controller, info, _transformController),
+                ],
               ),
               listenable: Listenable.merge([_controller, _isDragging, _transformController]),
               child: displayImage,

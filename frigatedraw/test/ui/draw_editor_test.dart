@@ -268,6 +268,85 @@ void main() => group(DrawEditor, () {
     );
   });
 
+  testWidgets('builder overlay receives correct args after image loads', (tester) async {
+    final restore = FfiImageFile.setInfoBuilder(
+      (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+    );
+    addTearDown(restore);
+
+    DrawController? receivedController;
+    ImageInformation? receivedInfo;
+    TransformationController? receivedTransform;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            width: 800,
+            child: DrawEditor(
+              file,
+              builder: (controller, info, transform) {
+                receivedController = controller;
+                receivedInfo = info;
+                receivedTransform = transform;
+
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      receivedController,
+      isNotNull,
+      reason: 'internal controller must be created when no controller is passed',
+    );
+    expect(receivedInfo, equals(const ImageInformation(height: 600, width: 800)));
+    expect(receivedTransform, isNotNull);
+  });
+
+  testWidgets('builder overlay is replaced by external controller when one is provided', (
+    tester,
+  ) async {
+    final restore = FfiImageFile.setInfoBuilder(
+      (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+    );
+    addTearDown(restore);
+
+    final externalController = DrawController();
+    DrawController? receivedController;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            width: 800,
+            child: DrawEditor(
+              file,
+              builder: (controller, info, transform) {
+                receivedController = controller;
+
+                return const SizedBox.shrink();
+              },
+              controller: externalController,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      receivedController,
+      same(externalController),
+      reason: 'builder must receive the externally supplied controller',
+    );
+  });
   testWidgets('selects element on tap on outline', (tester) async {
     final controller = DrawController();
     const rect = RectElement(height: 100, width: 100, x: 50, y: 50);

@@ -37,6 +37,8 @@ class _DrawingScreenState extends State<DrawingScreen> {
   late File _bgImageFile; // ignore: avoid-late-keyword, it's fine for example purposes.
   late File _originalBgImageFile; // ignore: avoid-late-keyword, it's fine for example purposes.
   double _selectedBlur = 50;
+  bool _isToolbarHidden = false;
+  Timer? _hideTimer;
   DrawTool? _selectedTool;
 
   @override
@@ -47,11 +49,42 @@ class _DrawingScreenState extends State<DrawingScreen> {
     _controller.addListener(_onControllerChanged);
   }
 
-  void _onControllerChanged() {
-    if (_selectedTool != _controller.activeTool) setState(_syncSelectedTool);
+  void _handleHideToolbar() {
+    _hideTimer = null;
+    if (mounted) setState(() => _isToolbarHidden = true);
   }
 
-  void _syncSelectedTool() => _selectedTool = _controller.activeTool;
+  void _handleShowToolbar() {
+    _selectedTool = _controller.activeTool;
+    _isToolbarHidden = false;
+  }
+
+  void _onControllerChanged() {
+    final activeTool = _controller.activeTool;
+    final isDrawing = activeTool != null && activeTool != .select;
+
+    if (_selectedTool != activeTool) {
+      if (isDrawing) {
+        _selectedTool = activeTool;
+      } else {
+        _hideTimer?.cancel();
+        _hideTimer = null;
+        setState(_handleShowToolbar);
+      }
+    }
+
+    if (isDrawing) {
+      if (!_isToolbarHidden && _hideTimer == null) {
+        _hideTimer = Timer(const Duration(seconds: 1), _handleHideToolbar);
+      }
+    } else {
+      _hideTimer?.cancel();
+      _hideTimer = null;
+      if (_isToolbarHidden) {
+        setState(_handleShowToolbar);
+      }
+    }
+  }
 
   void _updateCreationTemplate() {
     final blurVal = _selectedBlur.round();
@@ -296,8 +329,48 @@ class _DrawingScreenState extends State<DrawingScreen> {
     }
   }
 
+  Widget _buildEditorOverlay(
+    DrawController draw,
+    ImageInformation info,
+    TransformationController transform,
+  ) => Positioned(
+    bottom: 16,
+    left: 16,
+    right: 16,
+    child: Center(
+      child: AnimatedOpacity(
+        curve: Curves.easeInOut,
+        duration: const Duration(milliseconds: 400),
+        opacity: _isToolbarHidden ? 0.0 : 1.0,
+        child: AnimatedScale(
+          curve: Curves.easeOutCubic,
+          duration: const Duration(milliseconds: 400),
+          scale: _isToolbarHidden ? 0.9 : 1.0,
+          child: IgnorePointer(
+            ignoring: _isToolbarHidden,
+            child: Card(
+              clipBehavior: .antiAlias,
+              color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+              elevation: 6,
+              shadowColor: Colors.black38,
+              shape: const RoundedRectangleBorder(borderRadius: .all(.circular(24))),
+              child: Padding(
+                padding: const .symmetric(horizontal: 16, vertical: 8),
+                child: DrawToolSegmentedButton(
+                  draw,
+                  onSelectionChanged: _handleToolSelectionChanged,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
   @override
   void dispose() {
+    _hideTimer?.cancel();
     _controller
       ..removeListener(_onControllerChanged)
       ..dispose();
@@ -341,9 +414,9 @@ class _DrawingScreenState extends State<DrawingScreen> {
       ],
       title: const Text('Frigate Draw'),
     ),
-    body: DrawEditor(_bgImageFile, controller: _controller),
+    body: DrawEditor(_bgImageFile, builder: _buildEditorOverlay, controller: _controller),
     bottomNavigationBar: BottomAppBar(
-      height: 140,
+      height: 80,
       child: ListenableBuilder(
         builder: (context, _) {
           final isSelected = _controller.selectedElement != null;
@@ -351,37 +424,24 @@ class _DrawingScreenState extends State<DrawingScreen> {
               ? (_controller.selectedElement?.blur.toDouble() ?? 0)
               : _selectedBlur;
 
-          return Column(
-            mainAxisAlignment: .center,
-            mainAxisSize: .min,
-            children: [
-              Padding(
-                padding: const .symmetric(horizontal: 8),
-                child: Row(
-                  spacing: 4,
-                  children: [
-                    DrawBlurToggleButton(_controller, minColor: .black),
-                    Expanded(
-                      child: DrawBlurSlider(
-                        _controller,
-                        minColor: .black,
-                        onChanged: _handleBlurSliderChanged,
-                        value: sliderValue,
-                      ),
+          return Center(
+            child: Padding(
+              padding: const .symmetric(horizontal: 8),
+              child: Row(
+                spacing: 4,
+                children: [
+                  DrawBlurToggleButton(_controller, minColor: .black),
+                  Expanded(
+                    child: DrawBlurSlider(
+                      _controller,
+                      minColor: .black,
+                      onChanged: _handleBlurSliderChanged,
+                      value: sliderValue,
                     ),
-                  ],
-                ),
-              ),
-              SingleChildScrollView(
-                scrollDirection: .horizontal,
-                child: Center(
-                  child: DrawToolSegmentedButton(
-                    _controller,
-                    onSelectionChanged: _handleToolSelectionChanged,
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           );
         },
         listenable: _controller,
