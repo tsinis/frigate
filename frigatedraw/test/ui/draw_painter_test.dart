@@ -72,7 +72,11 @@ void main() => group(DrawPainter, () {
       final canvas = _DrawPainterTest();
       const sharp = RectElement(height: 50, width: 100, x: 10, y: 20);
       const DrawPainter([sharp]).paint(canvas, const Size(200, 200));
-      expect(canvas.drawRectCount, 1, reason: 'sharp rect should hit drawRect once');
+      expect(
+        canvas.drawRectCount,
+        2,
+        reason: 'sharp rect should hit drawRect twice (contrast base + outline)',
+      );
       expect(canvas.drawRRectCount, 0, reason: 'no rounded path for cornerRadius=0');
     });
 
@@ -80,7 +84,11 @@ void main() => group(DrawPainter, () {
       final canvas = _DrawPainterTest();
       const rounded = RectElement(cornerRadius: 8, height: 50, width: 100, x: 10, y: 20);
       const DrawPainter([rounded]).paint(canvas, const Size(200, 200));
-      expect(canvas.drawRRectCount, 1, reason: 'rounded rect must take the drawRRect path');
+      expect(
+        canvas.drawRRectCount,
+        2,
+        reason: 'rounded rect must take the drawRRect path twice (contrast base + outline)',
+      );
       expect(canvas.drawRectCount, 0, reason: 'must not draw both - would over-paint the outline');
     });
 

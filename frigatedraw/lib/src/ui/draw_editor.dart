@@ -66,8 +66,7 @@ class _DrawEditorState extends State<DrawEditor> {
   final _transformController = TransformationController();
   final _isDragging = ValueNotifier<bool>(false);
 
-  // ignore: avoid-explicit-type-declaration, avoid-late-keyword, it's safe for an unboxed value.
-  late final double _closeTolerance = widget._minShapeSize * 2;
+  double _closeTolerance = 0;
 
   bool _isCreating = false;
   HandlePosition? _activeHandle;
@@ -80,12 +79,8 @@ class _DrawEditorState extends State<DrawEditor> {
   /// and multi-finger pinch-zooming.
   int _pointerCount = 0;
 
-  /// Stores the matrix at the exact moment a drag starts, used to block the 1-frame
-  /// jitter in InteractiveViewer.
-  Matrix4? _dragStartMatrix;
-
-  /// The ID of the pointer currently owning the drag/creation interaction.
-  int? _activePointerId;
+  Matrix4? _dragStartMatrix; // Stores the matrix at the exact moment a drag starts.
+  int? _activePointerId; // The ID of the pointer currently owning the drag/creation interaction.
   Size? _boardSize;
   bool _didApplyInitialFit = false;
 
@@ -118,6 +113,7 @@ class _DrawEditorState extends State<DrawEditor> {
   void initState() {
     super.initState();
     _boardSize = widget._size;
+    _closeTolerance = widget._minShapeSize * 2;
     _transformController.addListener(_onTransformationChanged);
   }
 
@@ -394,6 +390,7 @@ class _DrawEditorState extends State<DrawEditor> {
       if (oldWidget._controller == null) _controller.dispose();
       _controller = widget._controller ?? DrawController();
     }
+    if (widget._minShapeSize != oldWidget._minShapeSize) _closeTolerance = widget._minShapeSize * 2;
     if (oldWidget._image.path == widget._image.path && oldWidget._size == widget._size) return;
     _boardSize = widget._size;
     _didApplyInitialFit = false;
@@ -405,7 +402,7 @@ class _DrawEditorState extends State<DrawEditor> {
     _transformController
       ..removeListener(_onTransformationChanged)
       ..dispose();
-    // ignore: avoid-disposing-late-fields, it is assigned immidiately.
+    // ignore: avoid-disposing-late-fields, it is assigned immediately.
     if (!identical(_controller, widget._controller)) _controller.dispose();
     super.dispose();
   }

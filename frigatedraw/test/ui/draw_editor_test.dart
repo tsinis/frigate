@@ -292,11 +292,7 @@ void main() => group(DrawEditor, () {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: SizedBox(
-            height: 600,
-            width: 800,
-            child: DrawEditor(file, key: key),
-          ),
+          body: SizedBox(height: 600, width: 800, child: DrawEditor(file, key: key)),
         ),
       ),
     );
@@ -987,5 +983,54 @@ void main() => group(DrawEditor, () {
 
     // Zero-area polygon must NOT be committed.
     expect(controller.elements, isEmpty);
+  });
+
+  testWidgets('updates close tolerance when minShapeSize changes in didUpdateWidget', (
+    tester,
+  ) async {
+    final controller = DrawController();
+    final key = GlobalKey();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DrawEditor(
+            file,
+            controller: controller,
+            key: key,
+            minShapeSize: 15,
+            size: const Size(800, 600),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DrawEditor(
+            file,
+            controller: controller,
+            key: key,
+            minShapeSize: 25,
+            size: const Size(800, 600),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final painter = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((customPaint) => customPaint.foregroundPainter)
+        .whereType<DrawPainter>()
+        .firstOrNull;
+
+    expect(
+      painter?.tolerance,
+      closeTo(50.0, 0.001),
+      reason: 'tolerance must update to minShapeSize * 2 when minShapeSize changes',
+    );
   });
 });
