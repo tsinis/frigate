@@ -85,4 +85,37 @@ final class PolygonElement extends DrawElement {
       'vertices: ${vertices.length}, fillColor: $fillColor, '
       'outlineColor: $outlineColor, outlineThickness: $outlineThickness, '
       'rotation: $rotation, blur: $blur)';
+
+  @override
+  bool operator ==(Object other) =>
+      // ignore: avoid-complex-conditions, many fields to compare for value equality.
+      identical(this, other) ||
+      other is PolygonElement &&
+          other.x == x &&
+          other.y == y &&
+          other.width == width &&
+          other.height == height &&
+          other.rotation == rotation &&
+          other.blur == blur &&
+          other.fillColor == fillColor &&
+          other.outlineColor == outlineColor &&
+          other.outlineThickness == outlineThickness &&
+          _hasSameVertices(other.vertices, vertices);
+
+  @override
+  int get hashCode => Object.hash(
+    x, y, width, height, rotation, blur, fillColor, outlineColor, outlineThickness,
+    vertices.length,
+  );
+
+  static bool _hasSameVertices(Float64x2List a, Float64x2List b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (final (i, vertex) in a.indexed) {
+      // ignore: avoid-unsafe-collection-methods, bounds guaranteed by length check above.
+      if (vertex.x != b[i].x || vertex.y != b[i].y) return false;
+    }
+
+    return true;
+  }
 }

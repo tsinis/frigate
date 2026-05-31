@@ -132,8 +132,11 @@ enum ImageFormat {
   const ImageFormat(this.wire);
   final int wire;
 
-  static ImageFormat fromWire(int v) =>
-      values.firstWhere((e) => e.wire == v, orElse: () => unknown);
+  static ImageFormat fromWire(int v) => switch (v) {
+    0 => png,
+    1 => jpg,
+    _ => unknown,
+  };
 }
 
 enum ExifOrientation {
@@ -149,6 +152,14 @@ enum ExifOrientation {
   const ExifOrientation(this.wire);
   final int wire;
 
-  static ExifOrientation fromWire(int v) =>
-      values.firstWhere((e) => e.wire == v, orElse: () => normal);
+  static ExifOrientation fromWire(int v) => switch (v) {
+    2 => flipH,
+    3 => rotate180,
+    4 => flipV,
+    5 => transpose,
+    6 => rotate90,
+    7 => transverse,
+    8 => rotate270,
+    _ => normal,
+  };
 }

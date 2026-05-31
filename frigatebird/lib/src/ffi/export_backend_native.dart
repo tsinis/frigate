@@ -164,7 +164,4 @@ final class _MergeArgs {
   final int offsetX;
   final int offsetY;
   final int outFormatWire;
-
-  /// Output format as an enum.
-  ImageFormat get outFormat => ImageFormat.fromWire(outFormatWire);
 }

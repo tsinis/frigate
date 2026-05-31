@@ -83,8 +83,14 @@ sealed class FfiMarshal {
       }
 
       // Allocate the native text buffer once with the exact size needed.
+      // The typed list view is created once here, avoiding repeated asTypedList() calls
+      // inside the loop. Empty list is never accessed (no TextElement → no textOffset writes).
+      final Uint8List textBufferView;
       if (totalTextBytes > 0) {
         textBufferPtr = allocator<Uint8>(totalTextBytes);
+        textBufferView = textBufferPtr.asTypedList(totalTextBytes);
+      } else {
+        textBufferView = Uint8List(0);
       }
 
       int textOffset = 0;
@@ -138,9 +144,7 @@ sealed class FfiMarshal {
 
             final encoded = textEncodings[i]!;
             // Write encoded bytes directly into native buffer at the current offset.
-            textBufferPtr
-                .asTypedList(totalTextBytes)
-                .setRange(textOffset, textOffset + encoded.length, encoded);
+            textBufferView.setRange(textOffset, textOffset + encoded.length, encoded);
             (ref..tag = FfiElementType.text.value).payload.text
               ..x = item.x
               ..y = item.y

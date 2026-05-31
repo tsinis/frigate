@@ -52,10 +52,31 @@ void main() {
       () => expect(ImageFormat.fromWire(999), equals(ImageFormat.unknown)),
     );
 
+    test('ImageFormat.fromWire maps all known wire values', () {
+      expect(ImageFormat.fromWire(0), ImageFormat.png);
+      expect(ImageFormat.fromWire(1), ImageFormat.jpg);
+      expect(ImageFormat.fromWire(255), ImageFormat.unknown);
+    });
+
     test(
       'ExifOrientation.fromWire unknown fallback',
       () => expect(ExifOrientation.fromWire(999), equals(ExifOrientation.normal)),
     );
+
+    test('ExifOrientation.fromWire maps all known wire values', () {
+      expect(ExifOrientation.fromWire(1), ExifOrientation.normal);
+      expect(ExifOrientation.fromWire(2), ExifOrientation.flipH);
+      expect(ExifOrientation.fromWire(3), ExifOrientation.rotate180);
+      expect(ExifOrientation.fromWire(4), ExifOrientation.flipV);
+      expect(ExifOrientation.fromWire(5), ExifOrientation.transpose);
+      expect(ExifOrientation.fromWire(6), ExifOrientation.rotate90);
+      expect(ExifOrientation.fromWire(7), ExifOrientation.transverse);
+      expect(ExifOrientation.fromWire(8), ExifOrientation.rotate270);
+    });
+
+    test('ExifOrientation.fromWire returns normal for zero', () {
+      expect(ExifOrientation.fromWire(0), ExifOrientation.normal);
+    });
 
     test('toString formats correctly', () {
       final info = ImageInformation.from(
