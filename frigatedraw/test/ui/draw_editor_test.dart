@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frigatedraw/frigatedraw.dart';
 
+// ignore: avoid-high-cyclomatic-complexity, it's just a test.
 void main() => group(DrawEditor, () {
   final file = File('test.jpg');
 
@@ -89,6 +90,59 @@ void main() => group(DrawEditor, () {
 
     expect(transformationController?.value.storage.firstOrNull, closeTo(2.0, 0.001));
     expect(transformationController?.value.storage.elementAtOrNull(5), closeTo(2.0, 0.001));
+  });
+
+  testWidgets('re-applies initial fit when provided size changes for same file path', (
+    tester,
+  ) async {
+    final controller = DrawController();
+    final restore = FfiImageFile.setInfoBuilder(
+      (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+    );
+    addTearDown(restore);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              height: 300,
+              width: 400,
+              child: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    InteractiveViewer viewer = tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
+    final transform = viewer.transformationController;
+    transform?.value = Matrix4.diagonal3Values(2, 2, 1);
+    await tester.pump();
+    expect(transform?.value.storage.firstOrNull, closeTo(2.0, 0.001));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              height: 300,
+              width: 400,
+              child: DrawEditor(file, controller: controller, size: const Size(1600, 1200)),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    viewer = tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
+    expect(
+      viewer.transformationController?.value.storage.firstOrNull,
+      closeTo(0.25, 0.001),
+      reason: 'size change must reset cached fit and re-apply the viewport transform',
+    );
   });
 
   testWidgets('scales handle radius proportionally for large images', (tester) async {

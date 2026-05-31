@@ -1,8 +1,43 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frigatedraw/frigatedraw.dart';
 
 void main() => group(DrawToolSegmentedButton, () {
+  test('debugFillProperties includes constructor-backed diagnostics', () {
+    final controller = DrawController();
+    final widget = DrawToolSegmentedButton(
+      controller,
+      direction: Axis.vertical,
+      expandedInsets: const EdgeInsets.all(8),
+      isEmptySelectionAllowed: false,
+      onSelectionChanged: (_) {}, // ignore: no-empty-block, just a test.
+      selectedIcon: const Icon(Icons.check),
+      shouldShowSelectedIcon: false,
+      style: const ButtonStyle(),
+      tools: const {.select: Icons.mouse},
+    );
+
+    final properties = DiagnosticPropertiesBuilder();
+    widget.debugFillProperties(properties);
+    final names = properties.properties.map((e) => e.name).toSet();
+
+    expect(
+      names,
+      containsAll(<String>{
+        '_controller',
+        '_direction',
+        '_isEmptySelectionAllowed',
+        '_expandedInsets',
+        '_selectedIcon',
+        '_shouldShowSelectedIcon',
+        '_style',
+        '_tools',
+        '_onSelectionChanged',
+      }),
+    );
+  });
+
   testWidgets('renders segments for each tool as icon-only and triggers onSelectionChanged', (
     tester,
   ) async {

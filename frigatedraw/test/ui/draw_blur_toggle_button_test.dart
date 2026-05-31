@@ -1,8 +1,17 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frigatedraw/frigatedraw.dart';
 
 void main() => group(DrawBlurToggleButton, () {
+  test('debugFillProperties includes minColor', () {
+    final button = DrawBlurToggleButton(DrawController(), minColor: FfiColor.black);
+    final properties = DiagnosticPropertiesBuilder();
+    button.debugFillProperties(properties);
+
+    expect(properties.properties.map((e) => e.name), contains('minColor'));
+  });
+
   testWidgets('renders Icons.blur_circular and is disabled when no element is selected', (
     tester,
   ) async {

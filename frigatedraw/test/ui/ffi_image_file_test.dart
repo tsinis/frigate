@@ -306,6 +306,47 @@ void main() {
       expect(find.byType(Image), findsNothing);
     });
 
+    testWidgets('clears previous probe error state when reloading with size nullability change', (
+      tester,
+    ) async {
+      final file = File('recoverable.jpg');
+      final firstRestore = FfiImageFile.setInfoBuilder((_) => Future.error('Initial failure'));
+      addTearDown(firstRestore);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FfiImageFile(
+              file,
+              errorBuilder: (context, error, stackTrace) => Text('Error: $error'),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Error: Initial failure'), findsOneWidget);
+
+      final secondRestore = FfiImageFile.setInfoBuilder(
+        (_) async => const ImageInformation(height: 100, width: 100),
+      );
+      addTearDown(secondRestore);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FfiImageFile(
+              file,
+              errorBuilder: (context, error, stackTrace) => Text('Error: $error'),
+              size: const Size(100, 100),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Error: Initial failure'), findsNothing);
+      expect(find.byType(Image), findsOneWidget);
+    });
+
     test('debugFillProperties covers builder property', () {
       final file = File('test.jpg');
       final image = FfiImageFile(file, builder: (img, info, uiImage) => const SizedBox());

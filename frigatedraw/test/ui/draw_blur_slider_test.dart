@@ -1,8 +1,20 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frigatedraw/frigatedraw.dart';
 
 void main() => group(DrawBlurSlider, () {
+  test('debugFillProperties includes controller and min color', () {
+    final controller = DrawController();
+    final widget = DrawBlurSlider(controller, minColor: FfiColor.black, value: 1);
+
+    final properties = DiagnosticPropertiesBuilder();
+    widget.debugFillProperties(properties);
+    final names = properties.properties.map((e) => e.name).toSet();
+
+    expect(names, containsAll(<String>{'_controller', '_minColor'}));
+  });
+
   testWidgets('does not duplicate a provided GlobalKey onto internal Slider', (tester) async {
     final controller = DrawController();
     final key = GlobalKey();

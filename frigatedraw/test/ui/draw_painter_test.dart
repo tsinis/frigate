@@ -252,6 +252,32 @@ void main() => group(DrawPainter, () {
       expect(canvas.drawRectCount, 1, reason: 'drawRect should be called for region blur fill');
     });
 
+    test('blur rendering path is exercised with background image', () async {
+      final imageRecorder = PictureRecorder();
+      _drawOpaquePixel(imageRecorder);
+      final frameImage = await imageRecorder.endRecording().toImage(1, 1);
+      addTearDown(frameImage.dispose);
+
+      final recorder = PictureRecorder();
+      final canvas = Canvas(recorder);
+
+      DrawPainter(
+        [
+          const RectElement(
+            blur: 18,
+            height: 50,
+            outlineColor: FfiColor(0xFF00FF00),
+            width: 100,
+            x: 10,
+            y: 20,
+          ),
+        ], // Dart 3.8 formatting.
+        backgroundImage: frameImage,
+      ).paint(canvas, const Size(200, 200));
+
+      expect(recorder.endRecording, returnsNormally);
+    });
+
     test('renders placeholder outline for transparent/no-outline blur OvalElement', () {
       final canvas = _DrawPainterTest();
       const oval = OvalElement(
@@ -628,6 +654,12 @@ void main() => group(DrawPainter, () {
     });
   });
 });
+
+void _drawOpaquePixel(PictureRecorder recorder) {
+  final canvas = Canvas(recorder);
+  final paint = Paint()..color = const Color(0xFFFFFFFF);
+  canvas.drawRect(const Rect.fromLTWH(0, 0, 1, 1), paint);
+}
 
 /// Stub [Canvas] that counts the draw operations DrawPainter cares about. We can't subclass
 /// Canvas directly (its constructor needs a PictureRecorder) so we implement the interface and
