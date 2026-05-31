@@ -157,6 +157,36 @@ void main() {
       expect(resolvedImage?.height, 400.0);
     });
 
+    testWidgets('calls onInfo when image information resolves', (tester) async {
+      final file = File('test.jpg');
+      ImageInformation? capturedInfo;
+      int callbackCount = 0;
+
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) => Future.value(const ImageInformation(height: 480, width: 640)),
+      );
+      addTearDown(restore);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FfiImageFile(
+              file,
+              onInfo: (info) {
+                callbackCount += 1;
+                capturedInfo = info;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(callbackCount, 1);
+      expect(capturedInfo?.width, 640);
+      expect(capturedInfo?.height, 480);
+    });
+
     testWidgets('re-probes when file path changes', (tester) async {
       final fileFirst = File('file1.jpg');
       final fileSecond = File('file2.jpg');
@@ -274,6 +304,47 @@ void main() {
 
       expect(find.text('Error: Failed test error'), findsOneWidget);
       expect(find.byType(Image), findsNothing);
+    });
+
+    testWidgets('clears previous probe error state when reloading with size nullability change', (
+      tester,
+    ) async {
+      final file = File('recoverable.jpg');
+      final firstRestore = FfiImageFile.setInfoBuilder((_) => Future.error('Initial failure'));
+      addTearDown(firstRestore);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FfiImageFile(
+              file,
+              errorBuilder: (context, error, stackTrace) => Text('Error: $error'),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Error: Initial failure'), findsOneWidget);
+
+      final secondRestore = FfiImageFile.setInfoBuilder(
+        (_) async => const ImageInformation(height: 100, width: 100),
+      );
+      addTearDown(secondRestore);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FfiImageFile(
+              file,
+              errorBuilder: (context, error, stackTrace) => Text('Error: $error'),
+              size: const Size(100, 100),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Error: Initial failure'), findsNothing);
+      expect(find.byType(Image), findsOneWidget);
     });
 
     test('debugFillProperties covers builder property', () {

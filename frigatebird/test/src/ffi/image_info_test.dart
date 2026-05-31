@@ -71,6 +71,32 @@ void main() {
         ),
       );
     });
+
+    test('equality and hashCode work as expected', () {
+      final firstInfo = ImageInformation.from(
+        format: .jpg,
+        height: 200,
+        orientation: .rotate90,
+        width: 100,
+      );
+      final secondInfo = ImageInformation.from(
+        format: .jpg,
+        height: 200,
+        orientation: .rotate90,
+        width: 100,
+      );
+      final thirdInfo = ImageInformation.from(
+        format: .png,
+        height: 200,
+        orientation: .rotate90,
+        width: 100,
+      );
+
+      expect(firstInfo, equals(secondInfo));
+      expect(firstInfo.hashCode, equals(secondInfo.hashCode));
+      expect(firstInfo, isNot(equals(thirdInfo)));
+      expect(firstInfo.hashCode, isNot(equals(thirdInfo.hashCode)));
+    });
   });
 
   group('ImageInfoException', () {

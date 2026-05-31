@@ -12,13 +12,11 @@ Future<void> main() async {
   final directory = _exportDestination;
 
   if (directory == null) {
-    runApp(
+    return runApp(
       const MaterialApp(
         home: Scaffold(body: Center(child: Text('Failed to initialize local directories'))),
       ),
     );
-
-    return;
   }
 
   final tempDir = await Directory.systemTemp.createTemp('frigate_');

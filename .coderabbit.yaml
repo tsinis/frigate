@@ -111,7 +111,7 @@ reviews:
         - Use `Listener` wrapping `InteractiveViewer` (not GestureDetector) to avoid gesture arena conflicts.
         - `panEnabled: !isDragging` to disable canvas pan while dragging an element.
         - All positions in document space; use `TransformationController.toScene()` for screen-to-document.
-        - Use `getMaxScaleOnAxis()` for scale-aware deltas.
+        - Use `_viewScale` (reads `storage[0]`) for scale-aware deltas — never `getMaxScaleOnAxis()`, which includes the Z axis (always 1) and returns ≥ 1 even when zoomed out.
         - Minimum rect size: 10x10 pixels enforced during resize.
 
     - path: "frigatebird/hook/build.dart"

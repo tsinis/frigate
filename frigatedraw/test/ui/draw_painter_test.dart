@@ -72,7 +72,11 @@ void main() => group(DrawPainter, () {
       final canvas = _DrawPainterTest();
       const sharp = RectElement(height: 50, width: 100, x: 10, y: 20);
       const DrawPainter([sharp]).paint(canvas, const Size(200, 200));
-      expect(canvas.drawRectCount, 1, reason: 'sharp rect should hit drawRect once');
+      expect(
+        canvas.drawRectCount,
+        2,
+        reason: 'sharp rect should hit drawRect twice (contrast base + outline)',
+      );
       expect(canvas.drawRRectCount, 0, reason: 'no rounded path for cornerRadius=0');
     });
 
@@ -80,7 +84,11 @@ void main() => group(DrawPainter, () {
       final canvas = _DrawPainterTest();
       const rounded = RectElement(cornerRadius: 8, height: 50, width: 100, x: 10, y: 20);
       const DrawPainter([rounded]).paint(canvas, const Size(200, 200));
-      expect(canvas.drawRRectCount, 1, reason: 'rounded rect must take the drawRRect path');
+      expect(
+        canvas.drawRRectCount,
+        2,
+        reason: 'rounded rect must take the drawRRect path twice (contrast base + outline)',
+      );
       expect(canvas.drawRectCount, 0, reason: 'must not draw both - would over-paint the outline');
     });
 
@@ -242,6 +250,32 @@ void main() => group(DrawPainter, () {
       );
       const DrawPainter([sharp]).paint(canvas, const Size(200, 200));
       expect(canvas.drawRectCount, 1, reason: 'drawRect should be called for region blur fill');
+    });
+
+    test('blur rendering path is exercised with background image', () async {
+      final imageRecorder = PictureRecorder();
+      _drawOpaquePixel(imageRecorder);
+      final frameImage = await imageRecorder.endRecording().toImage(1, 1);
+      addTearDown(frameImage.dispose);
+
+      final recorder = PictureRecorder();
+      final canvas = Canvas(recorder);
+
+      DrawPainter(
+        [
+          const RectElement(
+            blur: 18,
+            height: 50,
+            outlineColor: FfiColor(0xFF00FF00),
+            width: 100,
+            x: 10,
+            y: 20,
+          ),
+        ], // Dart 3.8 formatting.
+        backgroundImage: frameImage,
+      ).paint(canvas, const Size(200, 200));
+
+      expect(recorder.endRecording, returnsNormally);
     });
 
     test('renders placeholder outline for transparent/no-outline blur OvalElement', () {
@@ -620,6 +654,12 @@ void main() => group(DrawPainter, () {
     });
   });
 });
+
+void _drawOpaquePixel(PictureRecorder recorder) {
+  final canvas = Canvas(recorder);
+  final paint = Paint()..color = const Color(0xFFFFFFFF);
+  canvas.drawRect(const Rect.fromLTWH(0, 0, 1, 1), paint);
+}
 
 /// Stub [Canvas] that counts the draw operations DrawPainter cares about. We can't subclass
 /// Canvas directly (its constructor needs a PictureRecorder) so we implement the interface and

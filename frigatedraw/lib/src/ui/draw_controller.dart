@@ -22,7 +22,6 @@ class DrawController extends ChangeNotifier {
 
   DrawElement? _creationTemplate;
   int? _selectedIndex;
-  DrawTool _activeTool = .select;
   Offset? _cursorPosition;
 
   List<DrawElement> get elements => _cachedElements ??= UnmodifiableListView(_elements);
@@ -40,14 +39,18 @@ class DrawController extends ChangeNotifier {
   set creationTemplate(DrawElement? value) {
     if (_creationTemplate == value) return;
     _creationTemplate = value;
-    _activeTool = value?.tool ?? .select;
     _pendingVertices.clear();
     _cursorPosition = null;
     if (value != null) _selectedIndex = null;
     notifyListeners();
   }
 
-  DrawTool get activeTool => _activeTool;
+  DrawTool? get activeTool => _creationTemplate == null
+      ? _selectedIndex == null
+            ? null
+            : .select
+      : _creationTemplate?.tool;
+
   Offset? get cursorPosition => _cursorPosition;
   List<Float64x2> get pendingVertices =>
       _cachedPendingVertices ??= UnmodifiableListView(_pendingVertices);
@@ -85,7 +88,7 @@ class DrawController extends ChangeNotifier {
   /// Used primarily for tearing down temporary preview elements. Updates [_selectedIndex]
   /// to remain consistent with the new list size.
   void dropElementAt(int index) {
-    if (index < 0 || index >= _elements.length) return;
+    if (index.isNegative || index >= _elements.length) return;
     _elements.removeAt(index);
 
     final selected = _selectedIndex;
@@ -101,7 +104,7 @@ class DrawController extends ChangeNotifier {
 
   /// Removes the temporary preview element and commits it as an undoable action in a single transaction.
   void replacePreviewAndCommit(DrawElement element, int index) {
-    if (index >= 0 && index < _elements.length) _elements.removeAt(index);
+    if (!index.isNegative && index < _elements.length) _elements.removeAt(index);
 
     final insertIndex = index.clamp(0, _elements.length);
     commandStack.execute(
@@ -160,15 +163,14 @@ class DrawController extends ChangeNotifier {
   }
 
   bool get canUndo =>
-      commandStack.canUndo || (_activeTool == .polygon && _pendingVertices.isNotEmpty);
+      commandStack.canUndo || (activeTool == .polygon && _pendingVertices.isNotEmpty);
 
   void undo() {
-    if (_activeTool == .polygon && _pendingVertices.isNotEmpty) {
+    if (activeTool == .polygon && _pendingVertices.isNotEmpty) {
       _pendingVertices.removeLast();
       _cursorPosition = null;
-      notifyListeners();
 
-      return;
+      return notifyListeners();
     }
     if (!commandStack.canUndo) return;
     commandStack.undo();

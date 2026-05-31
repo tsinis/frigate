@@ -107,6 +107,19 @@ final class ImageInformation {
       Isolate.run(() => ImageInformation.probeSync(path));
 
   @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ImageInformation &&
+          runtimeType == other.runtimeType &&
+          width == other.width &&
+          height == other.height &&
+          formatWire == other.formatWire &&
+          orientationWire == other.orientationWire;
+
+  @override
+  int get hashCode => Object.hash(width, height, formatWire, orientationWire);
+
+  @override
   String toString() =>
       'ImageInformation(width: $width, height: $height, format: $format, orientation: $orientation)';
 }

@@ -1,4 +1,4 @@
-// ignore_for_file: prefer-moving-to-variable, avoid-long-functions, avoid-explicit-type-declaration, use-existing-destructuring, prefer-class-destructuring, avoid-long-files, prefer-shorthands-with-enums, format-comment
+// ignore_for_file: prefer-moving-to-variable, avoid-long-functions, avoid-explicit-type-declaration, use-existing-destructuring, prefer-class-destructuring, avoid-long-files
 import 'dart:typed_data' show Float64x2;
 import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
@@ -14,24 +14,26 @@ class DrawPainter extends CustomPainter {
     this.backgroundImage,
     this.creationTemplate,
     this.cursorPosition,
+    this.handleRadius = 12.0,
+    this.outlineStrokeWidth = 4.0,
     this.pendingVertices,
     this.selectedIndex,
     this.tolerance = 20.0,
   });
 
-  static const double handleRadius = DrawElementExtension.handleRadius;
-
-  final List<DrawElement> elements;
-  final int? selectedIndex;
-  final List<Float64x2>? pendingVertices;
-  final Offset? cursorPosition;
   final DrawTool? activeTool;
-  final double tolerance;
-  final DrawElement? creationTemplate;
   final ui.Image? backgroundImage;
+  final DrawElement? creationTemplate;
+  final Offset? cursorPosition;
+  final List<DrawElement> elements;
+  final double handleRadius;
+  final double outlineStrokeWidth;
+  final List<Float64x2>? pendingVertices;
+  final int? selectedIndex;
+  final double tolerance;
 
-  // Paint instances live at class scope so we don't rebuild them per handle, per frame.
-  // Colors and stroke are constant, nothing to parameterize.
+  /// Paint instances live at class scope so we don't rebuild them per handle, per frame.
+  /// Colors and stroke are constant, nothing to parameterize.
   static final _handleFillPaint = Paint()..color = const Color(0xFF000000);
   static final _handleBorderPaint = Paint()
     ..color = const Color(0xFFFFFFFF)
@@ -41,10 +43,10 @@ class DrawPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     for (final element in elements) {
-      _paintElement(canvas, size, element);
+      _paintElement(canvas, size, element, outlineStrokeWidth);
     }
 
-    _paintPolygonPreview(canvas);
+    _paintPolygonPreview(canvas, outlineStrokeWidth);
 
     final index = selectedIndex;
     if (index == null || index.isNegative || index >= elements.length) return;
@@ -53,8 +55,8 @@ class DrawPainter extends CustomPainter {
     if (selected == null) return;
 
     if (selected is! TextElement && selected.width > 0 && selected.height > 0) {
-      // Draw straight thin lines between holders (4 pixels hardcoded, inverted to background)
-      final bounds = selected.rect.inflate(8);
+      final stroke = outlineStrokeWidth;
+      final bounds = selected.rect.inflate(stroke * 2);
       canvas
         ..saveLayer(bounds, Paint()..blendMode = .difference)
         ..drawRect(
@@ -62,30 +64,29 @@ class DrawPainter extends CustomPainter {
           Paint()
             ..color = const Color(0xFFFFFFFF)
             ..style = .stroke
-            ..strokeWidth = 4,
+            ..strokeWidth = stroke,
         )
         ..restore();
 
       for (final handle in HandlePosition.values) {
-        _paintHandle(canvas, selected.handleCenter(handle));
+        _paintHandle(canvas, selected.handleCenter(handle), handleRadius);
       }
     }
   }
 
-  void _paintPolygonPreview(Canvas canvas) {
+  void _paintPolygonPreview(Canvas canvas, double outlineStroke) {
     final pending = pendingVertices;
     if (activeTool != .polygon || pending == null || pending.isEmpty) return;
 
     final template = creationTemplate;
-    final bool isBlur = template != null && template.blur > 0;
 
-    _paintOpenPath(canvas, pending, template, isBlur: isBlur);
+    _paintOpenPath(canvas, pending, template, outlineStroke: outlineStroke);
     if (cursorPosition == null) {
-      _paintClosingLine(canvas, pending, template, isBlur: isBlur);
+      _paintClosingLine(canvas, pending, template, outlineStroke: outlineStroke);
     } else {
-      _paintCursorLine(canvas, cursorPosition, pending, template, isBlur: isBlur);
+      _paintCursorLine(canvas, cursorPosition, pending, template, outlineStroke: outlineStroke);
     }
-    _paintVertexHandles(canvas, pending);
+    _paintVertexHandles(canvas, pending, handleRadius / 3);
     _paintCloseZone(canvas, pending, tolerance);
   }
 
@@ -93,10 +94,11 @@ class DrawPainter extends CustomPainter {
     Canvas canvas,
     List<Float64x2> pending,
     DrawElement? template, {
-    required bool isBlur,
+    required double outlineStroke,
   }) {
     if (pending.length < 2) return;
 
+    final isBlur = template != null && template.blur > 0;
     final color = isBlur
         ? const Color(0xFFFFFFFF)
         : (template?.uiOutlineColor ?? const Color(0xFF000000));
@@ -111,7 +113,7 @@ class DrawPainter extends CustomPainter {
       path.lineTo(v.x, v.y);
     }
 
-    final bounds = path.getBounds().inflate(8);
+    final bounds = path.getBounds().inflate(outlineStroke * 2);
     canvas
       ..saveLayer(bounds, Paint()..blendMode = .difference)
       ..drawPath(
@@ -119,8 +121,7 @@ class DrawPainter extends CustomPainter {
         Paint()
           ..color = const Color(0xFFFFFFFF)
           ..style = .stroke
-          ..strokeWidth = 4.0
-          ..isAntiAlias = true,
+          ..strokeWidth = outlineStroke,
       )
       ..restore()
       ..drawPath(
@@ -128,8 +129,7 @@ class DrawPainter extends CustomPainter {
         Paint()
           ..color = color
           ..style = .stroke
-          ..strokeWidth = thickness
-          ..isAntiAlias = true,
+          ..strokeWidth = thickness,
       );
   }
 
@@ -138,28 +138,28 @@ class DrawPainter extends CustomPainter {
     Offset? cursor,
     List<Float64x2> pending,
     DrawElement? template, {
-    required bool isBlur,
+    required double outlineStroke,
   }) {
     if (cursor == null || pending.isEmpty) return;
     final lastVertex = pending.lastOrNull;
     if (lastVertex == null) return;
 
     final origin = Offset(lastVertex.x, lastVertex.y);
+    final isBlur = template != null && template.blur > 0;
     final color = isBlur
         ? const Color(0xFFFFFFFF)
         : (template?.uiOutlineColor ?? const Color(0xFF000000));
     final thickness = template?.outlineThickness.toDouble() ?? 2.0;
 
-    final bounds = Rect.fromPoints(origin, cursor).inflate(8);
-    canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.difference);
+    final bounds = Rect.fromPoints(origin, cursor).inflate(outlineStroke * 2);
+    canvas.saveLayer(bounds, Paint()..blendMode = .difference);
     _drawDashedLine(
       canvas,
       origin,
       Paint()
         ..color = const Color(0xFFFFFFFF)
         ..style = .stroke
-        ..strokeWidth = 4.0
-        ..isAntiAlias = true,
+        ..strokeWidth = outlineStroke,
       cursor,
     );
     canvas.restore();
@@ -170,8 +170,7 @@ class DrawPainter extends CustomPainter {
       Paint()
         ..color = isBlur ? color : color.withValues(alpha: 0.5)
         ..style = .stroke
-        ..strokeWidth = thickness
-        ..isAntiAlias = true,
+        ..strokeWidth = thickness,
       cursor,
     );
   }
@@ -180,7 +179,7 @@ class DrawPainter extends CustomPainter {
     Canvas canvas,
     List<Float64x2> pending,
     DrawElement? template, {
-    required bool isBlur,
+    required double outlineStroke,
   }) {
     if (pending.length < 2) return;
 
@@ -190,21 +189,21 @@ class DrawPainter extends CustomPainter {
 
     final origin = Offset(firstVertex.x, firstVertex.y);
     final target = Offset(lastVertex.x, lastVertex.y);
+    final isBlur = template != null && template.blur > 0;
     final color = isBlur
         ? const Color(0xFFFFFFFF)
         : (template?.uiOutlineColor ?? const Color(0xFF000000));
     final thickness = template?.outlineThickness.toDouble() ?? 2.0;
 
-    final bounds = Rect.fromPoints(origin, target).inflate(8);
-    canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.difference);
+    final bounds = Rect.fromPoints(origin, target).inflate(outlineStroke * 2);
+    canvas.saveLayer(bounds, Paint()..blendMode = .difference);
     _drawDashedLine(
       canvas,
       origin,
       Paint()
         ..color = const Color(0xFFFFFFFF)
         ..style = .stroke
-        ..strokeWidth = 4.0
-        ..isAntiAlias = true,
+        ..strokeWidth = outlineStroke,
       target,
     );
     canvas.restore();
@@ -215,16 +214,15 @@ class DrawPainter extends CustomPainter {
       Paint()
         ..color = isBlur ? color : color.withValues(alpha: 0.5)
         ..style = .stroke
-        ..strokeWidth = thickness
-        ..isAntiAlias = true,
+        ..strokeWidth = thickness,
       target,
     );
   }
 
-  static void _paintVertexHandles(Canvas canvas, List<Float64x2> pending) {
+  static void _paintVertexHandles(Canvas canvas, List<Float64x2> pending, double vertexRadius) {
     final paint = Paint()..color = const Color(0xFF000000);
     for (final vertex in pending) {
-      canvas.drawCircle(Offset(vertex.x, vertex.y), 4, paint);
+      canvas.drawCircle(Offset(vertex.x, vertex.y), vertexRadius, paint);
     }
   }
 
@@ -240,9 +238,7 @@ class DrawPainter extends CustomPainter {
       ..drawCircle(
         center,
         zoneRadius,
-        Paint()
-          ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.15)
-          ..style = .fill,
+        Paint()..color = const Color(0xFFFFFFFF).withValues(alpha: 0.15),
       )
       ..drawCircle(
         center,
@@ -334,7 +330,7 @@ class DrawPainter extends CustomPainter {
         srcRect,
         paddedBounds,
         Paint()
-          ..blendMode = BlendMode.srcIn
+          ..blendMode = .srcIn
           ..imageFilter = ui.ImageFilter.blur(
             sigmaX: blurSigma,
             sigmaY: blurSigma,
@@ -344,11 +340,16 @@ class DrawPainter extends CustomPainter {
       ..restore();
   }
 
-  void _paintElement(Canvas canvas, Size canvasSize, DrawElement element) => switch (element) {
-    RectElement() => _paintRect(backgroundImage, canvas, canvasSize, element),
-    MaskRegionElement() => _paintRect(backgroundImage, canvas, canvasSize, element),
-    OvalElement() => _paintOval(backgroundImage, canvas, canvasSize, element),
-    PolygonElement() => _paintPolygon(backgroundImage, canvas, canvasSize, element),
+  void _paintElement(
+    Canvas canvas,
+    Size canvasSize,
+    DrawElement element,
+    double outlineStroke,
+  ) => switch (element) {
+    RectElement() => _paintRect(backgroundImage, canvas, canvasSize, element, outlineStroke),
+    MaskRegionElement() => _paintRect(backgroundImage, canvas, canvasSize, element, outlineStroke),
+    OvalElement() => _paintOval(backgroundImage, canvas, canvasSize, element, outlineStroke),
+    PolygonElement() => _paintPolygon(backgroundImage, canvas, canvasSize, element, outlineStroke),
     TextElement() => null, // TODO(tsinis): render TextElement in the preview painter.
   };
 
@@ -357,6 +358,7 @@ class DrawPainter extends CustomPainter {
     Canvas canvas,
     Size canvasSize,
     PolygonElement element,
+    double outlineStroke,
   ) {
     if (element.vertices.length < 3) return;
     final path = DrawElementExtension.getPathForPolygon(element);
@@ -365,13 +367,7 @@ class DrawPainter extends CustomPainter {
 
     if (shouldShowBlurPreview) {
       if (bgImage == null) {
-        canvas.drawPath(
-          path,
-          Paint()
-            ..color = const Color(0x44FFFFFF)
-            ..style = .fill
-            ..isAntiAlias = true,
-        );
+        canvas.drawPath(path, Paint()..color = const Color(0x44FFFFFF));
       } else {
         _applyBlur(
           bgImage: bgImage,
@@ -392,24 +388,15 @@ class DrawPainter extends CustomPainter {
         Paint()
           ..color = const Color(0xFFFFFFFF)
           ..style = .stroke
-          ..strokeWidth = 1.5
-          ..isAntiAlias = true,
+          ..strokeWidth = 1.5,
         path,
       );
     }
 
-    if (element.uiFillColor.a > 0) {
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = element.uiFillColor
-          ..style = .fill
-          ..isAntiAlias = true,
-      );
-    }
+    if (element.uiFillColor.a > 0) canvas.drawPath(path, Paint()..color = element.uiFillColor);
 
     if (element.outlineThickness > 0 && element.uiOutlineColor.a > 0) {
-      final bounds = path.getBounds().inflate(8);
+      final bounds = path.getBounds().inflate(outlineStroke * 2);
       canvas
         ..saveLayer(bounds, Paint()..blendMode = .difference)
         ..drawPath(
@@ -417,8 +404,7 @@ class DrawPainter extends CustomPainter {
           Paint()
             ..color = const Color(0xFFFFFFFF)
             ..style = .stroke
-            ..strokeWidth = 4.0
-            ..isAntiAlias = true,
+            ..strokeWidth = outlineStroke,
         )
         ..restore()
         ..drawPath(
@@ -426,8 +412,7 @@ class DrawPainter extends CustomPainter {
           Paint()
             ..color = element.uiOutlineColor
             ..style = .stroke
-            ..strokeWidth = element.outlineThickness.toDouble()
-            ..isAntiAlias = true,
+            ..strokeWidth = element.outlineThickness.toDouble(),
         );
     }
   }
@@ -437,6 +422,7 @@ class DrawPainter extends CustomPainter {
     Canvas canvas,
     Size canvasSize,
     ImmutableDrawElement element,
+    double outlineStroke,
   ) {
     final width = element.width;
     final height = element.height;
@@ -458,7 +444,6 @@ class DrawPainter extends CustomPainter {
       if (bgImage == null) {
         final fillPaint = Paint()
           ..color = const Color(0x44FFFFFF)
-          ..style = .fill
           ..isAntiAlias = isRounded;
         if (isRounded) {
           canvas.drawRRect(
@@ -519,7 +504,6 @@ class DrawPainter extends CustomPainter {
     if (uiFillColor.a > 0) {
       final fillPaint = Paint()
         ..color = uiFillColor
-        ..style = .fill
         ..isAntiAlias = isRounded;
       if (isRounded) {
         canvas.drawRRect(
@@ -535,6 +519,27 @@ class DrawPainter extends CustomPainter {
     }
 
     if (outlineThickness > 0 && uiOutlineColor.a > 0) {
+      final bounds = rect.inflate(outlineStroke * 2);
+      final diffPaint = Paint()
+        ..color = const Color(0xFFFFFFFF)
+        ..style = .stroke
+        ..strokeWidth = outlineStroke
+        ..isAntiAlias = isRounded;
+
+      canvas.saveLayer(bounds, Paint()..blendMode = .difference);
+      if (isRounded) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            rect,
+            .circular(cornerRadius.toDouble().clamp(0.0, rect.shortestSide / 2)),
+          ),
+          diffPaint,
+        );
+      } else {
+        canvas.drawRect(rect, diffPaint);
+      }
+      canvas.restore();
+
       final strokePaint = Paint()
         ..color = uiOutlineColor
         ..style = .stroke
@@ -554,7 +559,13 @@ class DrawPainter extends CustomPainter {
     }
   }
 
-  static void _paintOval(ui.Image? bgImage, Canvas canvas, Size canvasSize, OvalElement element) {
+  static void _paintOval(
+    ui.Image? bgImage,
+    Canvas canvas,
+    Size canvasSize,
+    OvalElement element,
+    double outlineStroke,
+  ) {
     final OvalElement(:height, :outlineThickness, :rect, :uiFillColor, :uiOutlineColor, :width) =
         element;
     if (width <= 0 || height <= 0) return;
@@ -563,13 +574,7 @@ class DrawPainter extends CustomPainter {
 
     if (shouldShowBlurPreview) {
       if (bgImage == null) {
-        canvas.drawOval(
-          rect,
-          Paint()
-            ..color = const Color(0x44FFFFFF)
-            ..style = .fill
-            ..isAntiAlias = true,
-        );
+        canvas.drawOval(rect, Paint()..color = const Color(0x44FFFFFF));
       } else {
         final path = Path()..addOval(rect);
         _applyBlur(
@@ -592,31 +597,34 @@ class DrawPainter extends CustomPainter {
         Paint()
           ..color = const Color(0x88FFFFFF)
           ..style = .stroke
-          ..strokeWidth = 1.5
-          ..isAntiAlias = true,
+          ..strokeWidth = 1.5,
         path,
       );
     }
 
     if (uiFillColor.a > 0) {
-      canvas.drawOval(
-        rect,
-        Paint()
-          ..color = uiFillColor
-          ..style = .fill
-          ..isAntiAlias = true,
-      );
+      canvas.drawOval(rect, Paint()..color = uiFillColor);
     }
 
     if (outlineThickness > 0 && uiOutlineColor.a > 0) {
-      canvas.drawOval(
-        rect,
-        Paint()
-          ..color = uiOutlineColor
-          ..style = .stroke
-          ..strokeWidth = outlineThickness.toDouble()
-          ..isAntiAlias = true,
-      );
+      final bounds = rect.inflate(outlineStroke * 2);
+      canvas
+        ..saveLayer(bounds, Paint()..blendMode = .difference)
+        ..drawOval(
+          rect,
+          Paint()
+            ..color = const Color(0xFFFFFFFF)
+            ..style = .stroke
+            ..strokeWidth = outlineStroke,
+        )
+        ..restore()
+        ..drawOval(
+          rect,
+          Paint()
+            ..color = uiOutlineColor
+            ..style = .stroke
+            ..strokeWidth = outlineThickness.toDouble(),
+        );
     }
   }
 
@@ -630,6 +638,8 @@ class DrawPainter extends CustomPainter {
     if (!identical(oldDelegate.creationTemplate, creationTemplate)) return true;
     if (oldDelegate.tolerance != tolerance) return true;
     if (oldDelegate.backgroundImage != backgroundImage) return true;
+    if (oldDelegate.handleRadius != handleRadius) return true;
+    if (oldDelegate.outlineStrokeWidth != outlineStrokeWidth) return true;
 
     return false;
   }
@@ -639,7 +649,7 @@ class DrawPainter extends CustomPainter {
     final index = selectedIndex;
     if (index != null && index >= 0 && index < elements.length) {
       final select = elements.elementAtOrNull(index);
-      if (select != null && select.hitTestHandle(position) != null) return true;
+      if (select != null && select.hitTestHandle(position, handleRadius) != null) return true;
     }
 
     for (int i = elements.length - 1; i >= 0; i -= 1) {
@@ -651,9 +661,9 @@ class DrawPainter extends CustomPainter {
     return false;
   }
 
-  static void _paintHandle(Canvas canvas, Offset center) {
+  static void _paintHandle(Canvas canvas, Offset center, double radius) {
     canvas
-      ..drawCircle(center, handleRadius, _handleFillPaint)
-      ..drawCircle(center, handleRadius, _handleBorderPaint);
+      ..drawCircle(center, radius, _handleFillPaint)
+      ..drawCircle(center, radius, _handleBorderPaint);
   }
 }

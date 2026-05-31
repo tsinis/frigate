@@ -303,5 +303,21 @@ void main() {
         );
       },
     );
+
+    test('activeTool returns correct nullable DrawTool based on selection and template', () {
+      expect(controller.activeTool, isNull, reason: 'initially null');
+
+      controller.creationTemplate = const RectElement(height: 10, width: 10, x: 0, y: 0);
+      expect(controller.activeTool, DrawTool.rectangle, reason: 'matches creation template tool');
+
+      controller.creationTemplate = null;
+      expect(controller.activeTool, isNull, reason: 'null when template and selection are null');
+
+      controller.addElement(rect);
+      expect(controller.activeTool, DrawTool.select, reason: 'select when element is selected');
+
+      controller.selectedIndex = null;
+      expect(controller.activeTool, isNull, reason: 'null when deselected');
+    });
   });
 }

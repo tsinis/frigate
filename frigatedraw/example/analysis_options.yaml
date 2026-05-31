@@ -4,4 +4,3 @@ linter:
   rules:
     public_member_api_docs: false
     diagnostic_describe_all_properties: false
-    prefer_expression_function_bodies: false

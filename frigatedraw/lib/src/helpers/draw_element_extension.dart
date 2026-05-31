@@ -86,7 +86,7 @@ extension DrawElementExtension on DrawElement {
     };
   }
 
-  HandlePosition? hitTestHandle(Offset point) {
+  HandlePosition? hitTestHandle(Offset point, [double customHandleRadius = 12]) {
     if (width <= 0 || height <= 0) return null;
 
     final self = this;
@@ -100,7 +100,7 @@ extension DrawElementExtension on DrawElement {
       case MaskRegionElement():
         for (final handle in HandlePosition.values) {
           final center = handleCenter(handle);
-          if ((point - center).distance <= handleRadius) return handle;
+          if ((point - center).distance <= customHandleRadius) return handle;
         }
 
         return null;
