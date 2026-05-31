@@ -203,23 +203,12 @@ fn render_text_rotated(
     // Composite the rotated overlay back onto img at (ov_x, ov_y).
     for py in 0..ov_h {
         for px in 0..ov_w {
-            let src_px = rotated.get_pixel(px, py);
-            let sa = u32::from(src_px[3]);
-            if sa == 0 {
+            let src_px = *rotated.get_pixel(px, py);
+            if src_px[3] == 0 {
                 continue;
             }
             let dst_px = img.get_pixel_mut(ov_x + px, ov_y + py);
-            let da = u32::from(dst_px[3]);
-            let out_a = sa + da * (255 - sa) / 255;
-            if out_a == 0 {
-                continue;
-            }
-            for i in 0..3 {
-                let s = u32::from(src_px[i]) * sa;
-                let d = u32::from(dst_px[i]) * da * (255 - sa) / 255;
-                dst_px[i] = ((s + d) / out_a) as u8;
-            }
-            dst_px[3] = out_a as u8;
+            *dst_px = blend_src_over(src_px, *dst_px);
         }
     }
 }
@@ -290,9 +279,6 @@ fn rasterize_text(
 fn rotate_about(src: &RgbaImage, cx: f32, cy: f32, angle_rad: f32) -> RgbaImage {
     let (w, h) = (src.width(), src.height());
     let mut dst = RgbaImage::from_pixel(w, h, Rgba([0, 0, 0, 0]));
-    // For dst pixel (px, py) we want the source coord that lands on (px, py) after a CCW
-    // rotation by `angle_rad` about (cx, cy). The inverse of a CCW rotation by θ is a CW
-    // rotation by θ, which is the transpose — i.e. swap sin signs.
     let cx = f64::from(cx);
     let cy = f64::from(cy);
     let cos = f64::from(angle_rad).cos();
@@ -305,8 +291,6 @@ fn rotate_about(src: &RgbaImage, cx: f32, cy: f32, angle_rad: f32) -> RgbaImage 
             let dy = f64::from(py) - cy;
             let sx = cx + dx * cos + dy * sin;
             let sy = cy - dx * sin + dy * cos;
-            // Bilinear sample. Skip if the source coord falls outside by more than one pixel
-            // so we don't accidentally blend with the (invalid) edge.
             if sx < 0.0 || sy < 0.0 || sx > f64::from(max_x) || sy > f64::from(max_y) {
                 continue;
             }
@@ -316,16 +300,22 @@ fn rotate_about(src: &RgbaImage, cx: f32, cy: f32, angle_rad: f32) -> RgbaImage 
             let y1 = (y0 + 1).min(max_y);
             let fx = sx - f64::from(x0);
             let fy = sy - f64::from(y0);
+            let inv_fx = 1.0 - fx;
+            let inv_fy = 1.0 - fy;
+            let w00 = inv_fx * inv_fy;
+            let w10 = fx * inv_fy;
+            let w01 = inv_fx * fy;
+            let w11 = fx * fy;
             let p00 = src.get_pixel(x0 as u32, y0 as u32).0;
             let p10 = src.get_pixel(x1 as u32, y0 as u32).0;
             let p01 = src.get_pixel(x0 as u32, y1 as u32).0;
             let p11 = src.get_pixel(x1 as u32, y1 as u32).0;
             let mut out = [0u8; 4];
             for c in 0..4 {
-                let v = (1.0 - fx) * (1.0 - fy) * f64::from(p00[c])
-                    + fx * (1.0 - fy) * f64::from(p10[c])
-                    + (1.0 - fx) * fy * f64::from(p01[c])
-                    + fx * fy * f64::from(p11[c]);
+                let v = w00 * f64::from(p00[c])
+                    + w10 * f64::from(p10[c])
+                    + w01 * f64::from(p01[c])
+                    + w11 * f64::from(p11[c]);
                 out[c] = v as u8;
             }
             dst.put_pixel(px, py, Rgba(out));

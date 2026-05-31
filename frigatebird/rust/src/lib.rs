@@ -149,14 +149,18 @@ pub unsafe extern "C" fn ffi_fill_element_0xAA(out: *mut FfiElement) {
 }
 
 fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + Send>) -> u8 {
-    let msg = if let Some(s) = payload.downcast_ref::<&'static str>() {
-        (*s).to_string()
+    // Extract message as &str without cloning. The downcast_ref borrows from the Box which
+    // lives for the duration of this function — no allocation needed.
+    let fallback;
+    let msg: &str = if let Some(s) = payload.downcast_ref::<&'static str>() {
+        s
     } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
+        s.as_str()
     } else {
-        "panic with non-string payload".to_string()
+        fallback = "panic with non-string payload";
+        fallback
     };
-    write_panic_to_arena(arena, &msg).code
+    write_panic_to_arena(arena, msg).code
 }
 
 // PERMANENT EXCEPTIONS to #[ffi_export]:
@@ -281,11 +285,12 @@ pub fn merge(
                 foreground_png.as_slice()
             };
 
-            let mut bg_img = io::read_image(Path::new(bg_p)).map_err(|_| {
-                (
-                    FfiErrorCode::Decode,
-                    "Failed to decode background image".to_string(),
-                )
+            let mut bg_img = io::read_image(Path::new(bg_p)).map_err(|e| {
+                let code = match e {
+                    io::IoError::Read => FfiErrorCode::Io,
+                    _ => FfiErrorCode::Decode,
+                };
+                (code, "Failed to read/decode background image".to_string())
             })?;
 
             let fg_img = image::load_from_memory(fg_bytes).map_err(|_| {
@@ -482,12 +487,24 @@ fn get_rotated_aabb(
         ),
     ];
 
-    let min_x = cx + pts.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
-    let max_x = cx + pts.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
-    let min_y = cy + pts.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
-    let max_y = cy + pts.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+    let (mut min_x, mut max_x) = (pts[0].0, pts[0].0);
+    let (mut min_y, mut max_y) = (pts[0].1, pts[0].1);
+    for &(px, py) in &pts[1..] {
+        if px < min_x {
+            min_x = px;
+        }
+        if px > max_x {
+            max_x = px;
+        }
+        if py < min_y {
+            min_y = py;
+        }
+        if py > max_y {
+            max_y = py;
+        }
+    }
 
-    RectanglePayload::new(min_x, min_y, max_x - min_x, max_y - min_y, 0)
+    RectanglePayload::new(cx + min_x, cy + min_y, max_x - min_x, max_y - min_y, 0)
 }
 
 #[allow(unsafe_code)]
@@ -516,7 +533,13 @@ fn draw_elements_safe(
     };
 
     let img = io::read_image(Path::new(image_path))
-        .map_err(|_| (FfiErrorCode::Decode, "Failed to decode image".to_string()))?
+        .map_err(|e| {
+            let code = match e {
+                io::IoError::Read => FfiErrorCode::Io,
+                _ => FfiErrorCode::Decode,
+            };
+            (code, "Failed to read/decode image".to_string())
+        })?
         .into_rgba8();
 
     // Conditional clone: only allocate a clean source when at least one element requires blur.
@@ -956,11 +979,6 @@ fn draw_shape_path(
     height: f64,
     style: &ShapeStyle,
 ) {
-    let paint = Paint {
-        anti_alias: true,
-        ..Default::default()
-    };
-
     let ts = if rotation_deg != 0 {
         Transform::from_translate((x + width / 2.0) as f32, (y + height / 2.0) as f32)
             .pre_rotate(rotation_deg as f32)
@@ -970,19 +988,25 @@ fn draw_shape_path(
     };
 
     if let Some(color) = style.fill_color {
-        let mut p = paint.clone();
-        p.set_color(color);
-        pixmap.fill_path(path, &p, tiny_skia::FillRule::Winding, ts, None);
+        let mut paint = Paint {
+            anti_alias: true,
+            ..Default::default()
+        };
+        paint.set_color(color);
+        pixmap.fill_path(path, &paint, tiny_skia::FillRule::Winding, ts, None);
     }
 
     if let Some(color) = style.outline_color {
-        let mut p = paint.clone();
-        p.set_color(color);
+        let mut paint = Paint {
+            anti_alias: true,
+            ..Default::default()
+        };
+        paint.set_color(color);
         let stroke = Stroke {
             width: style.thickness,
             ..Default::default()
         };
-        pixmap.stroke_path(path, &p, &stroke, ts, None);
+        pixmap.stroke_path(path, &paint, &stroke, ts, None);
     }
 }
 
@@ -1049,7 +1073,13 @@ pub fn blur_region(
             }
 
             let mut img = io::read_image(Path::new(img_p))
-                .map_err(|_| (FfiErrorCode::Decode, "Failed to decode image".to_string()))?
+                .map_err(|e| {
+                    let code = match e {
+                        io::IoError::Read => FfiErrorCode::Io,
+                        _ => FfiErrorCode::Decode,
+                    };
+                    (code, "Failed to read/decode image".to_string())
+                })?
                 .into_rgba8();
 
             // Run shape-masked blur on the rectangle region
@@ -1114,7 +1144,13 @@ pub fn blur(
             }
 
             let img = io::read_image(Path::new(img_p))
-                .map_err(|_| (FfiErrorCode::Decode, "Failed to decode image".to_string()))?
+                .map_err(|e| {
+                    let code = match e {
+                        io::IoError::Read => FfiErrorCode::Io,
+                        _ => FfiErrorCode::Decode,
+                    };
+                    (code, "Failed to read/decode image".to_string())
+                })?
                 .into_rgba8();
 
             let sigma = radius_px as f32 / 3.0;

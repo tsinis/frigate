@@ -40,7 +40,7 @@ pub enum IoError {
 /// Reads the file bytes once and parses both the image and EXIF from the same buffer,
 /// avoiding a second file open for orientation detection.
 pub fn read_image(path: &Path) -> Result<DynamicImage, IoError> {
-    let bytes = std::fs::read(path).map_err(|_| IoError::Decode)?;
+    let bytes = std::fs::read(path).map_err(|_| IoError::Read)?;
     let orientation = read_orientation_from_bytes(&bytes);
     let mut img = image::load_from_memory(&bytes).map_err(|_| IoError::Decode)?;
     if orientation > 1 {
@@ -69,7 +69,12 @@ fn read_orientation_from_bytes(bytes: &[u8]) -> u8 {
         .unwrap_or(1)
 }
 
-/// Reads the EXIF orientation tag from an image file.
+/// Reads the EXIF orientation tag from an image file via a separate file open.
+///
+/// Used only by `get_image_info` which needs orientation without fully decoding the image.
+/// A separate file open is acceptable here because both `ImageReader::into_dimensions()` and
+/// this function only read small headers — far cheaper than loading the entire file into memory.
+///
 /// Returns a value in the range 1..=8. Returns 1 if no orientation is found or on any error.
 pub(crate) fn read_orientation(path: &Path) -> u8 {
     let Ok(file) = std::fs::File::open(path) else {
@@ -220,11 +225,10 @@ mod tests {
     }
 
     #[test]
-    fn read_image_on_missing_file_is_decode_error() {
-        // `image::open` returns a decode error kind whether the file is missing or malformed —
-        // we map both to `IoError::Decode` because the caller only needs "couldn't get an image".
+    fn read_image_on_missing_file_is_read_error() {
+        // A missing file is an I/O failure (IoError::Read), not a decode failure.
         let err = read_image(Path::new("/definitely/not/here.png")).unwrap_err();
-        assert_eq!(err, IoError::Decode);
+        assert_eq!(err, IoError::Read);
     }
 
     #[test]

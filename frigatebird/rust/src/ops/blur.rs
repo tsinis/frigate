@@ -31,6 +31,74 @@ use tiny_skia::Pixmap;
 use crate::RectanglePayload;
 use crate::ffi::FfiErrorCode;
 
+/// Precomputed bounding-box and padding geometry for blur operations.
+/// Eliminates the triplicated bounds-clamping logic across blur functions.
+struct BlurRegion {
+    /// Shape bounding box (clamped to image).
+    rx: u32,
+    ry: u32,
+    rw: u32,
+    rh: u32,
+    /// Padded region for the blur kernel (includes Gaussian padding).
+    px_start: u32,
+    py_start: u32,
+    pw: u32,
+    ph: u32,
+    sigma: f32,
+}
+
+impl BlurRegion {
+    /// Compute the clamped shape region and padded blur region from a rect and image dimensions.
+    /// Returns `None` if the region is degenerate (zero-area after clamping).
+    fn compute(rect: &RectanglePayload, blur_radius_px: u8, iw: u32, ih: u32) -> Option<Self> {
+        let (x_min, x_max) = if rect.width < 0.0 {
+            (rect.x + rect.width, rect.x)
+        } else {
+            (rect.x, rect.x + rect.width)
+        };
+        let (y_min, y_max) = if rect.height < 0.0 {
+            (rect.y + rect.height, rect.y)
+        } else {
+            (rect.y, rect.y + rect.height)
+        };
+
+        let x = x_min.floor().clamp(0.0, iw as f64) as u32;
+        let y = y_min.floor().clamp(0.0, ih as f64) as u32;
+        let x2 = x_max.ceil().clamp(0.0, iw as f64) as u32;
+        let y2 = y_max.ceil().clamp(0.0, ih as f64) as u32;
+        let rw = x2.saturating_sub(x);
+        let rh = y2.saturating_sub(y);
+
+        if rw == 0 || rh == 0 {
+            return None;
+        }
+
+        let pad = (blur_radius_px as u32).saturating_mul(3);
+        let px_start = x.saturating_sub(pad);
+        let py_start = y.saturating_sub(pad);
+        let px_end = (x + rw + pad).min(iw);
+        let py_end = (y + rh + pad).min(ih);
+        let pw = px_end.saturating_sub(px_start);
+        let ph = py_end.saturating_sub(py_start);
+
+        if pw == 0 || ph == 0 {
+            return None;
+        }
+
+        Some(Self {
+            rx: x,
+            ry: y,
+            rw,
+            rh,
+            px_start,
+            py_start,
+            pw,
+            ph,
+            sigma: blur_radius_px as f32 / 3.0,
+        })
+    }
+}
+
 /// Blend two RGBA pixels based on an alpha value from a mask (0..=255).
 #[inline]
 pub fn blend_pixel(bg: image::Rgba<u8>, blurred: image::Rgba<u8>, alpha: u8) -> image::Rgba<u8> {
@@ -69,94 +137,21 @@ pub fn blur_shape_rgba_from_src<F>(
 where
     F: FnOnce(&mut Pixmap, f64, f64) -> Result<(), (FfiErrorCode, String)>,
 {
-    if blur_radius_px == 0 {
+    if blur_radius_px == 0 || rect.width == 0.0 || rect.height == 0.0 {
         return Ok(());
     }
 
-    if rect.width == 0.0 || rect.height == 0.0 {
-        // Zero-area/collapsed shape is a safe no-op.
-        return Ok(());
-    }
-
-    let sigma = blur_radius_px as f32 / 3.0;
     let (iw, ih) = src.dimensions();
-
-    // Support flipped/negative dimensions robustly, capturing sub-pixel bounds via floor/ceil.
-    let (x_min, x_max) = if rect.width < 0.0 {
-        (rect.x + rect.width, rect.x)
-    } else {
-        (rect.x, rect.x + rect.width)
-    };
-    let (y_min, y_max) = if rect.height < 0.0 {
-        (rect.y + rect.height, rect.y)
-    } else {
-        (rect.y, rect.y + rect.height)
+    let Some(region) = BlurRegion::compute(&rect, blur_radius_px, iw, ih) else {
+        return Ok(());
     };
 
-    let x = x_min.floor().clamp(0.0, iw as f64) as u32;
-    let y = y_min.floor().clamp(0.0, ih as f64) as u32;
-    let x2 = x_max.ceil().clamp(0.0, iw as f64) as u32;
-    let y2 = y_max.ceil().clamp(0.0, ih as f64) as u32;
+    let sub = src
+        .view(region.px_start, region.py_start, region.pw, region.ph)
+        .to_image();
+    let blurred_sub = image::imageops::blur(&sub, region.sigma);
 
-    let (rx, ry, rw, rh) = (x, y, x2.saturating_sub(x), y2.saturating_sub(y));
-
-    if rw == 0 || rh == 0 {
-        // After clamping the region is empty — no-op.
-        return Ok(());
-    }
-
-    // Gaussian Padding to eliminate boundary edge artifacts.
-    // Pad the crop bounding box by `pad = blur_radius_px * 3`.
-    let pad = (blur_radius_px as u32).saturating_mul(3);
-    let px_start = rx.saturating_sub(pad);
-    let py_start = ry.saturating_sub(pad);
-    let px_end = (rx + rw + pad).min(iw);
-    let py_end = (ry + rh + pad).min(ih);
-
-    let pw = px_end.saturating_sub(px_start);
-    let ph = py_end.saturating_sub(py_start);
-
-    if pw == 0 || ph == 0 {
-        return Ok(());
-    }
-
-    // Crop padded sub-image from src -> apply blur.
-    let sub = src.view(px_start, py_start, pw, ph).to_image();
-    let blurred_sub = image::imageops::blur(&sub, sigma);
-
-    debug_assert_eq!(sub.dimensions(), blurred_sub.dimensions());
-
-    // Create a relative tiny_skia Pixmap of the same size to serve as the shape mask.
-    let mut mask = Pixmap::new(rw, rh).ok_or_else(|| {
-        (
-            FfiErrorCode::Render,
-            "Failed to allocate tiny_skia Pixmap for mask".to_string(),
-        )
-    })?;
-
-    // Draw the shape mask in solid white inside the relative pixmap coordinates.
-    // Propagate errors from draw_mask_fn closure cleanly using ? operator.
-    draw_mask_fn(&mut mask, rx as f64, ry as f64)?;
-
-    // Blend pixels back based on the shape's mask alpha.
-    for y in 0..rh {
-        for x in 0..rw {
-            if let Some(mask_px) = mask.pixel(x, y) {
-                let alpha = mask_px.alpha();
-                if alpha > 0 {
-                    let bx = (rx + x).saturating_sub(px_start);
-                    let by = (ry + y).saturating_sub(py_start);
-                    if bx < pw && by < ph {
-                        let bg = img.get_pixel(rx + x, ry + y);
-                        let bl = blurred_sub.get_pixel(bx, by);
-                        img.put_pixel(rx + x, ry + y, blend_pixel(*bg, *bl, alpha));
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
+    apply_masked_blur(img, &blurred_sub, &region, draw_mask_fn)
 }
 
 /// Blur a shape-masked region of `img` in-place.
@@ -179,153 +174,57 @@ pub fn blur_shape_rgba<F>(
 where
     F: FnOnce(&mut Pixmap, f64, f64) -> Result<(), (FfiErrorCode, String)>,
 {
-    if blur_radius_px == 0 {
+    if blur_radius_px == 0 || rect.width == 0.0 || rect.height == 0.0 {
         return Ok(());
     }
 
-    if rect.width == 0.0 || rect.height == 0.0 {
-        return Ok(());
-    }
-
-    // Compute the padded sub-region bounds (mirrors blur_shape_rgba_from_src logic)
-    // to clone only the needed pixels instead of the entire image.
     let (iw, ih) = img.dimensions();
-    let (x_min, x_max) = if rect.width < 0.0 {
-        (rect.x + rect.width, rect.x)
-    } else {
-        (rect.x, rect.x + rect.width)
-    };
-    let (y_min, y_max) = if rect.height < 0.0 {
-        (rect.y + rect.height, rect.y)
-    } else {
-        (rect.y, rect.y + rect.height)
+    let Some(region) = BlurRegion::compute(&rect, blur_radius_px, iw, ih) else {
+        return Ok(());
     };
 
-    let x = x_min.floor().clamp(0.0, iw as f64) as u32;
-    let y = y_min.floor().clamp(0.0, ih as f64) as u32;
-    let x2 = x_max.ceil().clamp(0.0, iw as f64) as u32;
-    let y2 = y_max.ceil().clamp(0.0, ih as f64) as u32;
-    let (rx, ry, rw, rh) = (x, y, x2.saturating_sub(x), y2.saturating_sub(y));
+    // Clone only the padded sub-region needed by the blur kernel.
+    let sub_region = img
+        .view(region.px_start, region.py_start, region.pw, region.ph)
+        .to_image();
+    let blurred_sub = image::imageops::blur(&sub_region, region.sigma);
 
-    if rw == 0 || rh == 0 {
-        return Ok(());
-    }
-
-    // Only clone the padded sub-region needed by the blur kernel.
-    let pad = (blur_radius_px as u32).saturating_mul(3);
-    let px_start = rx.saturating_sub(pad);
-    let py_start = ry.saturating_sub(pad);
-    let px_end = (rx + rw + pad).min(iw);
-    let py_end = (ry + rh + pad).min(ih);
-    let pw = px_end.saturating_sub(px_start);
-    let ph = py_end.saturating_sub(py_start);
-
-    if pw == 0 || ph == 0 {
-        return Ok(());
-    }
-
-    let sub_region = img.view(px_start, py_start, pw, ph).to_image();
-    // Build a synthetic full-size source by wrapping the sub-region in an image that
-    // blur_shape_rgba_from_src can `.view()` with the same absolute coordinates.
-    // This avoids cloning the entire image — only the padded bbox is copied.
-    blur_shape_rgba_from_sub(
-        img,
-        &sub_region,
-        px_start,
-        py_start,
-        rect,
-        blur_radius_px,
-        draw_mask_fn,
-    )
+    apply_masked_blur(img, &blurred_sub, &region, draw_mask_fn)
 }
 
-/// Internal: blur using an already-extracted sub-region as source.
-///
-/// `sub_src` is a cropped region starting at `(sub_x, sub_y)` in absolute image coords.
-/// This avoids requiring the full image as source — only the sub-region is needed.
-fn blur_shape_rgba_from_sub<F>(
+/// Shared mask-and-blend logic for all blur paths. Given a pre-blurred sub-image (aligned
+/// to `region.px_start, py_start`), draws the mask, then blends blurred pixels into `img`
+/// where the mask is non-zero.
+fn apply_masked_blur<F>(
     img: &mut RgbaImage,
-    sub_src: &RgbaImage,
-    sub_x: u32,
-    sub_y: u32,
-    rect: RectanglePayload,
-    blur_radius_px: u8,
+    blurred_sub: &RgbaImage,
+    region: &BlurRegion,
     draw_mask_fn: F,
 ) -> Result<(), (FfiErrorCode, String)>
 where
     F: FnOnce(&mut Pixmap, f64, f64) -> Result<(), (FfiErrorCode, String)>,
 {
-    let sigma = blur_radius_px as f32 / 3.0;
-    let (iw, ih) = img.dimensions();
-
-    let (x_min, x_max) = if rect.width < 0.0 {
-        (rect.x + rect.width, rect.x)
-    } else {
-        (rect.x, rect.x + rect.width)
-    };
-    let (y_min, y_max) = if rect.height < 0.0 {
-        (rect.y + rect.height, rect.y)
-    } else {
-        (rect.y, rect.y + rect.height)
-    };
-
-    let x = x_min.floor().clamp(0.0, iw as f64) as u32;
-    let y = y_min.floor().clamp(0.0, ih as f64) as u32;
-    let x2 = x_max.ceil().clamp(0.0, iw as f64) as u32;
-    let y2 = y_max.ceil().clamp(0.0, ih as f64) as u32;
-    let (rx, ry, rw, rh) = (x, y, x2.saturating_sub(x), y2.saturating_sub(y));
-
-    if rw == 0 || rh == 0 {
-        return Ok(());
-    }
-
-    let pad = (blur_radius_px as u32).saturating_mul(3);
-    let px_start = rx.saturating_sub(pad);
-    let py_start = ry.saturating_sub(pad);
-    let px_end = (rx + rw + pad).min(iw);
-    let py_end = (ry + rh + pad).min(ih);
-    let pw = px_end.saturating_sub(px_start);
-    let ph = py_end.saturating_sub(py_start);
-
-    if pw == 0 || ph == 0 {
-        return Ok(());
-    }
-
-    // The sub-region view into sub_src uses relative coordinates.
-    // sub_src starts at (sub_x, sub_y) in image-space; the crop within it is offset accordingly.
-    let rel_x = px_start.saturating_sub(sub_x);
-    let rel_y = py_start.saturating_sub(sub_y);
-    let (sub_w, sub_h) = sub_src.dimensions();
-    let avail_w = sub_w.saturating_sub(rel_x).min(pw);
-    let avail_h = sub_h.saturating_sub(rel_y).min(ph);
-
-    if avail_w == 0 || avail_h == 0 {
-        return Ok(());
-    }
-
-    let sub = sub_src.view(rel_x, rel_y, avail_w, avail_h).to_image();
-    let blurred_sub = image::imageops::blur(&sub, sigma);
-
-    let mut mask = Pixmap::new(rw, rh).ok_or_else(|| {
+    let mut mask = Pixmap::new(region.rw, region.rh).ok_or_else(|| {
         (
             FfiErrorCode::Render,
             "Failed to allocate tiny_skia Pixmap for mask".to_string(),
         )
     })?;
 
-    draw_mask_fn(&mut mask, rx as f64, ry as f64)?;
+    draw_mask_fn(&mut mask, region.rx as f64, region.ry as f64)?;
 
-    for y in 0..rh {
-        for x in 0..rw {
+    let (bw, bh) = blurred_sub.dimensions();
+    for y in 0..region.rh {
+        for x in 0..region.rw {
             if let Some(mask_px) = mask.pixel(x, y) {
                 let alpha = mask_px.alpha();
                 if alpha > 0 {
-                    let bx = (rx + x).saturating_sub(px_start);
-                    let by = (ry + y).saturating_sub(py_start);
-                    if bx < avail_w && by < avail_h {
-                        let bg = img.get_pixel(rx + x, ry + y);
+                    let bx = (region.rx + x).saturating_sub(region.px_start);
+                    let by = (region.ry + y).saturating_sub(region.py_start);
+                    if bx < bw && by < bh {
+                        let bg = img.get_pixel(region.rx + x, region.ry + y);
                         let bl = blurred_sub.get_pixel(bx, by);
-                        img.put_pixel(rx + x, ry + y, blend_pixel(*bg, *bl, alpha));
+                        img.put_pixel(region.rx + x, region.ry + y, blend_pixel(*bg, *bl, alpha));
                     }
                 }
             }

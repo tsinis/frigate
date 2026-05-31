@@ -265,11 +265,11 @@ fn blur_region_missing_path_returns_invalid_arg() {
 }
 
 #[test]
-fn blur_region_nonexistent_file_returns_decode_error() {
+fn blur_region_nonexistent_file_returns_io_error() {
     let bogus = safer_ffi::char_p::new("/definitely/not/there.png");
     let region = RectanglePayload::new(0.0, 0.0, 100.0, 100.0, 0).with_blur(10);
     let status = frigate::blur_region(Some(bogus.as_ref()), None, region, None);
-    assert_eq!(status, frigate::FfiErrorCode::Decode as u8);
+    assert_eq!(status, frigate::FfiErrorCode::Io as u8);
 }
 
 /// A rectangle with transparent fill, no outline, and blur (exact model of `MaskRegionElement`).
