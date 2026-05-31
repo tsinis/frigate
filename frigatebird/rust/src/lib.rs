@@ -519,18 +519,18 @@ fn draw_elements_safe(
         .map_err(|_| (FfiErrorCode::Decode, "Failed to decode image".to_string()))?
         .into_rgba8();
 
-    // Optimize cloning: clone full RGBA buffer only if a shape requires a blur operation.
+    // Conditional clone: only allocate a clean source when at least one element requires blur.
+    // This avoids the full-image clone for the common case of no-blur elements.
+    let mut clean_img: Option<image::RgbaImage> = None;
     let needs_clean_img = elements.iter().any(|e| match e {
         FfiElement::Rectangle(p) => p.blur > 0,
         FfiElement::Oval(p) => p.blur > 0,
         FfiElement::Polygon(p) => p.blur > 0,
         FfiElement::Text(_) => false,
     });
-    let clean_img = if needs_clean_img {
-        Some(img.clone())
-    } else {
-        None
-    };
+    if needs_clean_img {
+        clean_img = Some(img.clone());
+    }
     let mut surface = Surface::Rgba(img);
 
     for element in elements {

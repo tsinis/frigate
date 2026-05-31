@@ -36,13 +36,37 @@ pub enum IoError {
 ///
 /// This function automatically applies EXIF orientation to the image so that the resulting
 /// `DynamicImage` is physically oriented correctly.
+///
+/// Reads the file bytes once and parses both the image and EXIF from the same buffer,
+/// avoiding a second file open for orientation detection.
 pub fn read_image(path: &Path) -> Result<DynamicImage, IoError> {
-    let mut img = image::open(path).map_err(|_| IoError::Decode)?;
-    let orientation = read_orientation(path);
+    let bytes = std::fs::read(path).map_err(|_| IoError::Decode)?;
+    let orientation = read_orientation_from_bytes(&bytes);
+    let mut img = image::load_from_memory(&bytes).map_err(|_| IoError::Decode)?;
     if orientation > 1 {
         img = apply_orientation(img, orientation);
     }
     Ok(img)
+}
+
+/// Reads the EXIF orientation tag from raw file bytes.
+/// Returns a value in the range 1..=8. Returns 1 if no orientation is found or on any error.
+fn read_orientation_from_bytes(bytes: &[u8]) -> u8 {
+    let mut cursor = std::io::Cursor::new(bytes);
+    let Ok(exif) = exif::Reader::new().read_from_container(&mut cursor) else {
+        return 1;
+    };
+
+    exif.get_field(exif::Tag::Orientation, exif::In::PRIMARY)
+        .and_then(|f| f.value.get_uint(0))
+        .and_then(|v| {
+            if (1..=8).contains(&v) {
+                Some(v as u8)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(1)
 }
 
 /// Reads the EXIF orientation tag from an image file.
@@ -115,14 +139,30 @@ pub fn write_image(path: &Path, img: &RgbaImage, image_quality: u8) -> Result<()
     match ext.as_deref() {
         Some("png") => img.save(path).map_err(|_| IoError::Write),
         Some("jpg") | Some("jpeg") => {
-            // JPEG has no alpha channel — `into_rgb8` composites onto opaque black implicitly.
-            // We clone the RGBA buffer first because the conversion consumes it; that's one
-            // extra allocation per export but keeps the signature `&RgbaImage` (re-usable).
-            let rgb = DynamicImage::ImageRgba8(img.clone()).into_rgb8();
+            // JPEG has no alpha channel. Convert RGBA → RGB in-place without cloning the
+            // entire RgbaImage. We allocate only the 3-byte-per-pixel RGB buffer (75% of
+            // the original 4-byte data), avoiding the old approach which cloned the full
+            // 4-byte buffer just to call `into_rgb8()`.
+            let (w, h) = img.dimensions();
+            let mut rgb_buf = Vec::with_capacity((w as usize) * (h as usize) * 3);
+            for pixel in img.pixels() {
+                // Alpha compositing onto opaque black: rgb_out = rgb * a / 255.
+                let [r, g, b, a] = pixel.0;
+                if a == 255 {
+                    rgb_buf.extend_from_slice(&[r, g, b]);
+                } else if a == 0 {
+                    rgb_buf.extend_from_slice(&[0, 0, 0]);
+                } else {
+                    let alpha = a as u16;
+                    rgb_buf.push(((r as u16 * alpha) / 255) as u8);
+                    rgb_buf.push(((g as u16 * alpha) / 255) as u8);
+                    rgb_buf.push(((b as u16 * alpha) / 255) as u8);
+                }
+            }
             let file = std::fs::File::create(path).map_err(|_| IoError::Write)?;
             let mut writer = std::io::BufWriter::new(file);
             image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, image_quality)
-                .encode_image(&rgb)
+                .encode(&rgb_buf, w, h, image::ExtendedColorType::Rgb8)
                 .map_err(|_| IoError::Encode)?;
             // BufWriter's Drop impl silently swallows write errors. Flush explicitly so a
             // full-disk / permission-denied at the final buffer-drain surfaces as IoError::Write
@@ -212,5 +252,43 @@ mod tests {
     #[test]
     fn read_orientation_on_non_image_is_1() {
         assert_eq!(read_orientation(Path::new("Cargo.toml")), 1);
+    }
+
+    #[test]
+    fn write_image_jpeg_alpha_composites_onto_black() {
+        // Semi-transparent red pixel: after compositing onto black, the JPEG should
+        // encode approximately (r*a/255, 0, 0) = (128*128/255 ≈ 64, 0, 0).
+        let img = RgbaImage::from_pixel(4, 4, image::Rgba([128, 0, 0, 128]));
+        let tmp = tmp_path("frigate_io_alpha_composite.jpg");
+        write_image(&tmp, &img, 100).unwrap();
+
+        // Read back and verify the red channel is approximately correct (JPEG is lossy).
+        let decoded = image::open(&tmp).unwrap().into_rgb8();
+        let px = decoded.get_pixel(0, 0).0;
+        // Expected: 128*128/255 ≈ 64. JPEG at quality 100 should be within ±5.
+        assert!(
+            (px[0] as i32 - 64).unsigned_abs() <= 5,
+            "red channel should be ~64, got {}",
+            px[0]
+        );
+        assert!(px[1] <= 5, "green should be ~0, got {}", px[1]);
+        assert!(px[2] <= 5, "blue should be ~0, got {}", px[2]);
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn write_image_jpeg_fully_transparent_produces_black() {
+        let img = RgbaImage::from_pixel(4, 4, image::Rgba([255, 128, 64, 0]));
+        let tmp = tmp_path("frigate_io_transparent_jpeg.jpg");
+        write_image(&tmp, &img, 100).unwrap();
+
+        let decoded = image::open(&tmp).unwrap().into_rgb8();
+        let px = decoded.get_pixel(0, 0).0;
+        // Fully transparent composited onto black = pure black.
+        assert!(
+            px[0] <= 2 && px[1] <= 2 && px[2] <= 2,
+            "expected black, got {px:?}"
+        );
+        std::fs::remove_file(&tmp).ok();
     }
 }

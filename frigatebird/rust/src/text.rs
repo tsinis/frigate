@@ -32,24 +32,19 @@ pub struct TextParams<'a> {
 
 /// Mutate `img` in place with the rendered text. Returns early when there's nothing to do
 /// (empty string) so the caller gets a deterministic "no-op leaves the image pixel-identical".
+///
+/// Optimized paths:
+/// - **No rotation (common):** rasterizes directly onto `img` with per-glyph source-over
+///   blending. Zero extra allocation.
+/// - **With rotation:** allocates a tight bounding-box overlay (glyph-run size + margin),
+///   not the full image size.
 pub fn render_text_overlay(img: &mut RgbaImage, font: &FontRef<'_>, params: &TextParams<'_>) {
     if params.text.is_empty() {
         return;
     }
 
     let (iw, ih) = (img.width(), img.height());
-    // Clamp the font size into a sane range:
-    //   • lower bound 1.0 — a 0.0 scale produces an empty glyph bitmap (no-op render).
-    //   • upper bound (4× the larger image side) — `ab_glyph_rasterizer` does internal `i32`
-    //     multiplications on glyph dimensions; values like `1e10` overflow inside ab_glyph and
-    //     panic. The cross-FFI `catch_unwind` would translate that into a `RustPanicException`,
-    //     but a panic for a *stylistic* parameter is poor UX. 4× the image side is more than
-    //     anyone could need — even a single glyph that fills the whole image lives in this
-    //     range — and clamping silently matches how `imageQuality` is handled.
     let max_reasonable = (iw.max(ih) as f32) * 4.0;
-    // `f32::clamp(NaN, lo, hi)` returns NaN (per the stdlib docs), and NaN propagates into
-    // ab_glyph's rasterizer where a downstream `as i32` cast is UB on nightly / panics on
-    // stable. Substitute the lower bound for any non-finite input (NaN, ±inf) before clamping.
     let sanitized = if params.font_size_px.is_finite() {
         params.font_size_px
     } else {
@@ -57,48 +52,175 @@ pub fn render_text_overlay(img: &mut RgbaImage, font: &FontRef<'_>, params: &Tex
     };
     let scale = PxScale::from(sanitized.clamp(1.0, max_reasonable));
 
-    // Overlay buffer matches the base size so rotation shares a single coordinate system with
-    // the base image — no per-glyph bounding-box math.
-    let mut overlay: RgbaImage = RgbaImage::from_pixel(iw, ih, Rgba([0, 0, 0, 0]));
+    if params.rotation_rad.abs() <= f32::EPSILON {
+        // Fast path: no rotation — rasterize directly onto the image.
+        rasterize_text_direct(
+            img,
+            font,
+            scale,
+            params.x,
+            params.y,
+            params.color,
+            params.text,
+        );
+    } else {
+        // Rotation path: use a tight bounding-box overlay.
+        render_text_rotated(img, font, scale, params);
+    }
+}
+
+/// Fast path: rasterize glyphs directly onto `img` with source-over blending per pixel.
+/// No intermediate buffer allocation.
+fn rasterize_text_direct(
+    img: &mut RgbaImage,
+    font: &FontRef<'_>,
+    scale: PxScale,
+    x: f32,
+    y: f32,
+    color: Rgba<u8>,
+    text: &str,
+) {
+    let scaled = font.as_scaled(scale);
+    let baseline_y = y + scaled.ascent();
+    let mut caret_x = x;
+    let mut prev_id: Option<ab_glyph::GlyphId> = None;
+    let (iw, ih) = (img.width() as i32, img.height() as i32);
+
+    for c in text.chars() {
+        let id = font.glyph_id(c);
+        if let Some(prev) = prev_id {
+            caret_x += scaled.kern(prev, id);
+        }
+        let glyph: Glyph = id.with_scale_and_position(scale, ab_glyph::point(caret_x, baseline_y));
+        caret_x += scaled.h_advance(id);
+        prev_id = Some(id);
+
+        let Some(outline) = font.outline_glyph(glyph) else {
+            continue;
+        };
+        let bounds = outline.px_bounds();
+        outline.draw(|gx, gy, coverage| {
+            let px = bounds.min.x as i32 + gx as i32;
+            let py = bounds.min.y as i32 + gy as i32;
+            if px < 0 || py < 0 || px >= iw || py >= ih {
+                return;
+            }
+            let glyph_alpha = (coverage.clamp(0.0, 1.0) * color[3] as f32) as u8;
+            let src = Rgba([color[0], color[1], color[2], glyph_alpha]);
+            let existing = *img.get_pixel(px as u32, py as u32);
+            img.put_pixel(px as u32, py as u32, blend_src_over(src, existing));
+        });
+    }
+}
+
+/// Rotation path: computes tight glyph-run bbox, allocates small overlay, rotates, composites.
+fn render_text_rotated(
+    img: &mut RgbaImage,
+    font: &FontRef<'_>,
+    scale: PxScale,
+    params: &TextParams<'_>,
+) {
+    let (iw, ih) = (img.width(), img.height());
+
+    // Compute glyph-run bounding box to allocate a tight overlay.
+    let scaled = font.as_scaled(scale);
+    let baseline_y = params.y + scaled.ascent();
+    let mut caret_x = params.x;
+    let mut prev_id: Option<ab_glyph::GlyphId> = None;
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+
+    for c in params.text.chars() {
+        let id = font.glyph_id(c);
+        if let Some(prev) = prev_id {
+            caret_x += scaled.kern(prev, id);
+        }
+        let glyph: Glyph = id.with_scale_and_position(scale, ab_glyph::point(caret_x, baseline_y));
+        caret_x += scaled.h_advance(id);
+        prev_id = Some(id);
+
+        if let Some(outline) = font.outline_glyph(glyph) {
+            let bounds = outline.px_bounds();
+            min_x = min_x.min(bounds.min.x);
+            min_y = min_y.min(bounds.min.y);
+            max_x = max_x.max(bounds.max.x);
+            max_y = max_y.max(bounds.max.y);
+        }
+    }
+
+    if min_x >= max_x || min_y >= max_y {
+        return; // No visible glyphs.
+    }
+
+    // Rotation happens about (params.x, params.y) — the anchor point, NOT the center
+    // of the glyph run. Compute the max distance from the rotation center to any corner
+    // of the glyph bounding box; that radius determines how large the overlay must be.
+    let cx = params.x;
+    let cy = params.y;
+    let corners: [(f32, f32); 4] = [
+        (min_x, min_y),
+        (max_x, min_y),
+        (min_x, max_y),
+        (max_x, max_y),
+    ];
+    let radius = corners
+        .iter()
+        .map(|&(x, y)| ((x - cx) * (x - cx) + (y - cy) * (y - cy)).sqrt())
+        .fold(0.0f32, f32::max)
+        .ceil();
+
+    // Overlay centered on the rotation point, sized to encompass the full rotation arc.
+    let ov_x = (cx - radius).floor().max(0.0) as u32;
+    let ov_y = (cy - radius).floor().max(0.0) as u32;
+    let ov_x2 = ((cx + radius).ceil() as u32).min(iw);
+    let ov_y2 = ((cy + radius).ceil() as u32).min(ih);
+    let ov_w = ov_x2.saturating_sub(ov_x);
+    let ov_h = ov_y2.saturating_sub(ov_y);
+
+    if ov_w == 0 || ov_h == 0 {
+        return;
+    }
+
+    // Allocate tight overlay and rasterize with offset.
+    let mut overlay = RgbaImage::from_pixel(ov_w, ov_h, Rgba([0, 0, 0, 0]));
     rasterize_text(
         &mut overlay,
         font,
         scale,
-        params.x,
-        params.y,
+        params.x - ov_x as f32,
+        params.y - ov_y as f32,
         params.color,
         params.text,
     );
 
-    // Rotation about (x, y). We rotate the overlay in place with bilinear reverse-mapping
-    // (for each dst pixel, compute where it came from in the source and sample).
-    let rotated;
-    let final_overlay: &RgbaImage = if params.rotation_rad.abs() > f32::EPSILON {
-        rotated = rotate_about(&overlay, params.x, params.y, params.rotation_rad);
-        &rotated
-    } else {
-        &overlay
-    };
+    // Rotate about the anchor point (relative to overlay origin).
+    let cx = params.x - ov_x as f32;
+    let cy = params.y - ov_y as f32;
+    let rotated = rotate_about(&overlay, cx, cy, params.rotation_rad);
 
-    // Source-over composite. Sum in `u32` to avoid `u8` overflow during `s + d`; otherwise
-    // two bright pixels would wrap around. Formula: out_a = sa + da * (255 - sa) / 255;
-    // out_rgb = (fg * fa + bg * ba * (1 - fa)) / out_a.
-    for (dst_px, src_px) in img.pixels_mut().zip(final_overlay.pixels()) {
-        let sa = u32::from(src_px[3]);
-        if sa == 0 {
-            continue;
+    // Composite the rotated overlay back onto img at (ov_x, ov_y).
+    for py in 0..ov_h {
+        for px in 0..ov_w {
+            let src_px = rotated.get_pixel(px, py);
+            let sa = u32::from(src_px[3]);
+            if sa == 0 {
+                continue;
+            }
+            let dst_px = img.get_pixel_mut(ov_x + px, ov_y + py);
+            let da = u32::from(dst_px[3]);
+            let out_a = sa + da * (255 - sa) / 255;
+            if out_a == 0 {
+                continue;
+            }
+            for i in 0..3 {
+                let s = u32::from(src_px[i]) * sa;
+                let d = u32::from(dst_px[i]) * da * (255 - sa) / 255;
+                dst_px[i] = ((s + d) / out_a) as u8;
+            }
+            dst_px[3] = out_a as u8;
         }
-        let da = u32::from(dst_px[3]);
-        let out_a = sa + da * (255 - sa) / 255;
-        if out_a == 0 {
-            continue;
-        }
-        for i in 0..3 {
-            let s = u32::from(src_px[i]) * sa;
-            let d = u32::from(dst_px[i]) * da * (255 - sa) / 255;
-            dst_px[i] = ((s + d) / out_a) as u8;
-        }
-        dst_px[3] = out_a as u8;
     }
 }
 
@@ -498,6 +620,38 @@ mod tests {
         assert!(
             moved[0] > 200,
             "expected red pixel at (1, 2), got {moved:?}"
+        );
+    }
+
+    #[test]
+    fn rotated_45_text_extends_along_diagonal() {
+        // Property test: text rotated 45° CW at anchor (10, 10) on a large image must have
+        // non-background pixels well below the anchor along the diagonal. This catches
+        // clipping bugs where the overlay is too small and truncates the rotated text.
+        let font = font();
+        let mut img = black_image(200, 200);
+        render_text_overlay(
+            &mut img,
+            &font,
+            &TextParams {
+                text: "LongTextForTest",
+                x: 10.0,
+                y: 10.0,
+                font_size_px: 16.0,
+                rotation_rad: std::f32::consts::FRAC_PI_4,
+                color: Rgba([255, 255, 255, 255]),
+            },
+        );
+
+        // After 45° CW rotation about (10, 10), the text extends diagonally to ~y=95.
+        // The tight-bbox clipping bug (using diagonal/2 padding) would limit the overlay
+        // to ~y=76, clipping text below that. Assert pixels exist at y>=80.
+        let has_text_below_80 = img
+            .enumerate_pixels()
+            .any(|(_, y, px)| y >= 80 && px.0 != [0, 0, 0, 255]);
+        assert!(
+            has_text_below_80,
+            "rotated text must extend below y=80 along diagonal; overlay clipping bug if not"
         );
     }
 }
