@@ -1,4 +1,4 @@
-// ignore_for_file: prefer-extracting-function-callbacks, prefer-class-destructuring
+// ignore_for_file: prefer-extracting-function-callbacks,prefer-class-destructuring,avoid-long-files
 
 import 'dart:io' show File;
 import 'dart:math';
@@ -23,8 +23,10 @@ class DrawEditor extends InteractiveViewer {
     this._image, {
     this._builder,
     this._controller,
+    this._fit = StackFit.loose,
     this._minShapeSize = 10.0,
     this._size,
+    this._textDirection,
     super.alignment,
     super.boundaryMargin = const .all(.infinity),
     super.clipBehavior,
@@ -47,6 +49,18 @@ class DrawEditor extends InteractiveViewer {
   final double _minShapeSize;
   final Size? _size;
 
+  /// The text direction with which to resolve [alignment].
+  ///
+  /// Defaults to the ambient [Directionality].
+  final TextDirection? _textDirection;
+
+  /// How to size the non-positioned children in the stack.
+  ///
+  /// The constraints passed into the [Stack] from its parent are either
+  /// loosened ([StackFit.loose]) or tightened to their biggest size
+  /// ([StackFit.expand]).
+  final StackFit _fit;
+
   @override
   State<DrawEditor> createState() => _DrawEditorState();
 
@@ -57,13 +71,16 @@ class DrawEditor extends InteractiveViewer {
       ..add(DiagnosticsProperty<DrawController?>('_controller', _controller))
       ..add(ObjectFlagProperty<DrawEditorBuilder?>.has('_builder', _builder))
       ..add(StringProperty('_image', _image.path))
+      ..add(DoubleProperty('_minShapeSize', _minShapeSize))
+      ..add(EnumProperty<StackFit>('_fit', _fit))
+      ..add(EnumProperty<TextDirection?>('_textDirection', _textDirection))
       ..add(DoubleProperty('_size.height', _size?.height))
       ..add(DoubleProperty('_size.width', _size?.width));
   }
 }
 
 class _DrawEditorState extends State<DrawEditor> {
-  final _transformController = TransformationController();
+  final _transform = TransformationController();
   final _isDragging = ValueNotifier<bool>(false);
 
   double _closeTolerance = 0;
@@ -85,13 +102,13 @@ class _DrawEditorState extends State<DrawEditor> {
   bool _didApplyInitialFit = false;
 
   // ignore: avoid-late-keyword, it's needed because of the widget access.
-  late DrawController _controller = widget._controller ?? DrawController();
+  late DrawController _draw = widget._controller ?? DrawController();
 
   /// InteractiveViewer produces a pure 2D scale+translate matrix; the Z axis
   /// is always 1. getMaxScaleOnAxis() returns max(scaleXY, Z=1), so it always
   /// returns ≥ 1 and is wrong whenever the fit scale is < 1 (zoomed-out).
   /// Reading storage[0] gives the actual XY scale directly.
-  double get _viewScale => _transformController.value.storage.firstOrNull ?? 1;
+  double get _viewScale => _transform.value.storage.firstOrNull ?? 1;
 
   double get _handleRadius {
     final board = _boardSize;
@@ -114,7 +131,7 @@ class _DrawEditorState extends State<DrawEditor> {
     super.initState();
     _boardSize = widget._size;
     _closeTolerance = widget._minShapeSize * 2;
-    _transformController.addListener(_onTransformationChanged);
+    _transform.addListener(_onTransformationChanged);
   }
 
   void _handleImageInfo(ImageInformation info) {
@@ -133,7 +150,7 @@ class _DrawEditorState extends State<DrawEditor> {
       final height = viewport.height;
       final scale = min(1, min(width / board.width, height / board.height)).toDouble();
 
-      _transformController.value = Matrix4.identity()
+      _transform.value = Matrix4.identity()
         ..setEntry(0, 0, scale)
         ..setEntry(1, 1, scale)
         ..setEntry(0, 3, (width - board.width * scale) / 2)
@@ -144,8 +161,8 @@ class _DrawEditorState extends State<DrawEditor> {
   void _onTransformationChanged() {
     final startMatrix = _dragStartMatrix;
     if ((startMatrix != null && _pointerCount == 1 && (_isDragging.value || _isCreating)) &&
-        (_transformController.value != startMatrix)) {
-      _transformController.value = startMatrix;
+        (_transform.value != startMatrix)) {
+      _transform.value = startMatrix;
     }
   }
 
@@ -154,7 +171,7 @@ class _DrawEditorState extends State<DrawEditor> {
     if (_pointerCount > 1) _dragStartMatrix = null;
     if (_activePointerId != null) return;
 
-    final point = _transformController.toScene(event.localPosition);
+    final point = _transform.toScene(event.localPosition);
     final pointerId = event.pointer;
 
     if (_didHandlePolygonTool(point, pointerId)) return;
@@ -162,25 +179,25 @@ class _DrawEditorState extends State<DrawEditor> {
     if (_didHandleSelectedHandleInteraction(point, pointerId)) return;
     if (_didHandleElementSelection(point, pointerId)) return;
 
-    _controller.selectedIndex = null;
+    _draw.selectedIndex = null;
   }
 
   bool _didHandlePolygonTool(Offset point, int pointerId) {
-    if (_controller.activeTool != .polygon) return false;
+    if (_draw.activeTool != .polygon) return false;
 
-    _controller.updateCursorPosition(point);
+    _draw.updateCursorPosition(point);
     _activePointerId = pointerId;
 
     return true;
   }
 
   void _didHandlePolygonUp(Offset point) {
-    final pending = _controller.pendingVertices;
+    final pending = _draw.pendingVertices;
     if (pending.length >= 3) {
       final first = Offset(pending.first.x, pending.first.y);
       final distance = (point - first).distance;
       if (distance < _closeTolerance / _viewScale) {
-        final template = _controller.creationTemplate;
+        final template = _draw.creationTemplate;
         if (template is PolygonElement) {
           final vertices = Float64x2List.fromList(pending);
           final box = PolygonElement.boundingBoxOf(vertices);
@@ -192,46 +209,46 @@ class _DrawEditorState extends State<DrawEditor> {
               x: box.x,
               y: box.y,
             );
-            _controller.commitAdd(element);
+            _draw.commitAdd(element);
           }
-          _controller.creationTemplate = null;
+          _draw.creationTemplate = null;
           _previewIndex = null;
         }
 
-        return _controller.updateCursorPosition(null);
+        return _draw.updateCursorPosition(null);
       }
     }
-    _controller
+    _draw
       ..addPendingVertex(point)
       ..updateCursorPosition(null);
   }
 
   bool _didHandleCreationTool(Offset point, int pointerId) {
-    final template = _controller.creationTemplate;
+    final template = _draw.creationTemplate;
     if (template == null) return false;
 
     _isCreating = true;
     _creationStartPoint = point;
-    _controller.selectedIndex = null;
+    _draw.selectedIndex = null;
     _activePointerId = pointerId;
 
-    if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
+    if (_pointerCount == 1) _dragStartMatrix = _transform.value;
     final element = template.copyWith(height: 0, width: 0, x: point.dx, y: point.dy);
-    _controller.addElement(element);
-    _previewIndex = _controller.elements.length - 1;
+    _draw.addElement(element);
+    _previewIndex = _draw.elements.length - 1;
     _previewElement = element;
 
     return true;
   }
 
   bool _didHandleSelectedHandleInteraction(Offset point, int pointerId) {
-    final selected = _controller.selectedElement;
+    final selected = _draw.selectedElement;
     if (selected == null) return false;
 
     final handle = selected.hitTestHandle(point, _handleRadius);
     if (handle == null) return false;
 
-    if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
+    if (_pointerCount == 1) _dragStartMatrix = _transform.value;
     _activePointerId = pointerId;
     _startDrag(handle: handle);
 
@@ -239,13 +256,13 @@ class _DrawEditorState extends State<DrawEditor> {
   }
 
   bool _didHandleElementSelection(Offset point, int pointerId) {
-    final allElements = _controller.elements;
+    final allElements = _draw.elements;
     for (int i = allElements.length - 1; i >= 0; i -= 1) {
       final target = allElements.elementAtOrNull(i);
       if (target != null && target.isPointOnShape(point)) {
-        if (_pointerCount == 1) _dragStartMatrix = _transformController.value;
+        if (_pointerCount == 1) _dragStartMatrix = _transform.value;
         _activePointerId = pointerId;
-        _controller.selectedIndex = i;
+        _draw.selectedIndex = i;
         _startDrag();
 
         return true;
@@ -262,25 +279,25 @@ class _DrawEditorState extends State<DrawEditor> {
     final pIndex = _resolvePreviewIndex;
 
     if (_isCreating && start != null) {
-      final current = pIndex == null ? null : _controller.elements.elementAtOrNull(pIndex);
+      final current = pIndex == null ? null : _draw.elements.elementAtOrNull(pIndex);
       if (current == null || pIndex == null) return _abortCreation();
 
-      final currentPoint = _transformController.toScene(event.localPosition);
+      final currentPoint = _transform.toScene(event.localPosition);
       final updated = current.copyWithDrag(a: currentPoint, b: start);
-      _controller.updateElement(updated, pIndex);
+      _draw.updateElement(updated, pIndex);
       _previewElement = updated;
 
       return;
     }
 
-    if (_controller.activeTool == .polygon) {
-      return _controller.updateCursorPosition(_transformController.toScene(event.localPosition));
+    if (_draw.activeTool == .polygon) {
+      return _draw.updateCursorPosition(_transform.toScene(event.localPosition));
     }
 
     if (!_isDragging.value) return;
 
-    final index = _controller.selectedIndex;
-    final selected = _controller.selectedElement;
+    final index = _draw.selectedIndex;
+    final selected = _draw.selectedElement;
     final handle = _activeHandle;
     if (index == null || selected == null) return;
     // TODO(tsinis): Enable TextElement movement once _paintElement supports text bounds/handles.
@@ -296,7 +313,7 @@ class _DrawEditorState extends State<DrawEditor> {
         ? selected.moved(delta.dx, delta.dy)
         : selected.resized(dx: delta.dx, dy: delta.dy, handle: handle);
 
-    _controller.updateElement(updated, index);
+    _draw.updateElement(updated, index);
   }
 
   void _abortCreation() {
@@ -304,7 +321,7 @@ class _DrawEditorState extends State<DrawEditor> {
     _creationStartPoint = null;
     _previewIndex = null;
     _previewElement = null;
-    _controller.creationTemplate = null;
+    _draw.creationTemplate = null;
     _dragStartMatrix = null;
     _activePointerId = null;
   }
@@ -313,8 +330,8 @@ class _DrawEditorState extends State<DrawEditor> {
     _pointerCount = max(0, _pointerCount - 1);
     if (_pointerCount == 0) _dragStartMatrix = null;
     if (_activePointerId != null && event.pointer != _activePointerId) return;
-    if (_controller.activeTool == .polygon) {
-      final point = _transformController.toScene(event.localPosition);
+    if (_draw.activeTool == .polygon) {
+      final point = _transform.toScene(event.localPosition);
       _didHandlePolygonUp(point);
 
       return _activePointerId = null;
@@ -322,25 +339,25 @@ class _DrawEditorState extends State<DrawEditor> {
 
     final pIndex = _resolvePreviewIndex;
     if (_isCreating) {
-      final current = pIndex == null ? null : _controller.elements.elementAtOrNull(pIndex);
+      final current = pIndex == null ? null : _draw.elements.elementAtOrNull(pIndex);
       if (current == null || pIndex == null) return _abortCreation();
 
       // If it's too small, just drop it. We consider < 10px as an accidental press.
       if (current.width >= widget._minShapeSize && current.height >= widget._minShapeSize) {
-        _controller.replacePreviewAndCommit(current, pIndex);
+        _draw.replacePreviewAndCommit(current, pIndex);
       } else {
-        _controller.dropElementAt(pIndex);
+        _draw.dropElementAt(pIndex);
       }
 
       return _abortCreation();
     }
 
     if (!_isDragging.value) return;
-    final index = _controller.selectedIndex;
+    final index = _draw.selectedIndex;
     final snapshot = _dragSnapshot;
-    final current = _controller.selectedElement;
+    final current = _draw.selectedElement;
     if (index != null && snapshot != null && current != null) {
-      _controller.commitCommand(index, after: current, before: snapshot);
+      _draw.commitCommand(index, after: current, before: snapshot);
     }
     _resetDragState();
   }
@@ -354,15 +371,15 @@ class _DrawEditorState extends State<DrawEditor> {
     _pointerCount = max(0, _pointerCount - 1);
     if (_pointerCount == 0) _dragStartMatrix = null;
     if (_activePointerId != null && event.pointer != _activePointerId) return;
-    if (_controller.activeTool == .polygon) {
-      _controller.updateCursorPosition(null);
+    if (_draw.activeTool == .polygon) {
+      _draw.updateCursorPosition(null);
 
       return _activePointerId = null;
     }
 
     final pIndex = _resolvePreviewIndex;
     if (_isCreating) {
-      if (pIndex != null) _controller.dropElementAt(pIndex);
+      if (pIndex != null) _draw.dropElementAt(pIndex);
       _abortCreation();
     } else if (_isDragging.value) {
       _resetDragState();
@@ -371,7 +388,7 @@ class _DrawEditorState extends State<DrawEditor> {
 
   void _startDrag({HandlePosition? handle}) {
     _activeHandle = handle;
-    _dragSnapshot = _controller.selectedElement;
+    _dragSnapshot = _draw.selectedElement;
     _isDragging.value = true;
   }
 
@@ -387,8 +404,8 @@ class _DrawEditorState extends State<DrawEditor> {
   void didUpdateWidget(DrawEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget._controller != oldWidget._controller) {
-      if (oldWidget._controller == null) _controller.dispose();
-      _controller = widget._controller ?? DrawController();
+      if (oldWidget._controller == null) _draw.dispose();
+      _draw = widget._controller ?? DrawController();
     }
     if (widget._minShapeSize != oldWidget._minShapeSize) _closeTolerance = widget._minShapeSize * 2;
     if (oldWidget._image.path == widget._image.path && oldWidget._size == widget._size) return;
@@ -399,11 +416,11 @@ class _DrawEditorState extends State<DrawEditor> {
   @override
   void dispose() {
     _isDragging.dispose();
-    _transformController
+    _transform
       ..removeListener(_onTransformationChanged)
       ..dispose();
     // ignore: avoid-disposing-late-fields, it is assigned immediately.
-    if (!identical(_controller, widget._controller)) _controller.dispose();
+    if (!identical(_draw, widget._controller)) _draw.dispose();
     super.dispose();
   }
 
@@ -411,11 +428,11 @@ class _DrawEditorState extends State<DrawEditor> {
     final idx = _previewIndex;
     final token = _previewElement;
     if (idx != null) {
-      final atIdx = _controller.elements.elementAtOrNull(idx);
+      final atIdx = _draw.elements.elementAtOrNull(idx);
       if (token != null && identical(atIdx, token)) return idx;
     }
     if (token == null) return null;
-    final resolved = _controller.elements.indexWhere((e) => identical(e, token));
+    final resolved = _draw.elements.indexWhere((e) => identical(e, token));
 
     return resolved.isNegative ? null : resolved;
   }
@@ -434,8 +451,7 @@ class _DrawEditorState extends State<DrawEditor> {
         child: ValueListenableBuilder(
           builder: (_, isDragging, child) => ListenableBuilder(
             builder: (_, _) {
-              final isInteracting =
-                  isDragging || _isCreating || _controller.creationTemplate != null;
+              final isInteracting = isDragging || _isCreating || _draw.creationTemplate != null;
 
               return InteractiveViewer(
                 alignment: widget.alignment,
@@ -453,39 +469,43 @@ class _DrawEditorState extends State<DrawEditor> {
                 scaleEnabled: widget.scaleEnabled,
                 scaleFactor: widget.scaleFactor,
                 trackpadScrollCausesScale: widget.trackpadScrollCausesScale,
-                transformationController: _transformController,
+                transformationController: _transform,
                 child: child ?? const SizedBox.shrink(),
               );
             },
-            listenable: _controller,
+            listenable: _draw,
           ),
           valueListenable: _isDragging,
           child: FfiImageFile(
             widget._image,
             builder: (displayImage, info, uiImage) => ListenableBuilder(
               builder: (_, image) => Stack(
+                alignment: widget.alignment ?? .topStart,
+                clipBehavior: widget.clipBehavior,
+                fit: widget._fit,
+                textDirection: widget._textDirection,
                 children: [
                   CustomPaint(
                     foregroundPainter: DrawPainter(
-                      _controller.elements,
-                      activeTool: _controller.activeTool,
+                      _draw.elements,
+                      activeTool: _draw.activeTool,
                       backgroundImage: uiImage,
-                      creationTemplate: _controller.creationTemplate,
-                      cursorPosition: _controller.cursorPosition,
+                      creationTemplate: _draw.creationTemplate,
+                      cursorPosition: _draw.cursorPosition,
                       handleRadius: _handleRadius,
                       outlineStrokeWidth: _outlineStrokeWidth,
-                      pendingVertices: _controller.pendingVertices,
-                      selectedIndex: _controller.selectedIndex,
+                      pendingVertices: _draw.pendingVertices,
+                      selectedIndex: _draw.selectedIndex,
                       tolerance: _closeTolerance / _viewScale,
                     ),
                     size: info.size,
                     willChange: _isDragging.value || _isCreating,
                     child: image,
                   ),
-                  if (info != null) ?widget._builder?.call(_controller, info, _transformController),
+                  if (info != null) ?widget._builder?.call(_draw, info, _transform),
                 ],
               ),
-              listenable: Listenable.merge([_controller, _isDragging, _transformController]),
+              listenable: Listenable.merge([_draw, _isDragging, _transform]),
               child: displayImage,
             ),
             fit: .fill,
