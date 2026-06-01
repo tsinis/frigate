@@ -296,4 +296,12 @@ mod tests {
         );
         std::fs::remove_file(&tmp).ok();
     }
+
+    #[test]
+    fn apply_orientation_ignores_invalid_values() {
+        let img = RgbaImage::from_pixel(2, 2, image::Rgba([0, 0, 0, 255]));
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let res = apply_orientation(dyn_img, 9);
+        assert_eq!(res.width(), 2);
+    }
 }

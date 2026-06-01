@@ -332,9 +332,6 @@ fn blend_src_over(src: Rgba<u8>, dst: Rgba<u8>) -> Rgba<u8> {
     }
     let da = u32::from(dst[3]);
     let out_a = sa + da * (255 - sa) / 255;
-    if out_a == 0 {
-        return Rgba([0, 0, 0, 0]);
-    }
     let mut out = [0u8; 4];
     for i in 0..3 {
         let s = u32::from(src[i]) * sa;
@@ -642,6 +639,57 @@ mod tests {
         assert!(
             has_text_below_80,
             "rotated text must extend below y=80 along diagonal; overlay clipping bug if not"
+        );
+    }
+
+    #[test]
+    fn rotated_text_whitespace_only_is_noop() {
+        let font = font();
+        let mut img = black_image(16, 16);
+        let before = img.clone();
+        render_text_overlay(
+            &mut img,
+            &font,
+            &TextParams {
+                text: "   ",
+                rotation_rad: 1.0,
+                ..base_params("   ")
+            },
+        );
+        assert_eq!(img.as_raw(), before.as_raw());
+    }
+
+    #[test]
+    fn rotated_text_out_of_bounds_is_noop() {
+        let font = font();
+        let mut img = black_image(16, 16);
+        let before = img.clone();
+        render_text_overlay(
+            &mut img,
+            &font,
+            &TextParams {
+                text: "Hi",
+                x: 1000.0,
+                y: 1000.0,
+                rotation_rad: 1.0,
+                ..base_params("Hi")
+            },
+        );
+        assert_eq!(img.as_raw(), before.as_raw());
+    }
+
+    #[test]
+    fn text_partially_off_screen() {
+        let font = font();
+        let mut img = black_image(16, 16);
+        render_text_overlay(
+            &mut img,
+            &font,
+            &TextParams {
+                text: "Hi",
+                x: -10.0,
+                ..base_params("Hi")
+            },
         );
     }
 }

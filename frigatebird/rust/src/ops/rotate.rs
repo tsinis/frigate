@@ -29,8 +29,7 @@ impl Rotate {
             0 => None,
             1 => Some(img.rotate90()),
             2 => Some(img.rotate180()),
-            3 => Some(img.rotate270()),
-            _ => unreachable!(),
+            _ => Some(img.rotate270()),
         }
     }
 }
