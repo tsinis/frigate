@@ -49,14 +49,9 @@ pub fn read_image(path: &Path) -> Result<DynamicImage, IoError> {
     Ok(img)
 }
 
-/// Reads the EXIF orientation tag from raw file bytes.
-/// Returns a value in the range 1..=8. Returns 1 if no orientation is found or on any error.
-fn read_orientation_from_bytes(bytes: &[u8]) -> u8 {
-    let mut cursor = std::io::Cursor::new(bytes);
-    let Ok(exif) = exif::Reader::new().read_from_container(&mut cursor) else {
-        return 1;
-    };
-
+/// Extracts and validates the EXIF orientation tag from an existing Exif container.
+/// Returns a value in 1..=8, or None if invalid or missing.
+fn extract_orientation(exif: &exif::Exif) -> Option<u8> {
     exif.get_field(exif::Tag::Orientation, exif::In::PRIMARY)
         .and_then(|f| f.value.get_uint(0))
         .and_then(|v| {
@@ -66,7 +61,17 @@ fn read_orientation_from_bytes(bytes: &[u8]) -> u8 {
                 None
             }
         })
-        .unwrap_or(1)
+}
+
+/// Reads the EXIF orientation tag from raw file bytes.
+/// Returns a value in the range 1..=8. Returns 1 if no orientation is found or on any error.
+fn read_orientation_from_bytes(bytes: &[u8]) -> u8 {
+    let mut cursor = std::io::Cursor::new(bytes);
+    let Ok(exif) = exif::Reader::new().read_from_container(&mut cursor) else {
+        return 1;
+    };
+
+    extract_orientation(&exif).unwrap_or(1)
 }
 
 /// Reads the EXIF orientation tag from an image file via a separate file open.
@@ -85,18 +90,7 @@ pub(crate) fn read_orientation(path: &Path) -> u8 {
         return 1;
     };
 
-    let orientation = exif
-        .get_field(exif::Tag::Orientation, exif::In::PRIMARY)
-        .and_then(|f| f.value.get_uint(0))
-        .and_then(|v| {
-            if (1..=8).contains(&v) {
-                Some(v as u8)
-            } else {
-                None
-            }
-        });
-
-    orientation.unwrap_or(1)
+    extract_orientation(&exif).unwrap_or(1)
 }
 
 fn apply_orientation(img: DynamicImage, orientation: u8) -> DynamicImage {
