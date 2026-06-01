@@ -97,6 +97,10 @@ args = ["fuzz", "run", "ffi_boundary", "--", "-max_total_time=60"]
 ignore_errors = true
 script = [
     '''
+    if [ "$(uname -m)" = "aarch64" ]; then
+        echo "Skipping ASAN on ARM (OOM issues)"
+        exit 0
+    fi
     export RUSTFLAGS="-Z sanitizer=address -C codegen-units=1"
     export CARGO_INCREMENTAL=0
     HOST_TRIPLE=$(rustup run ${NIGHTLY} rustc -vV | grep host | cut -d' ' -f2)

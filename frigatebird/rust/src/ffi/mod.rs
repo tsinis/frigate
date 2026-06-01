@@ -1,5 +1,4 @@
 use safer_ffi::prelude::*;
-use std::ptr;
 
 /// Error codes for FFI operations.
 ///
@@ -136,13 +135,10 @@ pub fn write_error_to_arena(
         Err(e) => e.valid_up_to(),
     };
 
-    // SAFETY: We verified `error` is non-empty and `len` is within bounds.
-    #[expect(unsafe_code, reason = "FFI arena write")]
-    unsafe {
-        let error_ptr = arena_ref.error.as_mut_ptr();
-        ptr::copy_nonoverlapping(bytes.as_ptr(), error_ptr, len);
-        ptr::write(error_ptr.add(len), 0);
-    }
+    // Safe: `error` is non-empty (checked above) and `len < error.len()` (null-terminator
+    // space reserved by the `min(len() - 1)` above), so both indexing operations are in bounds.
+    arena_ref.error[..len].copy_from_slice(&bytes[..len]);
+    arena_ref.error[len] = 0;
 
     FfiError {
         code: code as u8,

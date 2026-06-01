@@ -132,21 +132,71 @@ external int draw_elements(
 /// Standalone region blur: applies a Gaussian blur to a region in the image.
 ///
 /// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
-@Native<Uint8 Function(Pointer<Utf8>, Pointer<Utf8>, RectanglePayload, Pointer<FfiArena>)>()
+@Native<Uint8 Function(Pointer<Utf8>, Pointer<Utf8>, RectanglePayload, Uint8, Pointer<FfiArena>)>()
 external int blur_region(
   Pointer<Utf8> imagePath,
   Pointer<Utf8> outputPath,
   RectanglePayload region,
+  int imageQuality,
   Pointer<FfiArena> arena,
 );
 
 /// Standalone full-image blur: applies a Gaussian blur to the entire image.
 ///
 /// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
-@Native<Uint8 Function(Pointer<Utf8>, Pointer<Utf8>, Uint8, Pointer<FfiArena>)>()
+@Native<Uint8 Function(Pointer<Utf8>, Pointer<Utf8>, Uint8, Uint8, Pointer<FfiArena>)>()
 external int blur(
   Pointer<Utf8> imagePath,
   Pointer<Utf8> outputPath,
   int radiusPx,
+  int imageQuality,
+  Pointer<FfiArena> arena,
+);
+
+/// Rotates an image by 90° increments (quarter turns).
+///
+/// `quarterTurns`: 0 = no-op, 1 = 90° CW, 2 = 180°, 3 = 270° CW. Values ≥ 4 are mod 4.
+/// If `outputPath` is null, overwrites `imagePath`.
+///
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
+@Native<Uint8 Function(Pointer<Utf8>, Pointer<Utf8>, Uint8, Uint8, Pointer<FfiArena>)>()
+external int rotate(
+  Pointer<Utf8> imagePath,
+  Pointer<Utf8> outputPath,
+  int quarterTurns,
+  int imageQuality,
+  Pointer<FfiArena> arena,
+);
+
+/// Converts an image to JPEG format at the specified quality.
+///
+/// Reads any supported format, writes JPEG. If `outputPath` is null, overwrites `imagePath`
+/// (which must then have a .jpg/.jpeg extension).
+///
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
+@Native<Uint8 Function(Pointer<Utf8>, Pointer<Utf8>, Uint8, Pointer<FfiArena>)>()
+external int to_jpg(
+  Pointer<Utf8> imagePath,
+  Pointer<Utf8> outputPath,
+  int imageQuality,
+  Pointer<FfiArena> arena,
+);
+
+/// Resizes an image to exact `width × height` dimensions.
+///
+/// `filter`: 0 = Nearest, 1 = Triangle (bilinear), 2 = CatmullRom, 3 = Lanczos3.
+/// If `outputPath` is null, overwrites `imagePath`.
+///
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
+@Native<
+  Uint8 Function(Pointer<Utf8>, Pointer<Utf8>, Uint32, Uint32, Uint8, Uint8, Pointer<FfiArena>)
+>()
+external int resize(
+  Pointer<Utf8> imagePath,
+  Pointer<Utf8> outputPath,
+  int width,
+  int height,
+  int filter,
+  int imageQuality,
   Pointer<FfiArena> arena,
 );

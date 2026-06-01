@@ -149,14 +149,18 @@ pub unsafe extern "C" fn ffi_fill_element_0xAA(out: *mut FfiElement) {
 }
 
 fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + Send>) -> u8 {
-    let msg = if let Some(s) = payload.downcast_ref::<&'static str>() {
-        (*s).to_string()
+    // Extract message as &str without cloning. The downcast_ref borrows from the Box which
+    // lives for the duration of this function — no allocation needed.
+    let fallback;
+    let msg: &str = if let Some(s) = payload.downcast_ref::<&'static str>() {
+        s
     } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
+        s.as_str()
     } else {
-        "panic with non-string payload".to_string()
+        fallback = "panic with non-string payload";
+        fallback
     };
-    write_panic_to_arena(arena, &msg).code
+    write_panic_to_arena(arena, msg).code
 }
 
 // PERMANENT EXCEPTIONS to #[ffi_export]:
@@ -281,11 +285,12 @@ pub fn merge(
                 foreground_png.as_slice()
             };
 
-            let mut bg_img = io::read_image(Path::new(bg_p)).map_err(|_| {
-                (
-                    FfiErrorCode::Decode,
-                    "Failed to decode background image".to_string(),
-                )
+            let mut bg_img = io::read_image(Path::new(bg_p)).map_err(|e| {
+                let code = match e {
+                    io::IoError::Read => FfiErrorCode::Io,
+                    _ => FfiErrorCode::Decode,
+                };
+                (code, "Failed to read/decode background image".to_string())
             })?;
 
             let fg_img = image::load_from_memory(fg_bytes).map_err(|_| {
@@ -482,12 +487,24 @@ fn get_rotated_aabb(
         ),
     ];
 
-    let min_x = cx + pts.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
-    let max_x = cx + pts.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
-    let min_y = cy + pts.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
-    let max_y = cy + pts.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+    let (mut min_x, mut max_x) = (pts[0].0, pts[0].0);
+    let (mut min_y, mut max_y) = (pts[0].1, pts[0].1);
+    for &(px, py) in &pts[1..] {
+        if px < min_x {
+            min_x = px;
+        }
+        if px > max_x {
+            max_x = px;
+        }
+        if py < min_y {
+            min_y = py;
+        }
+        if py > max_y {
+            max_y = py;
+        }
+    }
 
-    RectanglePayload::new(min_x, min_y, max_x - min_x, max_y - min_y, 0)
+    RectanglePayload::new(cx + min_x, cy + min_y, max_x - min_x, max_y - min_y, 0)
 }
 
 #[allow(unsafe_code)]
@@ -516,21 +533,27 @@ fn draw_elements_safe(
     };
 
     let img = io::read_image(Path::new(image_path))
-        .map_err(|_| (FfiErrorCode::Decode, "Failed to decode image".to_string()))?
+        .map_err(|e| {
+            let code = match e {
+                io::IoError::Read => FfiErrorCode::Io,
+                _ => FfiErrorCode::Decode,
+            };
+            (code, "Failed to read/decode image".to_string())
+        })?
         .into_rgba8();
 
-    // Optimize cloning: clone full RGBA buffer only if a shape requires a blur operation.
+    // Conditional clone: only allocate a clean source when at least one element requires blur.
+    // This avoids the full-image clone for the common case of no-blur elements.
+    let mut clean_img: Option<image::RgbaImage> = None;
     let needs_clean_img = elements.iter().any(|e| match e {
         FfiElement::Rectangle(p) => p.blur > 0,
         FfiElement::Oval(p) => p.blur > 0,
         FfiElement::Polygon(p) => p.blur > 0,
         FfiElement::Text(_) => false,
     });
-    let clean_img = if needs_clean_img {
-        Some(img.clone())
-    } else {
-        None
-    };
+    if needs_clean_img {
+        clean_img = Some(img.clone());
+    }
     let mut surface = Surface::Rgba(img);
 
     for element in elements {
@@ -956,11 +979,6 @@ fn draw_shape_path(
     height: f64,
     style: &ShapeStyle,
 ) {
-    let paint = Paint {
-        anti_alias: true,
-        ..Default::default()
-    };
-
     let ts = if rotation_deg != 0 {
         Transform::from_translate((x + width / 2.0) as f32, (y + height / 2.0) as f32)
             .pre_rotate(rotation_deg as f32)
@@ -970,19 +988,25 @@ fn draw_shape_path(
     };
 
     if let Some(color) = style.fill_color {
-        let mut p = paint.clone();
-        p.set_color(color);
-        pixmap.fill_path(path, &p, tiny_skia::FillRule::Winding, ts, None);
+        let mut paint = Paint {
+            anti_alias: true,
+            ..Default::default()
+        };
+        paint.set_color(color);
+        pixmap.fill_path(path, &paint, tiny_skia::FillRule::Winding, ts, None);
     }
 
     if let Some(color) = style.outline_color {
-        let mut p = paint.clone();
-        p.set_color(color);
+        let mut paint = Paint {
+            anti_alias: true,
+            ..Default::default()
+        };
+        paint.set_color(color);
         let stroke = Stroke {
             width: style.thickness,
             ..Default::default()
         };
-        pixmap.stroke_path(path, &p, &stroke, ts, None);
+        pixmap.stroke_path(path, &paint, &stroke, ts, None);
     }
 }
 
@@ -1019,6 +1043,7 @@ pub fn blur_region(
     image_path: Option<char_p::Ref<'_>>,
     output_path: Option<char_p::Ref<'_>>,
     region: RectanglePayload,
+    image_quality: u8,
     arena: Option<&mut FfiArena>,
 ) -> u8 {
     let mut arena_opt = arena;
@@ -1049,7 +1074,13 @@ pub fn blur_region(
             }
 
             let mut img = io::read_image(Path::new(img_p))
-                .map_err(|_| (FfiErrorCode::Decode, "Failed to decode image".to_string()))?
+                .map_err(|e| {
+                    let code = match e {
+                        io::IoError::Read => FfiErrorCode::Io,
+                        _ => FfiErrorCode::Decode,
+                    };
+                    (code, "Failed to read/decode image".to_string())
+                })?
                 .into_rgba8();
 
             // Run shape-masked blur on the rectangle region
@@ -1063,7 +1094,7 @@ pub fn blur_region(
             })?;
 
             // Re-save image
-            io::write_image(Path::new(out_p), &img, 100).map_err(|e| {
+            io::write_image(Path::new(out_p), &img, image_quality).map_err(|e| {
                 let code = match e {
                     io::IoError::UnsupportedFormat | io::IoError::Encode => FfiErrorCode::Encode,
                     _ => FfiErrorCode::Io,
@@ -1091,6 +1122,7 @@ pub fn blur(
     image_path: Option<char_p::Ref<'_>>,
     output_path: Option<char_p::Ref<'_>>,
     radius_px: u8,
+    image_quality: u8,
     arena: Option<&mut FfiArena>,
 ) -> u8 {
     let mut arena_opt = arena;
@@ -1114,19 +1146,223 @@ pub fn blur(
             }
 
             let img = io::read_image(Path::new(img_p))
-                .map_err(|_| (FfiErrorCode::Decode, "Failed to decode image".to_string()))?
+                .map_err(|e| {
+                    let code = match e {
+                        io::IoError::Read => FfiErrorCode::Io,
+                        _ => FfiErrorCode::Decode,
+                    };
+                    (code, "Failed to read/decode image".to_string())
+                })?
                 .into_rgba8();
 
             let sigma = radius_px as f32 / 3.0;
             let blurred = image::imageops::blur(&img, sigma);
 
             // Re-save image
-            io::write_image(Path::new(out_p), &blurred, 100).map_err(|e| {
+            io::write_image(Path::new(out_p), &blurred, image_quality).map_err(|e| {
                 let code = match e {
                     io::IoError::UnsupportedFormat | io::IoError::Encode => FfiErrorCode::Encode,
                     _ => FfiErrorCode::Io,
                 };
                 (code, "Failed to write image".to_string())
+            })?;
+
+            Ok(())
+        })();
+        inner
+    }));
+
+    match result {
+        Ok(Ok(())) => FfiErrorCode::Success as u8,
+        Ok(Err((code, msg))) => write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code,
+        Err(payload) => handle_panic(arena_opt, payload),
+    }
+}
+
+/// Rotates an image by 90° increments (quarter turns).
+///
+/// `quarter_turns`: 0 = no-op, 1 = 90° CW, 2 = 180°, 3 = 270° CW. Values ≥ 4 are mod 4.
+/// If `output_path` is NULL, overwrites `image_path`.
+///
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
+#[ffi_export]
+pub fn rotate(
+    image_path: Option<char_p::Ref<'_>>,
+    output_path: Option<char_p::Ref<'_>>,
+    quarter_turns: u8,
+    image_quality: u8,
+    arena: Option<&mut FfiArena>,
+) -> u8 {
+    let mut arena_opt = arena;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let inner: Result<(), (FfiErrorCode, String)> = (|| {
+            let img_p = if let Some(p) = image_path {
+                p.to_str()
+            } else {
+                return Err((FfiErrorCode::InvalidArg, "Missing image path".to_string()));
+            };
+
+            let out_p = if let Some(p) = output_path {
+                p.to_str()
+            } else {
+                img_p
+            };
+
+            // 0 quarter turns (mod 4) is a no-op — skip file I/O entirely.
+            if quarter_turns.is_multiple_of(4) {
+                return Ok(());
+            }
+
+            let img = io::read_image(Path::new(img_p)).map_err(|e| {
+                let code = match e {
+                    io::IoError::Read => FfiErrorCode::Io,
+                    _ => FfiErrorCode::Decode,
+                };
+                (code, "Failed to read/decode image".to_string())
+            })?;
+
+            let rotated = ops::rotate::Rotate { quarter_turns }.apply(img).unwrap();
+            // SAFETY: early return above ensures quarter_turns % 4 != 0, so apply() always returns Some.
+            let rgba = rotated.into_rgba8();
+
+            io::write_image(Path::new(out_p), &rgba, image_quality).map_err(|e| {
+                let code = match e {
+                    io::IoError::UnsupportedFormat | io::IoError::Encode => FfiErrorCode::Encode,
+                    _ => FfiErrorCode::Io,
+                };
+                (code, "Failed to write rotated image".to_string())
+            })?;
+
+            Ok(())
+        })();
+        inner
+    }));
+
+    match result {
+        Ok(Ok(())) => FfiErrorCode::Success as u8,
+        Ok(Err((code, msg))) => write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code,
+        Err(payload) => handle_panic(arena_opt, payload),
+    }
+}
+
+/// Converts an image to JPEG format.
+///
+/// Reads any supported format, writes JPEG at `image_quality` (0..=100).
+/// If `output_path` is NULL, overwrites `image_path` (which must then have a .jpg/.jpeg extension).
+///
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
+#[ffi_export]
+pub fn to_jpg(
+    image_path: Option<char_p::Ref<'_>>,
+    output_path: Option<char_p::Ref<'_>>,
+    image_quality: u8,
+    arena: Option<&mut FfiArena>,
+) -> u8 {
+    let mut arena_opt = arena;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let inner: Result<(), (FfiErrorCode, String)> = (|| {
+            let img_p = if let Some(p) = image_path {
+                p.to_str()
+            } else {
+                return Err((FfiErrorCode::InvalidArg, "Missing image path".to_string()));
+            };
+
+            let out_p = if let Some(p) = output_path {
+                p.to_str()
+            } else {
+                img_p
+            };
+
+            ops::to_jpg::ToJpg {
+                quality: image_quality,
+            }
+            .apply(Path::new(img_p), Path::new(out_p))
+            .map_err(|e| {
+                let code = match e {
+                    io::IoError::Read => FfiErrorCode::Io,
+                    io::IoError::Decode => FfiErrorCode::Decode,
+                    io::IoError::UnsupportedFormat | io::IoError::Encode => FfiErrorCode::Encode,
+                    io::IoError::Write => FfiErrorCode::Io,
+                };
+                (code, "Failed to convert to JPEG".to_string())
+            })?;
+
+            Ok(())
+        })();
+        inner
+    }));
+
+    match result {
+        Ok(Ok(())) => FfiErrorCode::Success as u8,
+        Ok(Err((code, msg))) => write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code,
+        Err(payload) => handle_panic(arena_opt, payload),
+    }
+}
+
+/// Resizes an image to exact `width × height` dimensions.
+///
+/// `filter`: 0 = Nearest, 1 = Triangle (bilinear, default), 2 = `CatmullRom`, 3 = Lanczos3.
+/// If `output_path` is NULL, overwrites `image_path`.
+///
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
+#[ffi_export]
+pub fn resize(
+    image_path: Option<char_p::Ref<'_>>,
+    output_path: Option<char_p::Ref<'_>>,
+    width: u32,
+    height: u32,
+    filter: u8,
+    image_quality: u8,
+    arena: Option<&mut FfiArena>,
+) -> u8 {
+    let mut arena_opt = arena;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let inner: Result<(), (FfiErrorCode, String)> = (|| {
+            let img_p = if let Some(p) = image_path {
+                p.to_str()
+            } else {
+                return Err((FfiErrorCode::InvalidArg, "Missing image path".to_string()));
+            };
+
+            let out_p = if let Some(p) = output_path {
+                p.to_str()
+            } else {
+                img_p
+            };
+
+            let resize_filter = ops::resize::ResizeFilter::from_wire(filter).ok_or_else(|| {
+                (
+                    FfiErrorCode::InvalidArg,
+                    format!("Invalid resize filter: {filter}"),
+                )
+            })?;
+
+            ops::resize::Resize {
+                width,
+                height,
+                filter: resize_filter,
+                quality: image_quality,
+            }
+            .apply(Path::new(img_p), Path::new(out_p))
+            .map_err(|e| match e {
+                ops::resize::ResizeError::ZeroDimension => (
+                    FfiErrorCode::InvalidArg,
+                    "Width and height must be > 0".to_string(),
+                ),
+                ops::resize::ResizeError::Io(io_err) => {
+                    let code = match io_err {
+                        io::IoError::Read => FfiErrorCode::Io,
+                        io::IoError::Decode => FfiErrorCode::Decode,
+                        io::IoError::UnsupportedFormat | io::IoError::Encode => {
+                            FfiErrorCode::Encode
+                        }
+                        io::IoError::Write => FfiErrorCode::Io,
+                    };
+                    (code, "Failed to resize image".to_string())
+                }
             })?;
 
             Ok(())

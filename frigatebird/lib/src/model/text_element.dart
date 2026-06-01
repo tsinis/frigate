@@ -52,6 +52,36 @@ final class TextElement extends ImmutableDrawElement {
   );
 
   @override
+  bool operator ==(Object other) =>
+      // ignore: avoid-complex-conditions, many fields to compare for value equality.
+      identical(this, other) ||
+      other is TextElement &&
+          other.x == x &&
+          other.y == y &&
+          other.height == height &&
+          other.rotation == rotation &&
+          other.blur == blur &&
+          other.fillColor == fillColor &&
+          other.outlineColor == outlineColor &&
+          other.outlineThickness == outlineThickness &&
+          other.fontId == fontId &&
+          other.text == text;
+
+  @override
+  int get hashCode => Object.hash(
+    x,
+    y,
+    height,
+    rotation,
+    blur,
+    fillColor,
+    outlineColor,
+    outlineThickness,
+    fontId,
+    text,
+  );
+
+  @override
   String toString() =>
       'TextElement(x: $x, y: $y, text: "$text", height: $height, '
       'fillColor: $fillColor, rotation: $rotation, blur: $blur, fontId: $fontId)';

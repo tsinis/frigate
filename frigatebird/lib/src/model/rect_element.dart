@@ -43,6 +43,36 @@ final class RectElement extends ImmutableDrawElement {
   );
 
   @override
+  bool operator ==(Object other) =>
+      // ignore: avoid-complex-conditions, many fields to compare for value equality.
+      identical(this, other) ||
+      other is RectElement &&
+          other.x == x &&
+          other.y == y &&
+          other.width == width &&
+          other.height == height &&
+          other.rotation == rotation &&
+          other.blur == blur &&
+          other.fillColor == fillColor &&
+          other.outlineColor == outlineColor &&
+          other.outlineThickness == outlineThickness &&
+          other.cornerRadius == cornerRadius;
+
+  @override
+  int get hashCode => Object.hash(
+    x,
+    y,
+    width,
+    height,
+    rotation,
+    blur,
+    fillColor,
+    outlineColor,
+    outlineThickness,
+    cornerRadius,
+  );
+
+  @override
   String toString() =>
       'RectElement(x: $x, y: $y, width: $width, height: $height, fillColor: $fillColor, '
       'outlineColor: $outlineColor, outlineThickness: $outlineThickness, '

@@ -3,7 +3,7 @@
 
 import 'dart:convert' show utf8;
 import 'dart:ffi';
-import 'dart:typed_data' show BytesBuilder, Float64x2List, Uint8List;
+import 'dart:typed_data' show Float64x2List, Uint8List;
 
 import 'package:ffi/ffi.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
@@ -68,11 +68,32 @@ sealed class FfiMarshal {
     int errorCap = FfiAbi.errorCapBytes,
   }) {
     final elementsPtr = drawElements.isEmpty ? nullptr : allocator<FfiElement>(drawElements.length);
-    final payloadBytes = BytesBuilder();
     final polygonVerticesPtrs = <Pointer<Double>>[];
     Pointer<Uint8> textBufferPtr = nullptr;
 
     try {
+      int totalTextBytes = 0;
+      final textEncodings = <int, Uint8List>{};
+      for (final (i, item) in drawElements.indexed) {
+        if (item is TextElement) {
+          final encoded = utf8.encode(item.text);
+          textEncodings[i] = encoded;
+          totalTextBytes += encoded.length;
+        }
+      }
+
+      // Allocate the native text buffer once with the exact size needed.
+      // The typed list view is created once here, avoiding repeated asTypedList() calls
+      // inside the loop. Empty list is never accessed (no TextElement → no textOffset writes).
+      final Uint8List textBufferView;
+      if (totalTextBytes > 0) {
+        textBufferPtr = allocator<Uint8>(totalTextBytes);
+        textBufferView = textBufferPtr.asTypedList(totalTextBytes);
+      } else {
+        textBufferView = Uint8List(0);
+      }
+
+      int textOffset = 0;
       for (final (i, item) in drawElements.indexed) {
         final ref = (elementsPtr + i).ref;
 
@@ -121,8 +142,9 @@ sealed class FfiMarshal {
           case TextElement():
             assert(item.blur >= 0 && item.blur <= 255, 'blur must be in 0..255');
 
-            final encoded = utf8.encode(item.text);
-            // Offset captured *before* append so it points to the start of this element's text.
+            final encoded = textEncodings[i]!;
+            // Write encoded bytes directly into native buffer at the current offset.
+            textBufferView.setRange(textOffset, textOffset + encoded.length, encoded);
             (ref..tag = FfiElementType.text.value).payload.text
               ..x = item.x
               ..y = item.y
@@ -131,9 +153,9 @@ sealed class FfiMarshal {
               ..fillColorArgb = item.fillColor.argb
               ..blur = item.blur.clamp(0, 255)
               ..fontId = item.fontId
-              ..textOffset = payloadBytes.length
+              ..textOffset = textOffset
               ..textLen = encoded.length;
-            payloadBytes.add(encoded);
+            textOffset += encoded.length;
 
           case PolygonElement():
             assert(item.blur >= 0 && item.blur <= 255, 'blur must be in 0..255');
@@ -179,22 +201,10 @@ sealed class FfiMarshal {
         }
       }
 
-      final payloadTotal = payloadBytes.length;
-      if (payloadTotal > 0) {
-        textBufferPtr = allocator<Uint8>(payloadTotal);
-        try {
-          textBufferPtr.asTypedList(payloadTotal).setAll(0, payloadBytes.toBytes());
-        } on Object {
-          allocator.free(textBufferPtr);
-
-          rethrow;
-        }
-      }
-
       final arena = FfiArenaHandle.allocate(errorCapacity: errorCap);
       arena.ptr.ref
         ..textBuf = textBufferPtr
-        ..textLen = payloadTotal;
+        ..textLen = totalTextBytes;
 
       final handle = FfiElementsHandle._(
         allocator: allocator,

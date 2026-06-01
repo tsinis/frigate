@@ -31,5 +31,12 @@ final class FfiColor {
   final int argb;
 
   @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is FfiColor && other.argb == argb;
+
+  @override
+  int get hashCode => argb.hashCode;
+
+  @override
   String toString() => 'FfiColor(0x${argb.toRadixString(16).padLeft(8, '0').toUpperCase()})';
 }

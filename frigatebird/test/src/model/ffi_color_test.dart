@@ -52,4 +52,31 @@ void main() => group(FfiColor, () {
       expect(const FfiColor(0xFFFFFFFF).argb, 0xFFFFFFFF, reason: 'upper bound');
     });
   });
+
+  group('value equality', () {
+    test('two non-const instances with same argb are equal', () {
+      // ignore: prefer_const_constructors, deliberately non-const to test value equality.
+      final a = FfiColor(0xFF00FF00);
+      // ignore: prefer_const_constructors, deliberately non-const to test value equality.
+      final b = FfiColor(0xFF00FF00);
+      expect(a, equals(b), reason: 'same argb must be equal');
+      expect(a.hashCode, b.hashCode, reason: 'equal objects must have same hashCode');
+    });
+
+    test('non-const instance equals const with same argb', () {
+      // ignore: prefer_const_constructors, deliberately non-const to test cross-const equality.
+      final runtime = FfiColor(0xFF000000);
+      expect(runtime, equals(FfiColor.black), reason: 'value equality across const boundary');
+    });
+
+    test('different argb values are not equal', () {
+      expect(FfiColor.black, isNot(equals(FfiColor.transparent)));
+      expect(const FfiColor(0xFF0000FF), isNot(equals(const FfiColor(0xFF00FF00))));
+    });
+
+    test('hashCode is consistent for same value', () {
+      const color = FfiColor(0xAABBCCDD);
+      expect(color.hashCode, color.hashCode, reason: 'hashCode must be stable');
+    });
+  });
 });

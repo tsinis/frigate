@@ -349,3 +349,13 @@ xctest
 xcuserdata
 xcworkspace
 xcworkspacedata
+catmull
+catmullrom
+lanczos
+nonsquare
+rasterizes
+reencode
+reencodes
+unblurred
+tojpg
+

@@ -101,3 +101,128 @@ fn test_free_byte_buffer_valid() {
     let buf = ByteBuffer::from(data);
     free_byte_buffer(buf); // Should free data
 }
+
+#[test]
+fn test_ffi_rotate_null_path() {
+    let mut arena = FfiArena::default();
+    let res = rotate(None, None, 1, 100, Some(&mut arena));
+    assert_eq!(res, FfiErrorCode::InvalidArg as u8);
+}
+
+#[test]
+fn test_ffi_rotate_invalid_path() {
+    let mut arena = FfiArena::default();
+    let img = safer_ffi::char_p::new("invalid/path/that/does/not/exist.png");
+    let res = rotate(Some(img.as_ref()), None, 1, 100, Some(&mut arena));
+    assert_eq!(res, FfiErrorCode::Io as u8);
+}
+
+#[test]
+fn test_ffi_to_jpg_null_path() {
+    let mut arena = FfiArena::default();
+    let res = to_jpg(None, None, 100, Some(&mut arena));
+    assert_eq!(res, FfiErrorCode::InvalidArg as u8);
+}
+
+#[test]
+fn test_ffi_to_jpg_invalid_path() {
+    let mut arena = FfiArena::default();
+    let img = safer_ffi::char_p::new("invalid/path.png");
+    let res = to_jpg(Some(img.as_ref()), None, 100, Some(&mut arena));
+    assert_eq!(res, FfiErrorCode::Io as u8);
+}
+
+#[test]
+fn test_ffi_resize_null_path() {
+    let mut arena = FfiArena::default();
+    let res = resize(None, None, 100, 100, 1, 100, Some(&mut arena));
+    assert_eq!(res, FfiErrorCode::InvalidArg as u8);
+}
+
+#[test]
+fn test_ffi_resize_invalid_path() {
+    let mut arena = FfiArena::default();
+    let img = safer_ffi::char_p::new("invalid/path.png");
+    let res = resize(Some(img.as_ref()), None, 100, 100, 1, 100, Some(&mut arena));
+    assert_eq!(res, FfiErrorCode::Io as u8);
+}
+
+#[test]
+fn test_ffi_resize_invalid_filter() {
+    let mut arena = FfiArena::default();
+    let img = safer_ffi::char_p::new("invalid/path.png");
+    let res = resize(
+        Some(img.as_ref()),
+        None,
+        100,
+        100,
+        99,
+        100,
+        Some(&mut arena),
+    );
+    assert_eq!(res, FfiErrorCode::InvalidArg as u8);
+}
+
+#[test]
+fn test_ffi_rotate_success() {
+    let path = std::env::temp_dir().join("ffi_rotate.png");
+    let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([255, 0, 0, 255]));
+    img.save(&path).unwrap();
+    let p = safer_ffi::char_p::new(path.to_str().unwrap());
+    let res = rotate(Some(p.as_ref()), None, 1, 100, None);
+    assert_eq!(res, FfiErrorCode::Success as u8);
+    std::fs::remove_file(&path).ok();
+}
+
+#[test]
+fn test_ffi_to_jpg_success() {
+    let path = std::env::temp_dir().join("ffi_to_jpg.png");
+    let out = path.with_extension("jpg");
+    let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([255, 0, 0, 255]));
+    img.save(&path).unwrap();
+    let p_in = safer_ffi::char_p::new(path.to_str().unwrap());
+    let p_out = safer_ffi::char_p::new(out.to_str().unwrap());
+    let res = to_jpg(Some(p_in.as_ref()), Some(p_out.as_ref()), 100, None);
+    assert_eq!(res, FfiErrorCode::Success as u8);
+    assert!(out.exists());
+    std::fs::remove_file(&path).ok();
+    std::fs::remove_file(&out).ok();
+}
+
+#[test]
+fn test_ffi_resize_success() {
+    let path = std::env::temp_dir().join("ffi_resize.png");
+    let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([255, 0, 0, 255]));
+    img.save(&path).unwrap();
+    let p = safer_ffi::char_p::new(path.to_str().unwrap());
+    let res = resize(Some(p.as_ref()), None, 1, 1, 0, 100, None);
+    assert_eq!(res, FfiErrorCode::Success as u8);
+    std::fs::remove_file(&path).ok();
+}
+
+#[test]
+fn test_ffi_resize_zero_dimensions() {
+    let path = std::env::temp_dir().join("ffi_resize_zero.png");
+    let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([255, 0, 0, 255]));
+    img.save(&path).unwrap();
+    let p = safer_ffi::char_p::new(path.to_str().unwrap());
+    let mut arena = FfiArena::default();
+    let res = resize(Some(p.as_ref()), None, 0, 0, 0, 100, Some(&mut arena));
+    assert_eq!(res, FfiErrorCode::InvalidArg as u8);
+    std::fs::remove_file(&path).ok();
+}
+
+#[cfg(feature = "ffi-test-helpers")]
+#[test]
+fn test_ffi_helpers() {
+    let mut arena = FfiArena::default();
+    let mut el = FfiElement::Rectangle(frigate::RectanglePayload::new(0.0, 0.0, 0.0, 0.0, 0));
+    unsafe {
+        frigate::ffi_zero_element(&raw mut el);
+        frigate::ffi_fill_element_0xAA(&raw mut el);
+        frigate::ffi_force_error(3, b"error".as_ptr(), 5, &raw mut arena);
+        frigate::ffi_force_error(1, b"error".as_ptr(), 5, &raw mut arena);
+        frigate::ffi_force_error(99, std::ptr::null(), 0, &raw mut arena);
+        frigate::ffi_echo_element(&raw const el);
+    }
+}

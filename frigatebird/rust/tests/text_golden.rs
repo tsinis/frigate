@@ -244,7 +244,7 @@ fn render_image_rejects_nonexistent_source_image() {
     };
 
     let code = call_draw(Some(&bad_img_cs), Some(&out_cs), None, &[], &mut arena, 80);
-    assert_eq!(code, FfiErrorCode::Decode as u8);
+    assert_eq!(code, FfiErrorCode::Io as u8);
 }
 
 #[test]

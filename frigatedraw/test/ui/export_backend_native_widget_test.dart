@@ -49,10 +49,7 @@ void main() {
       const backend = ExportBackendNative();
 
       Future<void> performMerge() async {
-        final result = await backend.merge(
-          backgroundPath: bgPath,
-          foregroundPng: nativeImage.bytes,
-        );
+        final result = await backend.merge(backgroundPath: bgPath, foreground: nativeImage.bytes);
         expect(result, isNotEmpty);
       }
 

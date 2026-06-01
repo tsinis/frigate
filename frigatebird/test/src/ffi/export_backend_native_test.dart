@@ -20,7 +20,7 @@ void main() => group(ExportBackendNative, () {
 
     test('throws StateError for empty foreground PNG', () async {
       await expectLater(
-        () => backend.merge(backgroundPath: dummyBg, foregroundPng: emptyFg),
+        () => backend.merge(backgroundPath: dummyBg, foreground: emptyFg),
         throwsA(
           isA<StateError>().having(
             (e) => e.message,
@@ -33,12 +33,12 @@ void main() => group(ExportBackendNative, () {
 
     test('throws StateError for missing background image', () async {
       await expectLater(
-        () => backend.merge(backgroundPath: dummyBg, foregroundPng: validFg),
+        () => backend.merge(backgroundPath: dummyBg, foreground: validFg),
         throwsA(
           isA<StateError>().having(
             (e) => e.message,
             'message',
-            contains('Failed to decode background image'),
+            contains('Failed to read/decode background image'),
           ),
         ),
       );
@@ -47,7 +47,7 @@ void main() => group(ExportBackendNative, () {
     test('throws StateError for empty background image path', () async {
       await expectLater(
         // ignore: no-empty-string, intentional for testing empty path
-        () => backend.merge(backgroundPath: '', foregroundPng: validFg),
+        () => backend.merge(backgroundPath: '', foreground: validFg),
         throwsA(
           isA<StateError>().having(
             (e) => e.message,

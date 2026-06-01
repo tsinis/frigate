@@ -217,6 +217,7 @@ fn golden_blur_full_image() {
         Some(path_ref.as_ref()),
         None, // overwrite in-place
         24,
+        100,
         None,
     );
     assert_eq!(status, frigate::FfiErrorCode::Success as u8);
@@ -238,7 +239,7 @@ fn golden_blur_region_centre() {
 
     let region = RectanglePayload::new(0.30 * w, 0.30 * h, 0.40 * w, 0.40 * h, 0).with_blur(36);
 
-    let status = frigate::blur_region(Some(path_ref.as_ref()), None, region, None);
+    let status = frigate::blur_region(Some(path_ref.as_ref()), None, region, 100, None);
     assert_eq!(status, frigate::FfiErrorCode::Success as u8);
 
     let result = image::open(&tmp).unwrap().into_rgba8();
@@ -253,23 +254,23 @@ fn blur_region_radius_zero_returns_success_without_reading_file() {
     // Even a bogus path must return Success when radius=0.
     let bogus = safer_ffi::char_p::new("/definitely/not/there.png");
     let region = RectanglePayload::new(0.0, 0.0, 0.0, 0.0, 0).with_blur(0);
-    let status = frigate::blur_region(Some(bogus.as_ref()), None, region, None);
+    let status = frigate::blur_region(Some(bogus.as_ref()), None, region, 100, None);
     assert_eq!(status, frigate::FfiErrorCode::Success as u8);
 }
 
 #[test]
 fn blur_region_missing_path_returns_invalid_arg() {
     let region = RectanglePayload::new(0.0, 0.0, 0.0, 0.0, 0).with_blur(10);
-    let status = frigate::blur_region(None, None, region, None);
+    let status = frigate::blur_region(None, None, region, 100, None);
     assert_eq!(status, frigate::FfiErrorCode::InvalidArg as u8);
 }
 
 #[test]
-fn blur_region_nonexistent_file_returns_decode_error() {
+fn blur_region_nonexistent_file_returns_io_error() {
     let bogus = safer_ffi::char_p::new("/definitely/not/there.png");
     let region = RectanglePayload::new(0.0, 0.0, 100.0, 100.0, 0).with_blur(10);
-    let status = frigate::blur_region(Some(bogus.as_ref()), None, region, None);
-    assert_eq!(status, frigate::FfiErrorCode::Decode as u8);
+    let status = frigate::blur_region(Some(bogus.as_ref()), None, region, 100, None);
+    assert_eq!(status, frigate::FfiErrorCode::Io as u8);
 }
 
 /// A rectangle with transparent fill, no outline, and blur (exact model of `MaskRegionElement`).

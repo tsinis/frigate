@@ -18,13 +18,14 @@ import 'native_image.dart';
 final class ExportBackendNative {
   const ExportBackendNative();
 
-  /// Merges [foregroundPng] onto the image at [backgroundPath] and returns the result as bytes.
+  /// Merges [foreground] onto the image at [backgroundPath] and returns the result as bytes.
   ///
   /// [offsetX] and [offsetY] are the top-left offset of the foreground on the background.
   /// [outFormat]: PNG or JPEG.
+  /// [imageQuality] controls output quality if saving to JPEG (0..100). Ignored for PNG output.
   Future<Uint8List> merge({
     required String backgroundPath,
-    required Uint8List foregroundPng,
+    required Uint8List foreground,
     int imageQuality = DrawConstants.defaultImageQuality,
     int offsetX = 0,
     // ignore: avoid-similar-names, offsetX and offsetY are standard pairings
@@ -37,13 +38,18 @@ final class ExportBackendNative {
       'imageQuality must be in [${DrawConstants.minImageQuality}, '
       '${DrawConstants.maxImageQuality}], got $imageQuality',
     );
+    if (backgroundPath.isEmpty) {
+      throw StateError('Rust merge failed: backgroundPath cannot be empty');
+    }
+    if (foreground.isEmpty) throw StateError('Rust merge failed: Missing foreground bytes');
+
     final clampedQuality = imageQuality.clamp(
       DrawConstants.minImageQuality,
       DrawConstants.maxImageQuality,
     );
 
     // Wrap the foreground PNG in a NativeImage to get a stable address for Isolate.run.
-    final fgImage = NativeImage.fromBytes(foregroundPng, height: 0, width: 0);
+    final fgImage = NativeImage.fromBytes(foreground, height: 0, width: 0);
     // Capture address and length as primitives BEFORE Isolate.run.
     // NativeImage/Pointer cannot cross isolate boundaries.
     final fgAddress = fgImage.address;
@@ -164,7 +170,4 @@ final class _MergeArgs {
   final int offsetX;
   final int offsetY;
   final int outFormatWire;
-
-  /// Output format as an enum.
-  ImageFormat get outFormat => ImageFormat.fromWire(outFormatWire);
 }
