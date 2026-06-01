@@ -142,9 +142,11 @@ void main() {
 
   group('PolygonElement equality', () {
     test('two instances with same vertices are equal', () {
-      final vertices = Float64x2List.fromList(
-        [Float64x2(0, 0), Float64x2(10, 0), Float64x2(5, 10)],
-      );
+      final vertices = Float64x2List.fromList([
+        Float64x2(0, 0),
+        Float64x2(10, 0),
+        Float64x2(5, 10),
+      ]);
       final a = PolygonElement(height: 10, vertices: vertices, width: 10, x: 0, y: 0);
       final b = PolygonElement(height: 10, vertices: vertices, width: 10, x: 0, y: 0);
       expect(a, equals(b));
@@ -152,7 +154,11 @@ void main() {
     });
 
     test('different vertex content makes not equal', () {
-      final triangle = Float64x2List.fromList([Float64x2(0, 0), Float64x2(10, 0), Float64x2(5, 10)]);
+      final triangle = Float64x2List.fromList([
+        Float64x2(0, 0),
+        Float64x2(10, 0),
+        Float64x2(5, 10),
+      ]);
       final shifted = Float64x2List.fromList([Float64x2(0, 0), Float64x2(10, 0), Float64x2(5, 11)]);
       final a = PolygonElement(height: 10, vertices: triangle, width: 10, x: 0, y: 0);
       final b = PolygonElement(height: 10, vertices: shifted, width: 10, x: 0, y: 0);
@@ -160,10 +166,17 @@ void main() {
     });
 
     test('different vertex count makes not equal', () {
-      final triangle = Float64x2List.fromList([Float64x2(0, 0), Float64x2(10, 0), Float64x2(5, 10)]);
-      final quad = Float64x2List.fromList(
-        [Float64x2(0, 0), Float64x2(10, 0), Float64x2(5, 10), Float64x2(7, 5)],
-      );
+      final triangle = Float64x2List.fromList([
+        Float64x2(0, 0),
+        Float64x2(10, 0),
+        Float64x2(5, 10),
+      ]);
+      final quad = Float64x2List.fromList([
+        Float64x2(0, 0),
+        Float64x2(10, 0),
+        Float64x2(5, 10),
+        Float64x2(7, 5),
+      ]);
       final a = PolygonElement(height: 10, vertices: triangle, width: 10, x: 0, y: 0);
       final b = PolygonElement(height: 10, vertices: quad, width: 10, x: 0, y: 0);
       expect(a, isNot(equals(b)));
@@ -176,7 +189,14 @@ void main() {
       final color = FfiColor(0xFF123456);
       final a = MaskRegionElement(fillColor: color, height: 50, width: 80, x: 10, y: 20);
       // ignore: prefer_const_constructors, deliberately non-const to exercise value equality.
-      final b = MaskRegionElement(fillColor: FfiColor(0xFF123456), height: 50, width: 80, x: 10, y: 20);
+      final b = MaskRegionElement(
+        // ignore: prefer_const_constructors, see above.
+        fillColor: FfiColor(0xFF123456),
+        height: 50,
+        width: 80,
+        x: 10,
+        y: 20,
+      );
       expect(a, equals(b), reason: 'value equality, not identity');
       expect(a.hashCode, b.hashCode);
     });

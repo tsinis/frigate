@@ -109,9 +109,9 @@ Future<Uint8List> _performMerge(String bgPath, Uint8List fgBytes) {
 
   // Since we cannot pass nativeImage across, we just pass its bytes view here.
   // Wait, NativeImage.bytes is a Uint8List view. Can we pass it?
-  // Actually ExportBackendNative takes `Uint8List foregroundPng`.
+  // Actually ExportBackendNative takes `Uint8List foreground`.
   // We'll pass the view. It should be transferred safely.
   // If we just use backend.merge, it will wrap it AGAIN in NativeImage!
   // The point of the test is just to prove memory stays alive.
-  return backend.merge(backgroundPath: bgPath, foregroundPng: fgBytes);
+  return backend.merge(backgroundPath: bgPath, foreground: fgBytes);
 }

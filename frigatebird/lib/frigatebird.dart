@@ -16,3 +16,4 @@ export 'src/model/ffi_color.dart';
 export 'src/model/handle_position.dart';
 export 'src/render/render_exception.dart';
 export 'src/render/render_image.dart';
+export 'src/render/resize_filter.dart';

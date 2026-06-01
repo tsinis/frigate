@@ -14,6 +14,7 @@ import '../ffi/ffi_result_unit.dart';
 import '../model/draw_element.dart';
 import 'render_exception.dart';
 import 'render_image_args.dart';
+import 'resize_filter.dart';
 
 /// Entry point for compositing [DrawElement]s onto an image and writing the result to disk.
 ///
@@ -126,19 +127,30 @@ sealed class RenderImage {
     required String imagePath,
     required RectElement region,
     String? outputPath,
+    int imageQuality = DrawConstants.defaultImageQuality,
   }) {
     FfiAbi.assertAll();
     if (imagePath.isEmpty) {
       throw const RenderException(.invalidArg, 'imagePath cannot be empty');
     }
+    final clampedQuality = imageQuality.clamp(
+      DrawConstants.minImageQuality,
+      DrawConstants.maxImageQuality,
+    );
 
     return Isolate.run(
-      () => _runBlurWorker(imagePath: imagePath, outputPath: outputPath, region: region),
+      () => _runBlurWorker(
+        imagePath: imagePath,
+        imageQuality: clampedQuality,
+        outputPath: outputPath,
+        region: region,
+      ),
     );
   }
 
   static void _runBlurWorker({
     required String imagePath,
+    required int imageQuality,
     required String? outputPath,
     required RectElement region,
   }) {
@@ -164,7 +176,7 @@ sealed class RenderImage {
         ..ref.blur = region.blur.clamp(0, 255)
         ..ref.cornerRadius = region.cornerRadius;
 
-      final code = ffi.blur_region(imageCStr, outputCStr, payloadPtr.ref, arena.ptr);
+      final code = ffi.blur_region(imageCStr, outputCStr, payloadPtr.ref, imageQuality, arena.ptr);
 
       final domainResult = arena.readResult(code);
       if (domainResult is ErrUnit) throw RenderException(domainResult.code, domainResult.message);
@@ -183,6 +195,7 @@ sealed class RenderImage {
     required String imagePath,
     required int radius,
     String? outputPath,
+    int imageQuality = DrawConstants.defaultImageQuality,
   }) {
     FfiAbi.assertAll();
     if (imagePath.isEmpty) {
@@ -190,10 +203,15 @@ sealed class RenderImage {
     }
     assert(radius >= 0 && radius <= 255, 'radius must be in 0..255');
     final clampedRadius = radius.clamp(0, 255);
+    final clampedQuality = imageQuality.clamp(
+      DrawConstants.minImageQuality,
+      DrawConstants.maxImageQuality,
+    );
 
     return Isolate.run(
       () => _runBlurFullImageWorker(
         imagePath: imagePath,
+        imageQuality: clampedQuality,
         outputPath: outputPath,
         radius: clampedRadius,
       ),
@@ -202,6 +220,7 @@ sealed class RenderImage {
 
   static void _runBlurFullImageWorker({
     required String imagePath,
+    required int imageQuality,
     required String? outputPath,
     required int radius,
   }) {
@@ -213,7 +232,198 @@ sealed class RenderImage {
       outputCStr = outputPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
       arena = FfiArenaHandle.allocate(errorCapacity: FfiAbi.errorCapBytes);
 
-      final code = ffi.blur(imageCStr, outputCStr, radius, arena.ptr);
+      final code = ffi.blur(imageCStr, outputCStr, radius, imageQuality, arena.ptr);
+
+      final domainResult = arena.readResult(code);
+      if (domainResult is ErrUnit) throw RenderException(domainResult.code, domainResult.message);
+    } finally {
+      if (imageCStr != nullptr) calloc.free(imageCStr);
+      if (outputCStr != nullptr) calloc.free(outputCStr);
+      arena?.free();
+    }
+  }
+
+  /// Rotates an image by 90° increments.
+  ///
+  /// [quarterTurns]: 1 = 90° CW, 2 = 180°, 3 = 270° CW (= 90° CCW).
+  /// Values are mod 4 (so 0 and 4 are no-ops that skip file I/O entirely).
+  ///
+  /// File I/O is performed entirely in Rust. Runs in a background isolate via [Isolate.run].
+  static Future<void> rotate({
+    required String imagePath,
+    required int quarterTurns,
+    String? outputPath,
+    int imageQuality = DrawConstants.defaultImageQuality,
+  }) {
+    FfiAbi.assertAll();
+    if (imagePath.isEmpty) {
+      throw const RenderException(.invalidArg, 'imagePath cannot be empty');
+    }
+    final clampedQuality = imageQuality.clamp(
+      DrawConstants.minImageQuality,
+      DrawConstants.maxImageQuality,
+    );
+
+    return Isolate.run(
+      () => _runRotateWorker(
+        imagePath: imagePath,
+        imageQuality: clampedQuality,
+        outputPath: outputPath,
+        quarterTurns: quarterTurns,
+      ),
+    );
+  }
+
+  static void _runRotateWorker({
+    required String imagePath,
+    required int imageQuality,
+    required String? outputPath,
+    required int quarterTurns,
+  }) {
+    Pointer<Utf8> imageCStr = nullptr;
+    Pointer<Utf8> outputCStr = nullptr;
+    FfiArenaHandle? arena;
+    try {
+      imageCStr = imagePath.toNativeUtf8(allocator: calloc);
+      outputCStr = outputPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
+      arena = FfiArenaHandle.allocate(errorCapacity: FfiAbi.errorCapBytes);
+
+      final code = ffi.rotate(
+        imageCStr,
+        outputCStr,
+        quarterTurns.clamp(0, 255),
+        imageQuality,
+        arena.ptr,
+      );
+
+      final domainResult = arena.readResult(code);
+      if (domainResult is ErrUnit) throw RenderException(domainResult.code, domainResult.message);
+    } finally {
+      if (imageCStr != nullptr) calloc.free(imageCStr);
+      if (outputCStr != nullptr) calloc.free(outputCStr);
+      arena?.free();
+    }
+  }
+
+  /// Converts an image to JPEG format at the specified quality.
+  ///
+  /// Reads any supported format (PNG, JPEG), writes JPEG to [outputPath].
+  /// If [outputPath] is not provided, overwrites [imagePath] (which must have .jpg/.jpeg ext).
+  ///
+  /// File I/O is performed entirely in Rust. Runs in a background isolate via [Isolate.run].
+  static Future<void> toJpg({
+    required String imagePath,
+    String? outputPath,
+    int imageQuality = DrawConstants.defaultImageQuality,
+  }) {
+    FfiAbi.assertAll();
+    if (imagePath.isEmpty) {
+      throw const RenderException(.invalidArg, 'imagePath cannot be empty');
+    }
+    final clampedQuality = imageQuality.clamp(
+      DrawConstants.minImageQuality,
+      DrawConstants.maxImageQuality,
+    );
+
+    return Isolate.run(
+      () => _runToJpgWorker(
+        imagePath: imagePath,
+        imageQuality: clampedQuality,
+        outputPath: outputPath,
+      ),
+    );
+  }
+
+  static void _runToJpgWorker({
+    required String imagePath,
+    required int imageQuality,
+    required String? outputPath,
+  }) {
+    Pointer<Utf8> imageCStr = nullptr;
+    Pointer<Utf8> outputCStr = nullptr;
+    FfiArenaHandle? arena;
+    try {
+      imageCStr = imagePath.toNativeUtf8(allocator: calloc);
+      outputCStr = outputPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
+      arena = FfiArenaHandle.allocate(errorCapacity: FfiAbi.errorCapBytes);
+
+      final code = ffi.to_jpg(imageCStr, outputCStr, imageQuality, arena.ptr);
+
+      final domainResult = arena.readResult(code);
+      if (domainResult is ErrUnit) throw RenderException(domainResult.code, domainResult.message);
+    } finally {
+      if (imageCStr != nullptr) calloc.free(imageCStr);
+      if (outputCStr != nullptr) calloc.free(outputCStr);
+      arena?.free();
+    }
+  }
+
+  /// Resizes an image to exact [width] × [height] dimensions.
+  ///
+  /// [filter] controls the interpolation algorithm (default: [ResizeFilter.bilinear]).
+  /// If [outputPath] is not provided, overwrites [imagePath].
+  ///
+  /// [imageQuality] controls output quality if saving to JPEG. Ignored for PNG output.
+  ///
+  /// File I/O is performed entirely in Rust. Runs in a background isolate via [Isolate.run].
+  static Future<void> resize({
+    required int height,
+    required String imagePath,
+    required int width,
+    String? outputPath,
+    ResizeFilter filter = .bilinear,
+    int imageQuality = DrawConstants.defaultImageQuality,
+  }) {
+    FfiAbi.assertAll();
+    if (imagePath.isEmpty) {
+      throw const RenderException(.invalidArg, 'imagePath cannot be empty');
+    }
+    if (width <= 0 || height <= 0) {
+      throw const RenderException(.invalidArg, 'width and height must be > 0');
+    }
+    final clampedQuality = imageQuality.clamp(
+      DrawConstants.minImageQuality,
+      DrawConstants.maxImageQuality,
+    );
+
+    return Isolate.run(
+      () => _runResizeWorker(
+        filter: filter,
+        height: height,
+        imagePath: imagePath,
+        imageQuality: clampedQuality,
+        outputPath: outputPath,
+        width: width,
+      ),
+    );
+  }
+
+  // ignore: avoid-long-parameter-list, mirrors the FFI function signature 1:1.
+  static void _runResizeWorker({
+    required ResizeFilter filter,
+    required int height,
+    required String imagePath,
+    required int imageQuality,
+    required String? outputPath,
+    required int width,
+  }) {
+    Pointer<Utf8> imageCStr = nullptr;
+    Pointer<Utf8> outputCStr = nullptr;
+    FfiArenaHandle? arena;
+    try {
+      imageCStr = imagePath.toNativeUtf8(allocator: calloc);
+      outputCStr = outputPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
+      arena = FfiArenaHandle.allocate(errorCapacity: FfiAbi.errorCapBytes);
+
+      final code = ffi.resize(
+        imageCStr,
+        outputCStr,
+        width,
+        height,
+        filter.wire,
+        imageQuality,
+        arena.ptr,
+      );
 
       final domainResult = arena.readResult(code);
       if (domainResult is ErrUnit) throw RenderException(domainResult.code, domainResult.message);

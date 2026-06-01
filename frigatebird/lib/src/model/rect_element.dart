@@ -60,7 +60,16 @@ final class RectElement extends ImmutableDrawElement {
 
   @override
   int get hashCode => Object.hash(
-    x, y, width, height, rotation, blur, fillColor, outlineColor, outlineThickness, cornerRadius,
+    x,
+    y,
+    width,
+    height,
+    rotation,
+    blur,
+    fillColor,
+    outlineColor,
+    outlineThickness,
+    cornerRadius,
   );
 
   @override

@@ -53,9 +53,8 @@ final class OvalElement extends ImmutableDrawElement {
           other.outlineThickness == outlineThickness;
 
   @override
-  int get hashCode => Object.hash(
-    x, y, width, height, rotation, blur, fillColor, outlineColor, outlineThickness,
-  );
+  int get hashCode =>
+      Object.hash(x, y, width, height, rotation, blur, fillColor, outlineColor, outlineThickness);
 
   @override
   String toString() =>

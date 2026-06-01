@@ -1043,6 +1043,7 @@ pub fn blur_region(
     image_path: Option<char_p::Ref<'_>>,
     output_path: Option<char_p::Ref<'_>>,
     region: RectanglePayload,
+    image_quality: u8,
     arena: Option<&mut FfiArena>,
 ) -> u8 {
     let mut arena_opt = arena;
@@ -1093,7 +1094,7 @@ pub fn blur_region(
             })?;
 
             // Re-save image
-            io::write_image(Path::new(out_p), &img, 100).map_err(|e| {
+            io::write_image(Path::new(out_p), &img, image_quality).map_err(|e| {
                 let code = match e {
                     io::IoError::UnsupportedFormat | io::IoError::Encode => FfiErrorCode::Encode,
                     _ => FfiErrorCode::Io,
@@ -1121,6 +1122,7 @@ pub fn blur(
     image_path: Option<char_p::Ref<'_>>,
     output_path: Option<char_p::Ref<'_>>,
     radius_px: u8,
+    image_quality: u8,
     arena: Option<&mut FfiArena>,
 ) -> u8 {
     let mut arena_opt = arena;
@@ -1157,12 +1159,209 @@ pub fn blur(
             let blurred = image::imageops::blur(&img, sigma);
 
             // Re-save image
-            io::write_image(Path::new(out_p), &blurred, 100).map_err(|e| {
+            io::write_image(Path::new(out_p), &blurred, image_quality).map_err(|e| {
                 let code = match e {
                     io::IoError::UnsupportedFormat | io::IoError::Encode => FfiErrorCode::Encode,
                     _ => FfiErrorCode::Io,
                 };
                 (code, "Failed to write image".to_string())
+            })?;
+
+            Ok(())
+        })();
+        inner
+    }));
+
+    match result {
+        Ok(Ok(())) => FfiErrorCode::Success as u8,
+        Ok(Err((code, msg))) => write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code,
+        Err(payload) => handle_panic(arena_opt, payload),
+    }
+}
+
+/// Rotates an image by 90° increments (quarter turns).
+///
+/// `quarter_turns`: 0 = no-op, 1 = 90° CW, 2 = 180°, 3 = 270° CW. Values ≥ 4 are mod 4.
+/// If `output_path` is NULL, overwrites `image_path`.
+///
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
+#[ffi_export]
+pub fn rotate(
+    image_path: Option<char_p::Ref<'_>>,
+    output_path: Option<char_p::Ref<'_>>,
+    quarter_turns: u8,
+    image_quality: u8,
+    arena: Option<&mut FfiArena>,
+) -> u8 {
+    let mut arena_opt = arena;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let inner: Result<(), (FfiErrorCode, String)> = (|| {
+            let img_p = if let Some(p) = image_path {
+                p.to_str()
+            } else {
+                return Err((FfiErrorCode::InvalidArg, "Missing image path".to_string()));
+            };
+
+            let out_p = if let Some(p) = output_path {
+                p.to_str()
+            } else {
+                img_p
+            };
+
+            // 0 quarter turns (mod 4) is a no-op — skip file I/O entirely.
+            if quarter_turns.is_multiple_of(4) {
+                return Ok(());
+            }
+
+            let img = io::read_image(Path::new(img_p)).map_err(|e| {
+                let code = match e {
+                    io::IoError::Read => FfiErrorCode::Io,
+                    _ => FfiErrorCode::Decode,
+                };
+                (code, "Failed to read/decode image".to_string())
+            })?;
+
+            let rotated = ops::rotate::Rotate { quarter_turns }.apply(img).unwrap();
+            let rgba = rotated.into_rgba8();
+
+            io::write_image(Path::new(out_p), &rgba, image_quality).map_err(|e| {
+                let code = match e {
+                    io::IoError::UnsupportedFormat | io::IoError::Encode => FfiErrorCode::Encode,
+                    _ => FfiErrorCode::Io,
+                };
+                (code, "Failed to write rotated image".to_string())
+            })?;
+
+            Ok(())
+        })();
+        inner
+    }));
+
+    match result {
+        Ok(Ok(())) => FfiErrorCode::Success as u8,
+        Ok(Err((code, msg))) => write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code,
+        Err(payload) => handle_panic(arena_opt, payload),
+    }
+}
+
+/// Converts an image to JPEG format.
+///
+/// Reads any supported format, writes JPEG at `image_quality` (0..=100).
+/// If `output_path` is NULL, overwrites `image_path` (which must then have a .jpg/.jpeg extension).
+///
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
+#[ffi_export]
+pub fn to_jpg(
+    image_path: Option<char_p::Ref<'_>>,
+    output_path: Option<char_p::Ref<'_>>,
+    image_quality: u8,
+    arena: Option<&mut FfiArena>,
+) -> u8 {
+    let mut arena_opt = arena;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let inner: Result<(), (FfiErrorCode, String)> = (|| {
+            let img_p = if let Some(p) = image_path {
+                p.to_str()
+            } else {
+                return Err((FfiErrorCode::InvalidArg, "Missing image path".to_string()));
+            };
+
+            let out_p = if let Some(p) = output_path {
+                p.to_str()
+            } else {
+                img_p
+            };
+
+            ops::to_jpg::ToJpg {
+                quality: image_quality,
+            }
+            .apply(Path::new(img_p), Path::new(out_p))
+            .map_err(|e| {
+                let code = match e {
+                    io::IoError::Read => FfiErrorCode::Io,
+                    io::IoError::Decode => FfiErrorCode::Decode,
+                    io::IoError::UnsupportedFormat | io::IoError::Encode => FfiErrorCode::Encode,
+                    io::IoError::Write => FfiErrorCode::Io,
+                };
+                (code, "Failed to convert to JPEG".to_string())
+            })?;
+
+            Ok(())
+        })();
+        inner
+    }));
+
+    match result {
+        Ok(Ok(())) => FfiErrorCode::Success as u8,
+        Ok(Err((code, msg))) => write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code,
+        Err(payload) => handle_panic(arena_opt, payload),
+    }
+}
+
+/// Resizes an image to exact `width × height` dimensions.
+///
+/// `filter`: 0 = Nearest, 1 = Triangle (bilinear, default), 2 = `CatmullRom`, 3 = Lanczos3.
+/// If `output_path` is NULL, overwrites `image_path`.
+///
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
+#[ffi_export]
+pub fn resize(
+    image_path: Option<char_p::Ref<'_>>,
+    output_path: Option<char_p::Ref<'_>>,
+    width: u32,
+    height: u32,
+    filter: u8,
+    image_quality: u8,
+    arena: Option<&mut FfiArena>,
+) -> u8 {
+    let mut arena_opt = arena;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let inner: Result<(), (FfiErrorCode, String)> = (|| {
+            let img_p = if let Some(p) = image_path {
+                p.to_str()
+            } else {
+                return Err((FfiErrorCode::InvalidArg, "Missing image path".to_string()));
+            };
+
+            let out_p = if let Some(p) = output_path {
+                p.to_str()
+            } else {
+                img_p
+            };
+
+            let resize_filter = ops::resize::ResizeFilter::from_wire(filter).ok_or_else(|| {
+                (
+                    FfiErrorCode::InvalidArg,
+                    format!("Invalid resize filter: {filter}"),
+                )
+            })?;
+
+            ops::resize::Resize {
+                width,
+                height,
+                filter: resize_filter,
+                quality: image_quality,
+            }
+            .apply(Path::new(img_p), Path::new(out_p))
+            .map_err(|e| match e {
+                ops::resize::ResizeError::ZeroDimension => (
+                    FfiErrorCode::InvalidArg,
+                    "Width and height must be > 0".to_string(),
+                ),
+                ops::resize::ResizeError::Io(io_err) => {
+                    let code = match io_err {
+                        io::IoError::Read => FfiErrorCode::Io,
+                        io::IoError::Decode => FfiErrorCode::Decode,
+                        io::IoError::UnsupportedFormat | io::IoError::Encode => {
+                            FfiErrorCode::Encode
+                        }
+                        io::IoError::Write => FfiErrorCode::Io,
+                    };
+                    (code, "Failed to resize image".to_string())
+                }
             })?;
 
             Ok(())

@@ -104,7 +104,15 @@ final class PolygonElement extends DrawElement {
 
   @override
   int get hashCode => Object.hash(
-    x, y, width, height, rotation, blur, fillColor, outlineColor, outlineThickness,
+    x,
+    y,
+    width,
+    height,
+    rotation,
+    blur,
+    fillColor,
+    outlineColor,
+    outlineThickness,
     vertices.length,
   );
 
