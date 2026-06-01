@@ -324,14 +324,12 @@ fn to_jpg_bad_extension_returns_encode_error() {
 }
 
 #[test]
-fn to_jpg_overwrites_input() {
-    // Create a PNG, then convert in-place (input path has .jpg ext already)
-    let path = tmp_path("frigate_to_jpg_inplace.jpg");
-    let img = RgbaImage::from_pixel(4, 4, Rgba([100, 200, 50, 255]));
-    // Write as PNG first (but with .jpg name — write_image won't like this, so use save_buffer)
-    // Actually let's just create a proper flow: make a PNG, to_jpg with same name pattern
-    let png_path = tmp_path("frigate_to_jpg_inplace_src.png");
-    img.save(&png_path).unwrap();
+fn to_jpg_converts_to_jpg_named_output() {
+    let png_path = tmp_path("frigate_to_jpg_src.png");
+    RgbaImage::from_pixel(4, 4, Rgba([100, 200, 50, 255]))
+        .save(&png_path)
+        .unwrap();
+    let path = tmp_path("frigate_to_jpg_dst.jpg");
 
     let mut arena = create_arena();
     let in_p = safer_ffi::char_p::new(png_path.to_str().unwrap());
@@ -345,6 +343,8 @@ fn to_jpg_overwrites_input() {
     );
     assert_eq!(status, 0);
     assert!(path.exists());
+    let bytes = std::fs::read(&path).unwrap();
+    assert_eq!(&bytes[0..2], &[0xFF, 0xD8], "output must be JPEG");
 
     std::fs::remove_file(&png_path).ok();
     std::fs::remove_file(&path).ok();

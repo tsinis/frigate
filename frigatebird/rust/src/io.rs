@@ -150,13 +150,20 @@ pub fn write_image(path: &Path, img: &RgbaImage, image_quality: u8) -> Result<()
             // 4-byte buffer just to call `into_rgb8()`.
             let (w, h) = img.dimensions();
             let mut rgb_buf = Vec::with_capacity((w as usize) * (h as usize) * 3);
-            for pixel in img.pixels() {
+            for chunk in img.as_raw().chunks_exact(4) {
                 // Alpha compositing onto opaque black: rgb_out = rgb * a / 255.
-                let [r, g, b, a] = pixel.0;
+                let r = chunk[0];
+                let g = chunk[1];
+                let b = chunk[2];
+                let a = chunk[3];
                 if a == 255 {
-                    rgb_buf.extend_from_slice(&[r, g, b]);
+                    rgb_buf.push(r);
+                    rgb_buf.push(g);
+                    rgb_buf.push(b);
                 } else if a == 0 {
-                    rgb_buf.extend_from_slice(&[0, 0, 0]);
+                    rgb_buf.push(0);
+                    rgb_buf.push(0);
+                    rgb_buf.push(0);
                 } else {
                     let alpha = a as u16;
                     rgb_buf.push(((r as u16 * alpha) / 255) as u8);

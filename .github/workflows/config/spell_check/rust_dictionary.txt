@@ -56,3 +56,12 @@ vecs
 wght
 wgpu
 xywh
+catmull
+catmullrom
+lanczos
+nonsquare
+rasterizes
+reencode
+reencodes
+unblurred
+

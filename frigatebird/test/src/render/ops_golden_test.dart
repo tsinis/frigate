@@ -83,10 +83,7 @@ void main() {
       final originalAsPng = _tempPath('frigate_rotate_rt_orig.png');
       addTearDown(() => _cleanup([afterCw, afterCcw, originalAsPng]));
 
-      // First produce a lossless PNG baseline from the original.
-      await RenderImage.rotate(imagePath: imagePath, outputPath: originalAsPng, quarterTurns: 4);
-      // 4 turns = no-op — won't write. Let's use toJpg to produce stable baseline instead.
-      // Actually, use resize 1:1 to get a PNG copy.
+      // Produce a lossless PNG baseline from the original via a 1:1 resize (since rotate(4) is a no-op).
       final original = await ImageInformation.probe(imagePath);
       await RenderImage.resize(
         height: original.height,

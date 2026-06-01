@@ -93,166 +93,6 @@ impl Resize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{Rgba, RgbaImage};
-    use std::path::PathBuf;
-
-    fn tmp_path(name: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(name);
-        let _ = std::fs::remove_file(&path);
-        path
-    }
-
-    fn create_test_png(name: &str, w: u32, h: u32) -> PathBuf {
-        let path = tmp_path(name);
-        let mut img = RgbaImage::new(w, h);
-        for y in 0..h {
-            for x in 0..w {
-                let r = ((x * 255) / w.max(1)) as u8;
-                let g = ((y * 255) / h.max(1)) as u8;
-                img.put_pixel(x, y, Rgba([r, g, 128, 255]));
-            }
-        }
-        img.save(&path).unwrap();
-        path
-    }
-
-    #[test]
-    fn resize_downscale_nearest() {
-        let input = create_test_png("frigate_resize_down_nearest.png", 100, 100);
-        let output = tmp_path("frigate_resize_down_nearest_out.png");
-        let result = Resize {
-            width: 50,
-            height: 50,
-            filter: ResizeFilter::Nearest,
-            quality: 80,
-        }
-        .apply(&input, &output);
-        assert!(result.is_ok());
-        let decoded = image::open(&output).unwrap();
-        assert_eq!(decoded.width(), 50);
-        assert_eq!(decoded.height(), 50);
-        std::fs::remove_file(&input).ok();
-        std::fs::remove_file(&output).ok();
-    }
-
-    #[test]
-    fn resize_upscale_bilinear() {
-        let input = create_test_png("frigate_resize_up_bilinear.png", 10, 10);
-        let output = tmp_path("frigate_resize_up_bilinear_out.png");
-        let result = Resize {
-            width: 40,
-            height: 40,
-            filter: ResizeFilter::Triangle,
-            quality: 80,
-        }
-        .apply(&input, &output);
-        assert!(result.is_ok());
-        let decoded = image::open(&output).unwrap();
-        assert_eq!(decoded.width(), 40);
-        assert_eq!(decoded.height(), 40);
-        std::fs::remove_file(&input).ok();
-        std::fs::remove_file(&output).ok();
-    }
-
-    #[test]
-    fn resize_catmullrom() {
-        let input = create_test_png("frigate_resize_catmull.png", 64, 64);
-        let output = tmp_path("frigate_resize_catmull_out.png");
-        let result = Resize {
-            width: 32,
-            height: 48,
-            filter: ResizeFilter::CatmullRom,
-            quality: 80,
-        }
-        .apply(&input, &output);
-        assert!(result.is_ok());
-        let decoded = image::open(&output).unwrap();
-        assert_eq!(decoded.width(), 32);
-        assert_eq!(decoded.height(), 48);
-        std::fs::remove_file(&input).ok();
-        std::fs::remove_file(&output).ok();
-    }
-
-    #[test]
-    fn resize_lanczos3() {
-        let input = create_test_png("frigate_resize_lanczos.png", 64, 64);
-        let output = tmp_path("frigate_resize_lanczos_out.jpg");
-        let result = Resize {
-            width: 16,
-            height: 16,
-            filter: ResizeFilter::Lanczos3,
-            quality: 90,
-        }
-        .apply(&input, &output);
-        assert!(result.is_ok());
-        let decoded = image::open(&output).unwrap();
-        assert_eq!(decoded.width(), 16);
-        assert_eq!(decoded.height(), 16);
-        std::fs::remove_file(&input).ok();
-        std::fs::remove_file(&output).ok();
-    }
-
-    #[test]
-    fn error_on_zero_width() {
-        let input = create_test_png("frigate_resize_zero_w.png", 10, 10);
-        let output = tmp_path("frigate_resize_zero_w_out.png");
-        let err = Resize {
-            width: 0,
-            height: 50,
-            filter: ResizeFilter::Triangle,
-            quality: 80,
-        }
-        .apply(&input, &output)
-        .unwrap_err();
-        assert_eq!(err, ResizeError::ZeroDimension);
-        std::fs::remove_file(&input).ok();
-    }
-
-    #[test]
-    fn error_on_zero_height() {
-        let input = create_test_png("frigate_resize_zero_h.png", 10, 10);
-        let output = tmp_path("frigate_resize_zero_h_out.png");
-        let err = Resize {
-            width: 50,
-            height: 0,
-            filter: ResizeFilter::Triangle,
-            quality: 80,
-        }
-        .apply(&input, &output)
-        .unwrap_err();
-        assert_eq!(err, ResizeError::ZeroDimension);
-        std::fs::remove_file(&input).ok();
-    }
-
-    #[test]
-    fn error_on_both_zero() {
-        let input = create_test_png("frigate_resize_both_zero.png", 10, 10);
-        let output = tmp_path("frigate_resize_both_zero_out.png");
-        let err = Resize {
-            width: 0,
-            height: 0,
-            filter: ResizeFilter::Triangle,
-            quality: 80,
-        }
-        .apply(&input, &output)
-        .unwrap_err();
-        assert_eq!(err, ResizeError::ZeroDimension);
-        std::fs::remove_file(&input).ok();
-    }
-
-    #[test]
-    fn error_on_missing_input() {
-        let output = tmp_path("frigate_resize_missing_out.png");
-        let err = Resize {
-            width: 50,
-            height: 50,
-            filter: ResizeFilter::Triangle,
-            quality: 80,
-        }
-        .apply(Path::new("/tmp/frigate_resize_nonexistent.png"), &output)
-        .unwrap_err();
-        assert_eq!(err, ResizeError::Io(IoError::Read));
-    }
 
     #[test]
     fn filter_from_wire_valid() {
@@ -268,47 +108,211 @@ mod tests {
         assert_eq!(ResizeFilter::from_wire(255), None);
     }
 
-    #[test]
-    fn identity_resize_preserves_pixels() {
-        // Resize to same dimensions should produce very similar output
-        let input = create_test_png("frigate_resize_identity.png", 8, 8);
-        let output = tmp_path("frigate_resize_identity_out.png");
-        Resize {
-            width: 8,
-            height: 8,
-            filter: ResizeFilter::Nearest,
-            quality: 80,
-        }
-        .apply(&input, &output)
-        .unwrap();
+    #[cfg(not(miri))]
+    mod fs_tests {
+        use super::*;
+        use image::{Rgba, RgbaImage};
+        use std::path::PathBuf;
 
-        let original = image::open(&input).unwrap().into_rgba8();
-        let resized = image::open(&output).unwrap().into_rgba8();
-        assert_eq!(
-            original.as_raw(),
-            resized.as_raw(),
-            "identity resize should preserve pixels"
-        );
-        std::fs::remove_file(&input).ok();
-        std::fs::remove_file(&output).ok();
-    }
-
-    #[test]
-    fn non_square_resize() {
-        let input = create_test_png("frigate_resize_nonsquare.png", 100, 50);
-        let output = tmp_path("frigate_resize_nonsquare_out.png");
-        Resize {
-            width: 200,
-            height: 25,
-            filter: ResizeFilter::Triangle,
-            quality: 80,
+        fn tmp_path(name: &str) -> PathBuf {
+            let path = std::env::temp_dir().join(name);
+            let _ = std::fs::remove_file(&path);
+            path
         }
-        .apply(&input, &output)
-        .unwrap();
-        let decoded = image::open(&output).unwrap();
-        assert_eq!(decoded.width(), 200);
-        assert_eq!(decoded.height(), 25);
-        std::fs::remove_file(&input).ok();
-        std::fs::remove_file(&output).ok();
+
+        fn create_test_png(name: &str, w: u32, h: u32) -> PathBuf {
+            let path = tmp_path(name);
+            let mut img = RgbaImage::new(w, h);
+            for y in 0..h {
+                for x in 0..w {
+                    let r = ((x * 255) / w.max(1)) as u8;
+                    let g = ((y * 255) / h.max(1)) as u8;
+                    img.put_pixel(x, y, Rgba([r, g, 128, 255]));
+                }
+            }
+            img.save(&path).unwrap();
+            path
+        }
+
+        #[test]
+        fn resize_downscale_nearest() {
+            let input = create_test_png("frigate_resize_down_nearest.png", 100, 100);
+            let output = tmp_path("frigate_resize_down_nearest_out.png");
+            let result = Resize {
+                width: 50,
+                height: 50,
+                filter: ResizeFilter::Nearest,
+                quality: 80,
+            }
+            .apply(&input, &output);
+            assert!(result.is_ok());
+            let decoded = image::open(&output).unwrap();
+            assert_eq!(decoded.width(), 50);
+            assert_eq!(decoded.height(), 50);
+            std::fs::remove_file(&input).ok();
+            std::fs::remove_file(&output).ok();
+        }
+
+        #[test]
+        fn resize_upscale_bilinear() {
+            let input = create_test_png("frigate_resize_up_bilinear.png", 10, 10);
+            let output = tmp_path("frigate_resize_up_bilinear_out.png");
+            let result = Resize {
+                width: 40,
+                height: 40,
+                filter: ResizeFilter::Triangle,
+                quality: 80,
+            }
+            .apply(&input, &output);
+            assert!(result.is_ok());
+            let decoded = image::open(&output).unwrap();
+            assert_eq!(decoded.width(), 40);
+            assert_eq!(decoded.height(), 40);
+            std::fs::remove_file(&input).ok();
+            std::fs::remove_file(&output).ok();
+        }
+
+        #[test]
+        fn resize_catmullrom() {
+            let input = create_test_png("frigate_resize_catmull.png", 64, 64);
+            let output = tmp_path("frigate_resize_catmull_out.png");
+            let result = Resize {
+                width: 32,
+                height: 48,
+                filter: ResizeFilter::CatmullRom,
+                quality: 80,
+            }
+            .apply(&input, &output);
+            assert!(result.is_ok());
+            let decoded = image::open(&output).unwrap();
+            assert_eq!(decoded.width(), 32);
+            assert_eq!(decoded.height(), 48);
+            std::fs::remove_file(&input).ok();
+            std::fs::remove_file(&output).ok();
+        }
+
+        #[test]
+        fn resize_lanczos3() {
+            let input = create_test_png("frigate_resize_lanczos.png", 64, 64);
+            let output = tmp_path("frigate_resize_lanczos_out.jpg");
+            let result = Resize {
+                width: 16,
+                height: 16,
+                filter: ResizeFilter::Lanczos3,
+                quality: 90,
+            }
+            .apply(&input, &output);
+            assert!(result.is_ok());
+            let decoded = image::open(&output).unwrap();
+            assert_eq!(decoded.width(), 16);
+            assert_eq!(decoded.height(), 16);
+            std::fs::remove_file(&input).ok();
+            std::fs::remove_file(&output).ok();
+        }
+
+        #[test]
+        fn error_on_zero_width() {
+            let input = create_test_png("frigate_resize_zero_w.png", 10, 10);
+            let output = tmp_path("frigate_resize_zero_w_out.png");
+            let err = Resize {
+                width: 0,
+                height: 50,
+                filter: ResizeFilter::Triangle,
+                quality: 80,
+            }
+            .apply(&input, &output)
+            .unwrap_err();
+            assert_eq!(err, ResizeError::ZeroDimension);
+            std::fs::remove_file(&input).ok();
+        }
+
+        #[test]
+        fn error_on_zero_height() {
+            let input = create_test_png("frigate_resize_zero_h.png", 10, 10);
+            let output = tmp_path("frigate_resize_zero_h_out.png");
+            let err = Resize {
+                width: 50,
+                height: 0,
+                filter: ResizeFilter::Triangle,
+                quality: 80,
+            }
+            .apply(&input, &output)
+            .unwrap_err();
+            assert_eq!(err, ResizeError::ZeroDimension);
+            std::fs::remove_file(&input).ok();
+        }
+
+        #[test]
+        fn error_on_both_zero() {
+            let input = create_test_png("frigate_resize_both_zero.png", 10, 10);
+            let output = tmp_path("frigate_resize_both_zero_out.png");
+            let err = Resize {
+                width: 0,
+                height: 0,
+                filter: ResizeFilter::Triangle,
+                quality: 80,
+            }
+            .apply(&input, &output)
+            .unwrap_err();
+            assert_eq!(err, ResizeError::ZeroDimension);
+            std::fs::remove_file(&input).ok();
+        }
+
+        #[test]
+        fn error_on_missing_input() {
+            let output = tmp_path("frigate_resize_missing_out.png");
+            let err = Resize {
+                width: 50,
+                height: 50,
+                filter: ResizeFilter::Triangle,
+                quality: 80,
+            }
+            .apply(Path::new("/tmp/frigate_resize_nonexistent.png"), &output)
+            .unwrap_err();
+            assert_eq!(err, ResizeError::Io(IoError::Read));
+        }
+
+        #[test]
+        fn identity_resize_preserves_pixels() {
+            let input = create_test_png("frigate_resize_identity.png", 8, 8);
+            let output = tmp_path("frigate_resize_identity_out.png");
+            Resize {
+                width: 8,
+                height: 8,
+                filter: ResizeFilter::Nearest,
+                quality: 80,
+            }
+            .apply(&input, &output)
+            .unwrap();
+
+            let original = image::open(&input).unwrap().into_rgba8();
+            let resized = image::open(&output).unwrap().into_rgba8();
+            assert_eq!(
+                original.as_raw(),
+                resized.as_raw(),
+                "identity resize should preserve pixels"
+            );
+            std::fs::remove_file(&input).ok();
+            std::fs::remove_file(&output).ok();
+        }
+
+        #[test]
+        fn non_square_resize() {
+            let input = create_test_png("frigate_resize_nonsquare.png", 100, 50);
+            let output = tmp_path("frigate_resize_nonsquare_out.png");
+            Resize {
+                width: 200,
+                height: 25,
+                filter: ResizeFilter::Triangle,
+                quality: 80,
+            }
+            .apply(&input, &output)
+            .unwrap();
+            let decoded = image::open(&output).unwrap();
+            assert_eq!(decoded.width(), 200);
+            assert_eq!(decoded.height(), 25);
+            std::fs::remove_file(&input).ok();
+            std::fs::remove_file(&output).ok();
+        }
     }
 }

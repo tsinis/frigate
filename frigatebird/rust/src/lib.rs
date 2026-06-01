@@ -1223,6 +1223,7 @@ pub fn rotate(
             })?;
 
             let rotated = ops::rotate::Rotate { quarter_turns }.apply(img).unwrap();
+            // SAFETY: early return above ensures quarter_turns % 4 != 0, so apply() always returns Some.
             let rgba = rotated.into_rgba8();
 
             io::write_image(Path::new(out_p), &rgba, image_quality).map_err(|e| {

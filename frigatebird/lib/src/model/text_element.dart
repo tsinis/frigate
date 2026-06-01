@@ -62,11 +62,24 @@ final class TextElement extends ImmutableDrawElement {
           other.rotation == rotation &&
           other.blur == blur &&
           other.fillColor == fillColor &&
+          other.outlineColor == outlineColor &&
+          other.outlineThickness == outlineThickness &&
           other.fontId == fontId &&
           other.text == text;
 
   @override
-  int get hashCode => Object.hash(x, y, height, rotation, blur, fillColor, fontId, text);
+  int get hashCode => Object.hash(
+    x,
+    y,
+    height,
+    rotation,
+    blur,
+    fillColor,
+    outlineColor,
+    outlineThickness,
+    fontId,
+    text,
+  );
 
   @override
   String toString() =>

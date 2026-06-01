@@ -142,13 +142,18 @@ void main() {
 
   group('PolygonElement equality', () {
     test('two instances with same vertices are equal', () {
-      final vertices = Float64x2List.fromList([
+      final verticesA = Float64x2List.fromList([
         Float64x2(0, 0),
         Float64x2(10, 0),
         Float64x2(5, 10),
       ]);
-      final a = PolygonElement(height: 10, vertices: vertices, width: 10, x: 0, y: 0);
-      final b = PolygonElement(height: 10, vertices: vertices, width: 10, x: 0, y: 0);
+      final verticesOther = Float64x2List.fromList([
+        Float64x2(0, 0),
+        Float64x2(10, 0),
+        Float64x2(5, 10),
+      ]);
+      final a = PolygonElement(height: 10, vertices: verticesA, width: 10, x: 0, y: 0);
+      final b = PolygonElement(height: 10, vertices: verticesOther, width: 10, x: 0, y: 0);
       expect(a, equals(b));
       expect(a.hashCode, b.hashCode);
     });
