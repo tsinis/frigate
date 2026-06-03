@@ -319,5 +319,29 @@ void main() {
       controller.selectedIndex = null;
       expect(controller.activeTool, isNull, reason: 'null when deselected');
     });
+
+    test('selectTool maps draw tools to default creation templates', () {
+      controller.selectTool(.rectangle);
+      expect(controller.creationTemplate, RectElement.zero);
+
+      controller.selectTool(.oval);
+      expect(controller.creationTemplate, OvalElement.zero);
+
+      controller.selectTool(.polygon);
+      final template = controller.creationTemplate;
+      expect(template, isA<PolygonElement>());
+      // ignore: avoid-type-casts, avoid-non-null-assertion, is already checked by isA.
+      expect((template! as PolygonElement).vertices, hasLength(3));
+
+      controller.selectTool(.select);
+      expect(controller.creationTemplate, isNull); // ignore: use-existing-variable, it's a getter.
+    });
+
+    test('selectTool uses provided template override', () {
+      const custom = RectElement(blur: 10, height: 12, width: 34, x: 5, y: 6);
+      controller.selectTool(.rectangle, template: custom);
+
+      expect(controller.creationTemplate, custom);
+    });
   });
 }

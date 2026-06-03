@@ -45,6 +45,12 @@ class DrawToolSegmentedButton extends StatelessWidget {
     return ButtonSegment(enabled: icon != null, icon: Icon(icon), value: tool);
   }
 
+  void _handleSelectionChanged(Set<DrawTool> selected) {
+    final tool = selected.firstOrNull;
+    _controller.selectTool(tool);
+    _onSelectionChanged?.call(tool);
+  }
+
   /// Builds the [ButtonSegment] list for each drawing tool.
   List<ButtonSegment<DrawTool>> get _segments =>
       _tools.keys.map(_buildSegment).toList(growable: false);
@@ -72,7 +78,7 @@ class DrawToolSegmentedButton extends StatelessWidget {
       direction: _direction,
       emptySelectionAllowed: _isEmptySelectionAllowed || _controller.activeTool == null,
       expandedInsets: _expandedInsets,
-      onSelectionChanged: (select) => _onSelectionChanged?.call(select.firstOrNull),
+      onSelectionChanged: _handleSelectionChanged,
       segments: _segments,
       selected: {?_controller.activeTool},
       selectedIcon: _selectedIcon,

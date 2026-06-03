@@ -45,6 +45,16 @@ class DrawController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void selectTool(DrawTool? tool, {DrawElement? template}) =>
+      creationTemplate = template ?? _defaultTemplateForTool(tool);
+
+  static DrawElement? _defaultTemplateForTool(DrawTool? tool) => switch (tool) {
+    .rectangle => RectElement.zero,
+    .oval => OvalElement.zero,
+    .polygon => PolygonElement.zero,
+    .select || .text || null => null,
+  };
+
   DrawTool? get activeTool => _creationTemplate == null
       ? _selectedIndex == null
             ? null

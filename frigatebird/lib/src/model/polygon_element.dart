@@ -30,7 +30,7 @@ final class PolygonElement extends DrawElement {
     height: 0,
     outlineColor: .transparent,
     outlineThickness: 0,
-    vertices: Float64x2List.fromList([Float64x2.zero(), Float64x2.zero(), Float64x2.zero()]),
+    vertices: Float64x2List(3),
     width: 0,
     x: 0,
     y: 0,

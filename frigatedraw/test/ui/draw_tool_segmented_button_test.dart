@@ -122,6 +122,18 @@ void main() => group(DrawToolSegmentedButton, () {
     expect(segmentedButton.selected, isEmpty);
   });
 
+  testWidgets('updates controller even when onSelectionChanged is not provided', (tester) async {
+    final controller = DrawController();
+
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: DrawToolSegmentedButton(controller))));
+
+    await tester.tap(find.byIcon(Icons.crop_square_outlined));
+    await tester.pumpAndSettle();
+
+    expect(controller.activeTool, DrawTool.rectangle);
+    expect(controller.creationTemplate, RectElement.zero);
+  });
+
   testWidgets('triggers callback with null when tool is deselected', (tester) async {
     final controller = DrawController();
     DrawTool? selected = .select;
