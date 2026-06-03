@@ -14,6 +14,15 @@ final class OvalElement extends ImmutableDrawElement {
     super.outlineThickness,
   });
 
+  static const zero = OvalElement(
+    height: 0,
+    outlineColor: .transparent,
+    outlineThickness: 0,
+    width: 0,
+    x: 0,
+    y: 0,
+  );
+
   @override
   OvalElement copyWith({
     int? blur,

@@ -12,6 +12,8 @@ final class MaskRegionElement extends ImmutableDrawElement {
     super.fillColor = .transparent,
   }) : super(outlineColor: .transparent, outlineThickness: 0);
 
+  static const zero = MaskRegionElement(blur: 0, height: 0, width: 0, x: 0, y: 0);
+
   @override
   MaskRegionElement copyWith({
     int? blur,

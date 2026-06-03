@@ -17,6 +17,16 @@ final class TextElement extends ImmutableDrawElement {
 
   static const defaultFontSize = 24.0;
 
+  static const zero = TextElement(
+    fillColor: .transparent,
+    height: 0,
+    outlineColor: .transparent,
+    outlineThickness: 0,
+    text: '',
+    x: 0,
+    y: 0,
+  );
+
   final String text;
   final int fontId;
 

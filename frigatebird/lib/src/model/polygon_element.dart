@@ -25,6 +25,17 @@ final class PolygonElement extends DrawElement {
   /// [PolygonElement] therefore extends [DrawElement] directly, not [ImmutableDrawElement].
   final Float64x2List vertices;
 
+  static final zero = PolygonElement(
+    fillColor: .transparent,
+    height: 0,
+    outlineColor: .transparent,
+    outlineThickness: 0,
+    vertices: Float64x2List.fromList([Float64x2.zero(), Float64x2.zero(), Float64x2.zero()]),
+    width: 0,
+    x: 0,
+    y: 0,
+  );
+
   /// Derives the axis-aligned bounding box from a [Float64x2List] vertex buffer.
   static ({double height, double width, double x, double y}) boundingBoxOf(Float64x2List vertices) {
     final first = vertices.firstOrNull;

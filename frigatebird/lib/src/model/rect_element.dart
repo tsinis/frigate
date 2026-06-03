@@ -15,6 +15,15 @@ final class RectElement extends ImmutableDrawElement {
     this.cornerRadius = 0,
   }) : assert(cornerRadius >= 0 && cornerRadius <= 65535, 'cornerRadius must be in 0..65535');
 
+  static const zero = RectElement(
+    height: 0,
+    outlineColor: .transparent,
+    outlineThickness: 0,
+    width: 0,
+    x: 0,
+    y: 0,
+  );
+
   final int cornerRadius;
 
   @override
