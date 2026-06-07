@@ -75,7 +75,7 @@ jobs:
         run: NIX_FRIGATE_DEBUG_FFI=true dart run coverage:test_with_coverage --fail-under=70
 
       - name: 💯 Upload to Codecov
-        uses: codecov/codecov-action@v6.0.1
+        uses: codecov/codecov-action@v7.0.0
         with:
           disable_file_fixes: true
           fail_ci_if_error: true

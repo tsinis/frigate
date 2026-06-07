@@ -72,7 +72,7 @@ jobs:
         run: NIX_FRIGATE_DEBUG_FFI=true flutter test --coverage --no-pub
 
       - name: 💯 Upload to Codecov
-        uses: codecov/codecov-action@v6.0.1
+        uses: codecov/codecov-action@v7.0.0
         with:
           fail_ci_if_error: true
           files: frigatedraw/coverage/lcov.info
