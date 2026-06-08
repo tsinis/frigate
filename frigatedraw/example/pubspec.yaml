@@ -16,7 +16,9 @@ dependencies:
   image_picker: ^1.2.2
   meta: any # Constrained by Flutter SDK
   path_provider_dart:
-    git: https://github.com/tsinis/path_provider
+    git:
+      url: https://github.com/tsinis/path_provider
+      ref: 7fcc080009fa18ecb978d7644f3712199c84618f
 
 dev_dependencies:
   dart_code_metrics_presets: any # Constrained in the workspace pubspec.yaml
