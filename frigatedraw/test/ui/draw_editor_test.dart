@@ -1087,4 +1087,199 @@ void main() => group(DrawEditor, () {
       reason: 'tolerance must update to minShapeSize * 2 when minShapeSize changes',
     );
   });
+
+  group('Pan gating', () {
+    // Viewport 400×300, image 800×600 → fitScale = min(400/800, 300/600) = 0.5.
+    // Threshold = fitScale + epsilon = 0.5 + 0.001 = 0.501.
+
+    // ignore: avoid-local-functions, just for a testing purposes.
+    Widget buildEditor({required DrawController controller}) => MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(height: 300, width: 400, child: DrawEditor(file, controller: controller)),
+        ),
+      ),
+    );
+
+    testWidgets('panEnabled is false at initial fit scale', (tester) async {
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+      );
+      addTearDown(restore);
+
+      await tester.pumpWidget(buildEditor(controller: DrawController()));
+      await tester.pumpAndSettle();
+
+      final viewer = tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
+      expect(
+        viewer.panEnabled,
+        isFalse,
+        reason:
+            'pan must be disabled at the fit scale to guard against accidental one-finger drags',
+      );
+    });
+
+    testWidgets('panEnabled becomes true once zoomed past fit scale', (tester) async {
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+      );
+      addTearDown(restore);
+
+      await tester.pumpWidget(buildEditor(controller: DrawController()));
+      await tester.pumpAndSettle();
+
+      // Scale 2.0 >> 0.501 threshold — pan should unlock.
+      tester
+          .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+          .transformationController
+          ?.value = Matrix4.diagonal3Values(
+        2,
+        2,
+        1, // Zoom in.
+      );
+      await tester.pump();
+
+      final viewer = tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
+      expect(viewer.panEnabled, isTrue, reason: 'pan must be enabled after zooming in');
+    });
+
+    testWidgets('panEnabled returns to false when zoomed back to fit scale', (tester) async {
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+      );
+      addTearDown(restore);
+
+      await tester.pumpWidget(buildEditor(controller: DrawController()));
+      await tester.pumpAndSettle();
+
+      final testingC = tester
+          .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+          .transformationController;
+      testingC?.value = Matrix4.diagonal3Values(2, 2, 1);
+      await tester.pump();
+
+      // Zoom back to fit scale.
+      testingC?.value = Matrix4.diagonal3Values(0.5, 0.5, 1);
+      await tester.pump();
+
+      final viewer = tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
+      expect(viewer.panEnabled, isFalse, reason: 'pan must be disabled again at fit scale');
+    });
+
+    testWidgets('panEnabled resets to false when image changes in didUpdateWidget', (tester) async {
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+      );
+      addTearDown(restore);
+
+      final controller = DrawController();
+      final key = GlobalKey();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                height: 300,
+                width: 400,
+                child: DrawEditor(file, controller: controller, key: key),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Zoom in to enable pan.
+      tester
+          .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+          .transformationController
+          ?.value = Matrix4.diagonal3Values(
+        2,
+        2,
+        1, // Zoom in.
+      );
+      await tester.pump();
+      expect(tester.widget<InteractiveViewer>(find.byType(InteractiveViewer)).panEnabled, isTrue);
+
+      // Swap the image — didUpdateWidget resets _fitScale and _canPan.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                height: 300,
+                width: 400,
+                child: DrawEditor(File('other.jpg'), controller: controller, key: key),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final viewer = tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
+      expect(
+        viewer.panEnabled,
+        isFalse,
+        reason: 'pan must be disabled after an image swap resets the fit scale',
+      );
+    });
+
+    testWidgets('epsilon guard: panEnabled stays false at exactly fitScale + epsilon', (
+      tester,
+    ) async {
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+      );
+      addTearDown(restore);
+
+      await tester.pumpWidget(buildEditor(controller: DrawController()));
+      await tester.pumpAndSettle();
+
+      // The fitScale=0.5, epsilon=0.001, threshold=0.501. Strictly-greater check means 0.501 is still off.
+      tester
+          .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+          .transformationController
+          ?.value = Matrix4.diagonal3Values(
+        0.501,
+        0.501,
+        1, // Set to threshold value exactly.
+      );
+      await tester.pump();
+
+      final viewer = tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
+      expect(
+        viewer.panEnabled,
+        isFalse,
+        reason: 'pan must stay off at exactly fitScale + epsilon (guard uses strict >)',
+      );
+    });
+
+    testWidgets('epsilon guard: panEnabled becomes true just above fitScale + epsilon', (
+      tester,
+    ) async {
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+      );
+      addTearDown(restore);
+
+      await tester.pumpWidget(buildEditor(controller: DrawController()));
+      await tester.pumpAndSettle();
+
+      // 0.502 is strictly greater than 0.501 — pan should unlock.
+      tester
+          .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+          .transformationController
+          ?.value = Matrix4.diagonal3Values(
+        0.502,
+        0.502,
+        1, // Set just above threshold.
+      );
+      await tester.pump();
+
+      final viewer = tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
+      expect(viewer.panEnabled, isTrue, reason: 'pan must enable just above fitScale + epsilon');
+    });
+  });
 });
