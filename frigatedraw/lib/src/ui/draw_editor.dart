@@ -433,11 +433,12 @@ class _DrawEditorState extends State<DrawEditor> {
 
   @override
   void dispose() {
+    // Detach the listener before disposing the notifiers it touches, so a
+    // stray transform tick can never write to a disposed _canPan/_isDragging.
+    _transform.removeListener(_onTransformationChanged);
     _canPan.dispose();
     _isDragging.dispose();
-    _transform
-      ..removeListener(_onTransformationChanged)
-      ..dispose();
+    _transform.dispose();
     // ignore: avoid-disposing-late-fields, it is assigned immediately.
     if (!identical(_draw, widget._controller)) _draw.dispose();
     super.dispose();
