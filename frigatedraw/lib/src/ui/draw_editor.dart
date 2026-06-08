@@ -80,9 +80,16 @@ class DrawEditor extends InteractiveViewer {
 }
 
 class _DrawEditorState extends State<DrawEditor> {
+  /// Guards against pan re-enabling from float jitter at exactly fit scale.
+  static const _panScaleEpsilon = 1e-3;
   final _transform = TransformationController();
+
   final _isDragging = ValueNotifier<bool>(false);
 
+  /// True only when zoomed in past the initial fit scale. Gates `panEnabled`;
+  /// derived in [_onTransformationChanged] so it flips on threshold crossings
+  /// instead of rebuilding the viewer on every transform tick.
+  final _canPan = ValueNotifier<bool>(false);
   double _closeTolerance = 0;
 
   bool _isCreating = false;
@@ -100,6 +107,12 @@ class _DrawEditorState extends State<DrawEditor> {
   int? _activePointerId; // The ID of the pointer currently owning the drag/creation interaction.
   Size? _boardSize;
   bool _didApplyInitialFit = false;
+
+  /// The scale applied by [_applyInitialFitIfReady] to fit the image to the
+  /// viewport. Pan is only allowed once the user pinches in past this scale,
+  /// so an accidental one-finger drag while reaching for a tool/slider can't
+  /// shift the full-image view. Null until the initial fit is applied.
+  double? _fitScale;
 
   // ignore: avoid-late-keyword, it's needed because of the widget access.
   late DrawController _draw = widget._controller ?? DrawController();
@@ -149,6 +162,7 @@ class _DrawEditorState extends State<DrawEditor> {
       final width = viewport.width;
       final height = viewport.height;
       final scale = min(1, min(width / board.width, height / board.height)).toDouble();
+      _fitScale = scale;
 
       _transform.value = Matrix4.identity()
         ..setEntry(0, 0, scale)
@@ -164,6 +178,8 @@ class _DrawEditorState extends State<DrawEditor> {
         (_transform.value != startMatrix)) {
       _transform.value = startMatrix;
     }
+    final fit = _fitScale;
+    _canPan.value = fit != null && _viewScale > fit + _panScaleEpsilon;
   }
 
   void _handlePointerDown(PointerDownEvent event) {
@@ -411,10 +427,13 @@ class _DrawEditorState extends State<DrawEditor> {
     if (oldWidget._image.path == widget._image.path && oldWidget._size == widget._size) return;
     _boardSize = widget._size;
     _didApplyInitialFit = false;
+    _fitScale = null;
+    _canPan.value = false;
   }
 
   @override
   void dispose() {
+    _canPan.dispose();
     _isDragging.dispose();
     _transform
       ..removeListener(_onTransformationChanged)
@@ -465,7 +484,7 @@ class _DrawEditorState extends State<DrawEditor> {
                 onInteractionStart: widget.onInteractionStart,
                 onInteractionUpdate: widget.onInteractionUpdate,
                 panAxis: widget.panAxis,
-                panEnabled: !isInteracting,
+                panEnabled: !isInteracting && _canPan.value,
                 scaleEnabled: widget.scaleEnabled,
                 scaleFactor: widget.scaleFactor,
                 trackpadScrollCausesScale: widget.trackpadScrollCausesScale,
@@ -473,7 +492,7 @@ class _DrawEditorState extends State<DrawEditor> {
                 child: child ?? const SizedBox.shrink(),
               );
             },
-            listenable: _draw,
+            listenable: Listenable.merge([_draw, _canPan]),
           ),
           valueListenable: _isDragging,
           child: FfiImageFile(
