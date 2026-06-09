@@ -24,7 +24,8 @@ class DrawEditor extends InteractiveViewer {
     this._builder,
     this._controller,
     this._fit = StackFit.loose,
-    this._minShapeSize = 10.0,
+    this._handleRadius = defaultHandleRadius,
+    this._minShapeSize = defaultHandleRadius - 2,
     this._size,
     this._textDirection,
     super.alignment,
@@ -41,12 +42,29 @@ class DrawEditor extends InteractiveViewer {
     super.scaleEnabled,
     super.scaleFactor,
     super.trackpadScrollCausesScale,
-  }) : super(child: const SizedBox.shrink(), constrained: false);
+  }) : assert(
+         _handleRadius > _minShapeSize,
+         'handleRadius ($_handleRadius) must be greater than minShapeSize '
+         '($_minShapeSize), otherwise the grab handles would be smaller than '
+         'the smallest drawable shape and could collapse to zero size.',
+       ),
+       super(child: const SizedBox.shrink(), constrained: false);
+
+  /// The default radius of the selection/resize handles before scaling, in board pixels.
+  static const defaultHandleRadius = 12.0;
 
   final DrawEditorBuilder? _builder;
   final DrawController? _controller;
+
+  /// The base radius (in board pixels) of the selection/resize handles before
+  /// image-size scaling. Scaled up for images larger than the 800px reference
+  /// so handles stay proportionally draggable; never scaled below this base.
+  ///
+  /// Defaults to `12.0`.
+  final double _handleRadius;
   final File _image;
   final double _minShapeSize;
+
   final Size? _size;
 
   /// The text direction with which to resolve [alignment].
@@ -71,6 +89,7 @@ class DrawEditor extends InteractiveViewer {
       ..add(DiagnosticsProperty<DrawController?>('_controller', _controller))
       ..add(ObjectFlagProperty<DrawEditorBuilder?>.has('_builder', _builder))
       ..add(StringProperty('_image', _image.path))
+      ..add(DoubleProperty('_handleRadius', _handleRadius))
       ..add(DoubleProperty('_minShapeSize', _minShapeSize))
       ..add(EnumProperty<StackFit>('_fit', _fit))
       ..add(EnumProperty<TextDirection?>('_textDirection', _textDirection))
@@ -124,11 +143,12 @@ class _DrawEditorState extends State<DrawEditor> {
   double get _viewScale => _transform.value.storage.firstOrNull ?? 1;
 
   double get _handleRadius {
+    final base = widget._handleRadius;
     final board = _boardSize;
-    if (board == null || board.isEmpty) return 12;
+    if (board == null || board.isEmpty) return base;
     final maxDim = board.width > board.height ? board.width : board.height;
 
-    return (maxDim / 800.0).clamp(1.0, double.infinity) * 12.0;
+    return (maxDim / 800.0).clamp(1.0, double.infinity) * base;
   }
 
   double get _outlineStrokeWidth {

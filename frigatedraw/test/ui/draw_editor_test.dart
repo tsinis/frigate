@@ -873,6 +873,7 @@ void main() => group(DrawEditor, () {
     final props = builder.properties.map((i) => i.name).toList();
     expect(props, contains('_controller'));
     expect(props, contains('_image'));
+    expect(props, contains('_handleRadius'));
     expect(props, contains('_size.height'));
     expect(props, contains('_size.width'));
   });
@@ -1051,6 +1052,7 @@ void main() => group(DrawEditor, () {
           body: DrawEditor(
             file,
             controller: controller,
+            handleRadius: 30,
             key: key,
             minShapeSize: 15,
             size: const Size(800, 600),
@@ -1066,6 +1068,7 @@ void main() => group(DrawEditor, () {
           body: DrawEditor(
             file,
             controller: controller,
+            handleRadius: 30,
             key: key,
             minShapeSize: 25,
             size: const Size(800, 600),
@@ -1086,6 +1089,189 @@ void main() => group(DrawEditor, () {
       closeTo(50.0, 0.001),
       reason: 'tolerance must update to minShapeSize * 2 when minShapeSize changes',
     );
+  });
+
+  group('Configurable handle radius', () {
+    // ignore: avoid-local-functions, just a test.
+    DrawPainter? painterOf(WidgetTester tester) => tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((customPaint) => customPaint.foregroundPainter)
+        .whereType<DrawPainter>()
+        .firstOrNull;
+
+    testWidgets('defaults to 12 at the 800x600 reference image', (tester) async {
+      final controller = DrawController();
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+      );
+      addTearDown(restore);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 600,
+              width: 800,
+              child: DrawEditor(file, controller: controller),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        painterOf(tester)?.handleRadius,
+        closeTo(12.0, 0.001),
+        reason: 'default base must remain 12 to preserve existing behavior',
+      );
+    });
+
+    testWidgets('uses the custom base at the reference image', (tester) async {
+      final controller = DrawController();
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+      );
+      addTearDown(restore);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 600,
+              width: 800,
+              child: DrawEditor(file, controller: controller, handleRadius: 20),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        painterOf(tester)?.handleRadius,
+        closeTo(20.0, 0.001),
+        reason: 'custom handleRadius must be used as the base at the 800px reference',
+      );
+    });
+
+    testWidgets('custom base still scales up for large images', (tester) async {
+      final controller = DrawController();
+      // 3200x2400: scale factor = 3200/800 = 4 -> 4 * 20 = 80.
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) => Future.value(const ImageInformation(height: 2400, width: 3200)),
+      );
+      addTearDown(restore);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 600,
+              width: 800,
+              child: DrawEditor(file, controller: controller, handleRadius: 20),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        painterOf(tester)?.handleRadius,
+        closeTo(80.0, 0.001),
+        reason: 'scaling must still apply on top of the custom base (4x * 20)',
+      );
+    });
+
+    testWidgets('custom base does not shrink for images smaller than reference', (tester) async {
+      final controller = DrawController();
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) => Future.value(const ImageInformation(height: 240, width: 320)),
+      );
+      addTearDown(restore);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 600,
+              width: 800,
+              child: DrawEditor(file, controller: controller, handleRadius: 20),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        painterOf(tester)?.handleRadius,
+        closeTo(20.0, 0.001),
+        reason: 'clamp must keep the custom base intact for small images',
+      );
+    });
+
+    test('asserts handleRadius is greater than minShapeSize', () {
+      expect(
+        () => DrawEditor(file, handleRadius: 5, minShapeSize: 8),
+        throwsAssertionError,
+        reason: 'handleRadius below minShapeSize must fail fast',
+      );
+      expect(
+        () => DrawEditor(file, handleRadius: 8, minShapeSize: 8),
+        throwsAssertionError,
+        reason: 'handleRadius equal to minShapeSize must also fail (strictly greater)',
+      );
+      expect(
+        () => DrawEditor(file, handleRadius: 9, minShapeSize: 8),
+        returnsNormally,
+        reason: 'handleRadius greater than minShapeSize must construct fine',
+      );
+      expect(
+        () => DrawEditor(file),
+        returnsNormally,
+        reason: 'defaults (handleRadius 12 > minShapeSize 10) must satisfy the assert',
+      );
+    });
+
+    testWidgets('responds to handleRadius change on rebuild', (tester) async {
+      final controller = DrawController();
+      final key = GlobalKey();
+      final restore = FfiImageFile.setInfoBuilder(
+        (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+      );
+      addTearDown(restore);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 600,
+              width: 800,
+              child: DrawEditor(file, controller: controller, handleRadius: 18, key: key),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(painterOf(tester)?.handleRadius, closeTo(18.0, 0.001));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 600,
+              width: 800,
+              child: DrawEditor(file, controller: controller, handleRadius: 30, key: key),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        painterOf(tester)?.handleRadius,
+        closeTo(30.0, 0.001),
+        reason: 'getter reads widget._handleRadius live, so a rebuild must take effect',
+      );
+    });
   });
 
   group('Pan gating', () {
