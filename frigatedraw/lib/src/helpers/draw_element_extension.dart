@@ -5,7 +5,6 @@ import 'package:frigatebird/frigatebird.dart';
 import '../ui/draw_tool.dart';
 
 extension DrawElementExtension on DrawElement {
-  static const handleRadius = 6.0;
   static const _hitSlop = 4.0;
   static final _polygonPathCache = Expando<Path>();
 

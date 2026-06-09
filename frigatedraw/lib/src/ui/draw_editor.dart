@@ -24,6 +24,7 @@ class DrawEditor extends InteractiveViewer {
     this._builder,
     this._controller,
     this._fit = StackFit.loose,
+    this._handleRadius = 12.0,
     this._minShapeSize = 10.0,
     this._size,
     this._textDirection,
@@ -45,6 +46,12 @@ class DrawEditor extends InteractiveViewer {
 
   final DrawEditorBuilder? _builder;
   final DrawController? _controller;
+
+  /// The base radius (in board pixels) of the selection/resize handles before
+  /// image-size scaling. Scaled up for images larger than the 800px reference
+  /// so handles stay proportionally grabbable; never scaled below this base.
+  /// Defaults to `12.0`.
+  final double _handleRadius;
   final File _image;
   final double _minShapeSize;
   final Size? _size;
@@ -71,6 +78,7 @@ class DrawEditor extends InteractiveViewer {
       ..add(DiagnosticsProperty<DrawController?>('_controller', _controller))
       ..add(ObjectFlagProperty<DrawEditorBuilder?>.has('_builder', _builder))
       ..add(StringProperty('_image', _image.path))
+      ..add(DoubleProperty('_handleRadius', _handleRadius))
       ..add(DoubleProperty('_minShapeSize', _minShapeSize))
       ..add(EnumProperty<StackFit>('_fit', _fit))
       ..add(EnumProperty<TextDirection?>('_textDirection', _textDirection))
@@ -124,11 +132,12 @@ class _DrawEditorState extends State<DrawEditor> {
   double get _viewScale => _transform.value.storage.firstOrNull ?? 1;
 
   double get _handleRadius {
+    final base = widget._handleRadius;
     final board = _boardSize;
-    if (board == null || board.isEmpty) return 12;
+    if (board == null || board.isEmpty) return base;
     final maxDim = board.width > board.height ? board.width : board.height;
 
-    return (maxDim / 800.0).clamp(1.0, double.infinity) * 12.0;
+    return (maxDim / 800.0).clamp(1.0, double.infinity) * base;
   }
 
   double get _outlineStrokeWidth {
