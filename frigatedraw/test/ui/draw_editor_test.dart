@@ -1052,6 +1052,7 @@ void main() => group(DrawEditor, () {
           body: DrawEditor(
             file,
             controller: controller,
+            handleRadius: 30,
             key: key,
             minShapeSize: 15,
             size: const Size(800, 600),
@@ -1067,6 +1068,7 @@ void main() => group(DrawEditor, () {
           body: DrawEditor(
             file,
             controller: controller,
+            handleRadius: 30,
             key: key,
             minShapeSize: 25,
             size: const Size(800, 600),
@@ -1203,6 +1205,29 @@ void main() => group(DrawEditor, () {
         painterOf(tester)?.handleRadius,
         closeTo(20.0, 0.001),
         reason: 'clamp must keep the custom base intact for small images',
+      );
+    });
+
+    test('asserts handleRadius is greater than minShapeSize', () {
+      expect(
+        () => DrawEditor(file, handleRadius: 5, minShapeSize: 8),
+        throwsAssertionError,
+        reason: 'handleRadius below minShapeSize must fail fast',
+      );
+      expect(
+        () => DrawEditor(file, handleRadius: 8, minShapeSize: 8),
+        throwsAssertionError,
+        reason: 'handleRadius equal to minShapeSize must also fail (strictly greater)',
+      );
+      expect(
+        () => DrawEditor(file, handleRadius: 9, minShapeSize: 8),
+        returnsNormally,
+        reason: 'handleRadius greater than minShapeSize must construct fine',
+      );
+      expect(
+        () => DrawEditor(file),
+        returnsNormally,
+        reason: 'defaults (handleRadius 12 > minShapeSize 10) must satisfy the assert',
       );
     });
 

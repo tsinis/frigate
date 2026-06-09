@@ -42,14 +42,21 @@ class DrawEditor extends InteractiveViewer {
     super.scaleEnabled,
     super.scaleFactor,
     super.trackpadScrollCausesScale,
-  }) : super(child: const SizedBox.shrink(), constrained: false);
+  }) : assert(
+         _handleRadius > _minShapeSize,
+         'handleRadius ($_handleRadius) must be greater than minShapeSize '
+         '($_minShapeSize), otherwise the grab handles would be smaller than '
+         'the smallest drawable shape and could collapse to zero size.',
+       ),
+       super(child: const SizedBox.shrink(), constrained: false);
 
   final DrawEditorBuilder? _builder;
   final DrawController? _controller;
 
   /// The base radius (in board pixels) of the selection/resize handles before
   /// image-size scaling. Scaled up for images larger than the 800px reference
-  /// so handles stay proportionally grabbable; never scaled below this base.
+  /// so handles stay proportionally draggable; never scaled below this base.
+  ///
   /// Defaults to `12.0`.
   final double _handleRadius;
   final File _image;
