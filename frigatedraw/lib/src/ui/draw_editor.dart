@@ -24,8 +24,8 @@ class DrawEditor extends InteractiveViewer {
     this._builder,
     this._controller,
     this._fit = StackFit.loose,
-    this._handleRadius = 12.0,
-    this._minShapeSize = 10.0,
+    this._handleRadius = defaultHandleRadius,
+    this._minShapeSize = defaultHandleRadius - 2,
     this._size,
     this._textDirection,
     super.alignment,
@@ -50,6 +50,9 @@ class DrawEditor extends InteractiveViewer {
        ),
        super(child: const SizedBox.shrink(), constrained: false);
 
+  /// The default radius of the selection/resize handles before scaling, in board pixels.
+  static const defaultHandleRadius = 12.0;
+
   final DrawEditorBuilder? _builder;
   final DrawController? _controller;
 
@@ -61,6 +64,7 @@ class DrawEditor extends InteractiveViewer {
   final double _handleRadius;
   final File _image;
   final double _minShapeSize;
+
   final Size? _size;
 
   /// The text direction with which to resolve [alignment].
