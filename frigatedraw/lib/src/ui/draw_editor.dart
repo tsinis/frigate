@@ -140,7 +140,19 @@ class _DrawEditorState extends State<DrawEditor> {
   /// is always 1. getMaxScaleOnAxis() returns max(scaleXY, Z=1), so it always
   /// returns ≥ 1 and is wrong whenever the fit scale is < 1 (zoomed-out).
   /// Reading storage[0] gives the actual XY scale directly.
-  double get _viewScale => _transform.value.storage.firstOrNull ?? 1;
+  double get _viewScale {
+    final storage = _transform.value.storage;
+    final scaleXComponent = storage.firstOrNull ?? 0;
+    final rotateYComponent = storage.elementAtOrNull(1) ?? 0;
+    final skewZComponent = storage.elementAtOrNull(2) ?? 0;
+    final scale = sqrt(
+      scaleXComponent * scaleXComponent +
+          rotateYComponent * rotateYComponent +
+          skewZComponent * skewZComponent,
+    );
+
+    return scale < 0.01 ? 1.0 : scale;
+  }
 
   double get _handleRadius {
     final base = widget._handleRadius;
@@ -343,7 +355,7 @@ class _DrawEditorState extends State<DrawEditor> {
     };
     if (!canMove) return;
 
-    final delta = event.delta / _viewScale;
+    final delta = event.localDelta / _viewScale;
 
     final updated = handle == null
         ? selected.moved(delta.dx, delta.dy)
