@@ -1468,4 +1468,164 @@ void main() => group(DrawEditor, () {
       expect(viewer.panEnabled, isTrue, reason: 'pan must enable just above fitScale + epsilon');
     });
   });
+
+  group('Rotation and Scale safety', () {
+    testWidgets('moves element on drag when wrapped in RotatedBox', (tester) async {
+      final controller = DrawController();
+      const rect = RectElement(height: 100, width: 100, x: 50, y: 50);
+      controller
+        ..addElement(rect)
+        ..selectedIndex = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                height: 600,
+                width: 800,
+                child: RotatedBox(
+                  quarterTurns: 1, // 90 degrees clockwise rotation.
+                  child: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final ivFinder = find.byType(InteractiveViewer);
+      final viewer = tester.widget<InteractiveViewer>(ivFinder);
+      final matrix = viewer.transformationController?.value ?? Matrix4.identity();
+      final localCenter = Offset(
+        (matrix.storage.firstOrNull ?? 1.0) * 100 + (matrix.storage.elementAtOrNull(12) ?? 0.0),
+        (matrix.storage.elementAtOrNull(5) ?? 1.0) * 100 +
+            (matrix.storage.elementAtOrNull(13) ?? 0.0),
+      );
+
+      final renderBox = tester.renderObject<RenderBox>(find.byType(DrawEditor));
+      final screenCenterOfRect = renderBox.localToGlobal(localCenter);
+
+      final gesture = await tester.startGesture(screenCenterOfRect);
+      await tester.pump();
+
+      // Move by 50 pixels down in screen space.
+      // Under 90 degrees clockwise rotation:
+      // Screen down (0, 50) maps to local right (50, 0).
+      await gesture.moveBy(const Offset(0, 50));
+      await tester.pump();
+
+      expect(
+        controller.elements.firstOrNull?.x,
+        closeTo(116.66, 0.1),
+        reason: 'x should move by local delta',
+      );
+      expect(
+        controller.elements.firstOrNull?.y,
+        closeTo(50.0, 0.1),
+        reason: 'y should remain the same',
+      );
+
+      await gesture.up();
+      await tester.pump();
+    });
+
+    testWidgets('guards against division-by-zero when _viewScale is zero or negative', (
+      tester,
+    ) async {
+      final controller = DrawController();
+      const rect = RectElement(height: 100, width: 100, x: 50, y: 50);
+      controller
+        ..addElement(rect)
+        ..selectedIndex = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                height: 600,
+                width: 800,
+                child: DrawEditor(file, controller: controller, size: const Size(800, 600)),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Test extremely small scale (simulating division-by-zero guard).
+      final ivFinder = find.byType(InteractiveViewer);
+      final viewer = tester.widget<InteractiveViewer>(ivFinder);
+      final smallScaleMatrix = Matrix4.identity()
+        ..setEntry(0, 0, 0.0001); // X scale = 0.0001 (< 0.01).
+      viewer.transformationController?.value = smallScaleMatrix;
+      await tester.pump();
+
+      final renderBox = tester.renderObject<RenderBox>(find.byType(DrawEditor));
+      final topLeft = renderBox.localToGlobal(.zero);
+
+      // Scene point (100, 100) maps to local point (100 * 0.0001, 100) = (0.01, 100).
+      TestGesture gesture = await tester.startGesture(topLeft + const Offset(0.01, 100));
+      await tester.pump();
+
+      await gesture.moveBy(const Offset(50, 50));
+      await tester.pump();
+
+      final updated = controller.elements.firstOrNull;
+      expect(updated, isNotNull);
+      if (updated != null) {
+        expect(updated.x.isFinite, isTrue, reason: 'x should be finite when scale is near zero');
+        expect(updated.y.isFinite, isTrue, reason: 'y should be finite when scale is near zero');
+        // Under the new code, _viewScale falls back to 1.0, so x moves by 50 to 100.
+        expect(updated.x, closeTo(100.0, 0.1));
+        expect(updated.y, closeTo(100.0, 0.1));
+      }
+
+      await gesture.up();
+      await tester.pump();
+
+      // Reset coordinates.
+      controller.updateElement(rect, 0);
+
+      // Test negative scale matrix with translation to keep the hit point on-screen.
+      final negativeScaleMatrix = Matrix4.identity()
+        ..setEntry(0, 0, -1)
+        ..setEntry(0, 3, 400);
+      viewer.transformationController?.value = negativeScaleMatrix;
+      await tester.pump();
+
+      // Scene point (100, 100) maps to local point (-100 + 400, 100) = (300, 100).
+      gesture = await tester.startGesture(topLeft + const Offset(300, 100));
+      await tester.pump();
+
+      await gesture.moveBy(const Offset(50, 50));
+      await tester.pump();
+
+      final updatedNegative = controller.elements.firstOrNull;
+      expect(updatedNegative, isNotNull);
+      if (updatedNegative != null) {
+        expect(
+          updatedNegative.x.isFinite,
+          isTrue,
+          reason: 'x should be finite when scale is negative',
+        );
+        expect(
+          updatedNegative.y.isFinite,
+          isTrue,
+          reason: 'y should be finite when scale is negative',
+        );
+        // Under the new code, _viewScale falls back to 1.0, so x moves by 50 to 100.
+        // Under the old code, x would move by -50 to 0.
+        expect(updatedNegative.x, closeTo(100.0, 0.1));
+        expect(updatedNegative.y, closeTo(100.0, 0.1));
+      }
+
+      await gesture.up();
+      await tester.pump();
+    });
+  });
 });
