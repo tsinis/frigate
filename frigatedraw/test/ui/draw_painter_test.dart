@@ -1,5 +1,6 @@
 // ignore_for_file: avoid-long-files
 
+import 'dart:math' show pi;
 import 'dart:typed_data';
 import 'dart:ui';
 
@@ -63,6 +64,16 @@ void main() => group(DrawPainter, () {
         hitRect.hitTestHandle(const Offset(150, 80)),
         isNull,
         reason: 'center of the rect is handle-free',
+      );
+    });
+
+    test('maps a rotated handle to its rotated screen position', () {
+      const rotated = RectElement(height: 100, rotation: 90, width: 200, x: 50, y: 30);
+
+      expect(
+        rotated.hitTestHandle(const Offset(200, -20)),
+        HandlePosition.topLeft,
+        reason: 'top-left (50,30) rotates 90deg about center (150,80) to (200,-20)',
       );
     });
   });
@@ -468,6 +479,17 @@ void main() => group(DrawPainter, () {
       expect(next.shouldRepaint(old), isTrue, reason: 'different tolerance requires repaint');
     });
 
+    test('is true when handleBorderWidth changes', () {
+      final elements = <DrawElement>[];
+      final old = DrawPainter(elements);
+      final next = DrawPainter(elements, handleBorderWidth: 1);
+      expect(
+        next.shouldRepaint(old),
+        isTrue,
+        reason: 'different handle border width requires repaint',
+      );
+    });
+
     test('is true when creationTemplate identity changes', () {
       final elements = <DrawElement>[];
       const template1 = RectElement(height: 10, width: 10, x: 0, y: 0);
@@ -653,6 +675,97 @@ void main() => group(DrawPainter, () {
       );
     });
   });
+
+  group('rotation rendering', () {
+    test('rotates the canvas for a rotated rect and still uses drawRect', () {
+      final canvas = _DrawPainterTest();
+      const rotated = RectElement(
+        fillColor: .black,
+        height: 50,
+        rotation: 90,
+        width: 100,
+        x: 10,
+        y: 20,
+      );
+      const DrawPainter([rotated]).paint(canvas, const Size(200, 200));
+
+      expect(canvas.rotateCount, greaterThan(0), reason: 'rotated element must rotate the canvas');
+      expect(canvas.lastRotation, closeTo(pi / 2, 1e-9), reason: '90 degrees in radians');
+      expect(canvas.drawRectCount, greaterThan(0), reason: 'still a drawRect, just under rotation');
+    });
+
+    test('does not rotate the canvas for an un-rotated rect', () {
+      final canvas = _DrawPainterTest();
+      const sharp = RectElement(fillColor: .black, height: 50, width: 100, x: 10, y: 20);
+      const DrawPainter([sharp]).paint(canvas, const Size(200, 200));
+
+      expect(canvas.rotateCount, isZero, reason: 'un-rotated render must stay transform-free');
+    });
+
+    test('rotates the canvas for a rotated oval', () {
+      final canvas = _DrawPainterTest();
+      const rotated = OvalElement(
+        fillColor: .black,
+        height: 50,
+        rotation: 45,
+        width: 100,
+        x: 10,
+        y: 20,
+      );
+      const DrawPainter([rotated]).paint(canvas, const Size(200, 200));
+
+      expect((canvas.rotateCount > 0, canvas.drawOvalCount > 0), equals((true, true)));
+    });
+
+    test('draws the rotation knob stem when requested for a selection', () {
+      final canvas = _DrawPainterTest();
+      const knobRect = RectElement(height: 100, width: 100, x: 50, y: 50);
+      const DrawPainter(
+        [knobRect],
+        selectedIndex: 0,
+        shouldShowRotationKnob: true,
+      ).paint(canvas, const Size(300, 300));
+
+      expect(
+        canvas.drawLineCount,
+        greaterThanOrEqualTo(1),
+        reason: 'stem line connects to the knob',
+      );
+    });
+
+    test('omits the rotation knob stem when not requested', () {
+      final canvas = _DrawPainterTest();
+      const knobRect = RectElement(height: 100, width: 100, x: 50, y: 50);
+      const DrawPainter([knobRect], selectedIndex: 0).paint(canvas, const Size(300, 300));
+
+      expect(canvas.drawLineCount, isZero, reason: 'no stem is drawn without the knob flag');
+    });
+
+    test('rotation knob uses white fill and black border (inverted vs handles)', () {
+      final canvas = _DrawPainterTest();
+      const knobRect = RectElement(height: 100, width: 100, x: 50, y: 50);
+      const DrawPainter(
+        [knobRect],
+        selectedIndex: 0,
+        shouldShowRotationKnob: true,
+      ).paint(canvas, const Size(300, 300));
+
+      expect(
+        canvas.circleDrawCalls.any(
+          (call) => call.color == const Color(0xFFFFFFFF) && call.style == .fill,
+        ),
+        isTrue,
+        reason: 'knob fill must be white',
+      );
+      expect(
+        canvas.circleDrawCalls.any(
+          (call) => call.color == const Color(0xFF000000) && call.style == .stroke,
+        ),
+        isTrue,
+        reason: 'knob border must be black',
+      );
+    });
+  });
 });
 
 void _drawOpaquePixel(PictureRecorder recorder) {
@@ -670,9 +783,30 @@ class _DrawPainterTest implements Canvas {
   int drawOvalCount = 0;
   int drawPathCount = 0;
   int drawLineCount = 0;
+  int drawCircleCount = 0;
+  int rotateCount = 0;
+  double? lastRotation;
   RRect? lastRRect;
   bool? isLastPaintAntiAlias;
   int? lastPaintColorAlpha;
+
+  /// All `drawCircle` calls recorded as `(color, style)` pairs so tests can
+  /// verify both fill and stroke circles (e.g. the inverted rotation knob).
+  final circleDrawCalls = <({Color color, PaintingStyle style})>[];
+
+  @override
+  void rotate(double radians) {
+    rotateCount += 1;
+    lastRotation = radians;
+  }
+
+  @override
+  // ignore: parameters-ordering, signature must match dart:ui Canvas.
+  void drawCircle(Offset center, double radius, Paint paint) {
+    drawCircleCount += 1;
+    // ignore: avoid-collection-mutating-methods, local accumulator in a test stub.
+    circleDrawCalls.add((color: paint.color, style: paint.style));
+  }
 
   @override
   // ignore: parameters-ordering, signature must match dart:ui Canvas.

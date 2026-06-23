@@ -4,11 +4,10 @@ import 'dart:typed_data';
 import 'package:frigatebird/frigatebird.dart';
 import 'package:test/test.dart';
 
-void main() {
-  // TODO(LLM): DRY DrawElementRotationExtension > just wrap all tests here in more global (main) with group('DrawElementRotationExtension', () { ... });
+void main() => group('DrawElementRotationExtension', () {
   const square = RectElement(height: 100, width: 100, x: 0, y: 0);
 
-  group('DrawElementRotationExtension.rotationRadians', () {
+  group('rotationRadians', () {
     test('converts degrees to radians', () {
       const rotated = RectElement(height: 100, rotation: 180, width: 100, x: 0, y: 0);
 
@@ -16,7 +15,7 @@ void main() {
     });
   });
 
-  group('DrawElementRotationExtension.center', () {
+  group('center', () {
     test('is the un-rotated bounding-box center', () {
       const rect = RectElement(height: 40, width: 60, x: 10, y: 20);
 
@@ -24,7 +23,7 @@ void main() {
     });
   });
 
-  group('DrawElementRotationExtension.rotatePoint', () {
+  group('rotatePoint', () {
     test('is identity at zero rotation', () {
       expect(square.rotatePoint((x: 7, y: 9)), equals((x: 7.0, y: 9.0)));
     });
@@ -38,7 +37,7 @@ void main() {
     });
   });
 
-  group('DrawElementRotationExtension.inverseRotatePoint', () {
+  group('inverseRotatePoint', () {
     test('round-trips with rotatePoint', () {
       const rotated = RectElement(height: 100, rotation: 37, width: 100, x: 0, y: 0);
       final point = rotated.inverseRotatePoint(rotated.rotatePoint((x: 12, y: 84)));
@@ -48,7 +47,7 @@ void main() {
     });
   });
 
-  group('DrawElementRotationExtension.handleCenterFor', () {
+  group('handleCenterFor', () {
     test('returns axis-aligned corner at zero rotation', () {
       expect(square.handleCenterFor(.bottomRight), equals((x: 100.0, y: 100.0)));
     });
@@ -62,7 +61,7 @@ void main() {
     });
   });
 
-  group('DrawElementRotationExtension.handleHitTest', () {
+  group('handleHitTest', () {
     test('hits the rotated handle position', () {
       const rotated = RectElement(height: 100, rotation: 90, width: 100, x: 0, y: 0);
 
@@ -80,7 +79,7 @@ void main() {
     });
   });
 
-  group('DrawElementRotationExtension.isPointInside', () {
+  group('isPointInside', () {
     test('contains its center', () => expect(square.isPointInside((x: 50, y: 50)), isTrue));
 
     test('excludes a point above the axis-aligned square', () {
@@ -116,13 +115,13 @@ void main() {
     });
   });
 
-  group('DrawElementRotationExtension.rotationKnobCenter', () {
+  group('rotationKnobCenter', () {
     test('sits above top-center at zero rotation', () {
       expect(square.rotationKnobCenter(30), equals((x: 50.0, y: -30.0)));
     });
   });
 
-  group('DrawElementRotationExtension.isPointOnKnob', () {
+  group('isPointOnKnob', () {
     test('hits the knob above the shape', () {
       expect(square.isPointOnKnob(30, 8, (x: 50, y: -30)), isTrue);
     });
@@ -132,7 +131,7 @@ void main() {
     });
   });
 
-  group('DrawElementRotationExtension.angleToPoint', () {
+  group('angleToPoint', () {
     test('reads zero straight above the center', () {
       expect(square.angleToPoint((x: 50, y: 0)), equals(0));
     });
@@ -145,7 +144,7 @@ void main() {
     );
   });
 
-  group('DrawElementRotationExtension.transformedBy', () {
+  group('transformedBy', () {
     test('rotation-only adds degrees and keeps geometry', () {
       final result = square.transformedBy((x: 50, y: 50), pi / 2);
 
@@ -186,7 +185,7 @@ void main() {
     });
   });
 
-  group('DrawElementRotationExtension.rotatedResized', () {
+  group('rotatedResized', () {
     test('matches resized when rotation is zero', () {
       final rotated = square.rotatedResized(dx: 20, dy: 10, handle: .bottomRight);
       final plain = square.resized(dx: 20, dy: 10, handle: .bottomRight);
@@ -214,4 +213,4 @@ void main() {
       expect((resized.width, resized.height), equals((10.0, 10.0)));
     });
   });
-}
+});

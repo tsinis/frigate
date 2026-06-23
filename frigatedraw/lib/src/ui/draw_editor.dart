@@ -23,9 +23,12 @@ class DrawEditor extends InteractiveViewer {
     this._image, {
     this._builder,
     this._controller,
+    this._enableRotation = true,
     this._fit = StackFit.loose,
     this._handleRadius = defaultHandleRadius,
-    this._minShapeSize = defaultHandleRadius - 2,
+    this._minShapeSize = defaultMinShapeSize,
+    this._rotationKnobDistance = defaultRotationKnobDistance,
+    this._rotationSnap = defaultRotationSnap,
     this._size,
     this._textDirection,
     super.alignment,
@@ -33,7 +36,7 @@ class DrawEditor extends InteractiveViewer {
     super.clipBehavior,
     super.interactionEndFrictionCoefficient,
     super.key,
-    super.maxScale = 5,
+    super.maxScale = defaultMaxScale,
     super.minScale = 1 / 2,
     super.onInteractionEnd,
     super.onInteractionStart,
@@ -42,28 +45,57 @@ class DrawEditor extends InteractiveViewer {
     super.scaleEnabled,
     super.scaleFactor,
     super.trackpadScrollCausesScale,
-  }) : assert(
-         _handleRadius > _minShapeSize,
-         'handleRadius ($_handleRadius) must be greater than minShapeSize '
-         '($_minShapeSize), otherwise the grab handles would be smaller than '
-         'the smallest drawable shape and could collapse to zero size.',
-       ),
+  }) : assert(_handleRadius > 0, 'handleRadius ($_handleRadius) must be positive.'),
+       assert(_minShapeSize > 0, 'minShapeSize ($_minShapeSize) must be positive.'),
        super(child: const SizedBox.shrink(), constrained: false);
 
-  /// The default radius of the selection/resize handles before scaling, in board pixels.
-  static const defaultHandleRadius = 12.0;
+  /// The on-screen radius of the selection/resize handles, in logical pixels.
+  ///
+  /// `21.0` gives a 42 px diameter — a comfortable touch target. The handles
+  /// keep this size at every zoom level and image size (see [_handleRadius] in
+  /// the state), so they never scale into or out of usability.
+  static const defaultHandleRadius = 21.0;
+
+  /// The default minimum drawable shape size, in board pixels. Independent of
+  /// [defaultHandleRadius]: handles are an on-screen size while this is a
+  /// document-space size, so the two no longer share a scale.
+  static const defaultMinShapeSize = 10.0;
+
+  /// The default on-screen distance (logical pixels) from the shape's top-center
+  /// handle center to the rotation knob center. Must exceed
+  /// `2 × defaultHandleRadius` to avoid the knob and handle overlapping.
+  static const defaultRotationKnobDistance = 56.0;
+
+  /// The default rotation snap increment, in degrees. A rotation that lands
+  /// within a few degrees of a multiple of this value is snapped to it; `0`
+  /// disables snapping.
+  static const defaultRotationSnap = 15;
+
+  /// The default maximum zoom scale for the canvas.
+  static const defaultMaxScale = 12.0;
 
   final DrawEditorBuilder? _builder;
   final DrawController? _controller;
 
-  /// The base radius (in board pixels) of the selection/resize handles before
-  /// image-size scaling. Scaled up for images larger than the 800px reference
-  /// so handles stay proportionally draggable; never scaled below this base.
+  /// Whether elements can be rotated (two-finger gesture + desktop knob).
+  // ignore: prefer-boolean-prefixes, reads naturally as the public `enableRotation` flag.
+  final bool _enableRotation;
+
+  /// The on-screen radius (in logical pixels) of the selection/resize handles.
+  /// Held constant across zoom and image size by dividing out the view scale
+  /// (see the `_handleRadius` getter in the state).
   ///
-  /// Defaults to `12.0`.
+  /// Defaults to [defaultHandleRadius].
   final double _handleRadius;
   final File _image;
   final double _minShapeSize;
+
+  /// On-screen gap (logical pixels) between the top-center handle and the
+  /// rotation knob. Held constant across zoom like [_handleRadius].
+  final double _rotationKnobDistance;
+
+  /// Rotation snap increment in degrees; `0` disables snapping.
+  final int _rotationSnap;
 
   final Size? _size;
 
@@ -91,6 +123,9 @@ class DrawEditor extends InteractiveViewer {
       ..add(StringProperty('_image', _image.path))
       ..add(DoubleProperty('_handleRadius', _handleRadius))
       ..add(DoubleProperty('_minShapeSize', _minShapeSize))
+      ..add(FlagProperty('_enableRotation', ifTrue: 'rotation enabled', value: _enableRotation))
+      ..add(DoubleProperty('_rotationKnobDistance', _rotationKnobDistance))
+      ..add(IntProperty('_rotationSnap', _rotationSnap))
       ..add(EnumProperty<StackFit>('_fit', _fit))
       ..add(EnumProperty<TextDirection?>('_textDirection', _textDirection))
       ..add(DoubleProperty('_size.height', _size?.height))
@@ -101,6 +136,9 @@ class DrawEditor extends InteractiveViewer {
 class _DrawEditorState extends State<DrawEditor> {
   /// Guards against pan re-enabling from float jitter at exactly fit scale.
   static const _panScaleEpsilon = 1e-3;
+
+  /// Max distance (degrees) from a snap multiple within which rotation snaps.
+  static const _rotationSnapThreshold = 3;
   final _transform = TransformationController();
 
   final _isDragging = ValueNotifier<bool>(false);
@@ -126,6 +164,25 @@ class _DrawEditorState extends State<DrawEditor> {
   int? _activePointerId; // The ID of the pointer currently owning the drag/creation interaction.
   Size? _boardSize;
   bool _didApplyInitialFit = false;
+
+  /// Live scene-space positions of every active pointer, keyed by pointer id.
+  /// Insertion order is stable, so "the first two" stay consistent within a
+  /// two-finger gesture.
+  final _pointers = <int, Offset>{};
+
+  /// True while dragging the rotation knob (single-finger rotate).
+  bool _isRotating = false;
+
+  /// True while a two-finger rotate + scale + move of the selected element is
+  /// in progress (so the [InteractiveViewer] zoom is suppressed).
+  bool _isTwoFingerTransform = false;
+
+  // Baseline captured when a two-finger transform starts or re-baselines; the
+  // per-frame transform is computed relative to these.
+  Offset _gestureStartFocal = .zero;
+  double _gestureStartAngle = 0;
+  double _gestureStartDistance = 0;
+  DrawElement? _transformStartElement;
 
   /// The scale applied by [_applyInitialFitIfReady] to fit the image to the
   /// viewport. Pan is only allowed once the user pinches in past this scale,
@@ -154,13 +211,28 @@ class _DrawEditorState extends State<DrawEditor> {
     return scale < 0.01 ? 1.0 : scale;
   }
 
-  double get _handleRadius {
-    final base = widget._handleRadius;
-    final board = _boardSize;
-    if (board == null || board.isEmpty) return base;
-    final maxDim = board.width > board.height ? board.width : board.height;
+  /// The handle radius expressed in board pixels. Because the painter is the
+  /// [InteractiveViewer]'s child, board pixels are multiplied by the view scale
+  /// on screen — so dividing the desired on-screen radius by [_viewScale] keeps
+  /// handles a constant size at any zoom level or image size. Mirrors the
+  /// `tolerance: _closeTolerance / _viewScale` treatment of the polygon close
+  /// zone below.
+  double get _handleRadius => widget._handleRadius / _viewScale;
 
-    return (maxDim / 800.0).clamp(1.0, double.infinity) * base;
+  /// Rotation knob radius in board pixels — same on-screen size as the handles.
+  double get _rotationKnobRadius => widget._handleRadius / _viewScale;
+
+  /// Rotation knob distance in board pixels, held constant on screen.
+  double get _rotationKnobDistance => widget._rotationKnobDistance / _viewScale;
+
+  /// Handle border stroke width in board pixels — `2.0` on-screen at any zoom.
+  double get _handleBorderWidth => 2 / _viewScale;
+
+  /// Whether the currently selected element can be rotated/dragged as a shape.
+  bool get _isSelectionRotatable {
+    final selected = _draw.selectedElement;
+
+    return widget._enableRotation && selected != null && selected is! TextElement;
   }
 
   double get _outlineStrokeWidth {
@@ -216,14 +288,19 @@ class _DrawEditorState extends State<DrawEditor> {
 
   void _handlePointerDown(PointerDownEvent event) {
     _pointerCount += 1; // If a 2nd finger lands, we are likely zooming, so stop locking the board.
-    if (_pointerCount > 1) _dragStartMatrix = null;
+    final point = _transform.toScene(event.localPosition);
+    _trackPointer(event.pointer, point);
+    if (_pointerCount > 1) {
+      _dragStartMatrix = null;
+      _maybeStartTwoFingerTransform(); // Upgrade an in-progress shape drag to rotate+scale+move.
+    }
     if (_activePointerId != null) return;
 
-    final point = _transform.toScene(event.localPosition);
     final pointerId = event.pointer;
 
     if (_didHandlePolygonTool(point, pointerId)) return;
     if (_didHandleCreationTool(point, pointerId)) return;
+    if (_didHandleRotationKnob(point, pointerId)) return;
     if (_didHandleSelectedHandleInteraction(point, pointerId)) return;
     if (_didHandleElementSelection(point, pointerId)) return;
 
@@ -305,7 +382,7 @@ class _DrawEditorState extends State<DrawEditor> {
 
   bool _didHandleElementSelection(Offset point, int pointerId) {
     final allElements = _draw.elements;
-    for (int i = allElements.length - 1; i >= 0; i -= 1) {
+    for (int i = allElements.length - 1; !i.isNegative; i -= 1) {
       final target = allElements.elementAtOrNull(i);
       if (target != null && target.isPointOnShape(point)) {
         if (_pointerCount == 1) _dragStartMatrix = _transform.value;
@@ -320,8 +397,96 @@ class _DrawEditorState extends State<DrawEditor> {
     return false;
   }
 
+  bool _didHandleRotationKnob(Offset point, int pointerId) {
+    if (!_isSelectionRotatable) return false;
+    final selected = _draw.selectedElement;
+    if (selected == null) return false;
+    if (!selected.isPointOnRotationKnob(_rotationKnobDistance, _rotationKnobRadius, point)) {
+      return false;
+    }
+
+    if (_pointerCount == 1) _dragStartMatrix = _transform.value;
+    _activePointerId = pointerId;
+    _isRotating = true;
+    _startDrag();
+
+    return true;
+  }
+
+  /// When a second finger lands during a shape drag, switch from a single-finger
+  /// move/resize to a two-finger rotate + uniform-scale + move anchored to the
+  /// gesture's focal point.
+  void _maybeStartTwoFingerTransform() {
+    if (!_isSelectionRotatable || !_isDragging.value || _pointers.length < 2) return;
+    _isRotating = false;
+    _activeHandle = null;
+    _isTwoFingerTransform = true;
+    _resetTransformBaseline();
+  }
+
+  /// Captures the focal point, angle and distance of the first two pointers plus
+  /// the element snapshot, so per-frame deltas are measured from a stable base.
+  void _resetTransformBaseline() {
+    final points = _pointers.values.toList(growable: false);
+    final first = points.firstOrNull;
+    final second = points.elementAtOrNull(1);
+    if (first == null || second == null) return;
+    _gestureStartFocal = (first + second) / 2;
+    _gestureStartAngle = atan2(second.dy - first.dy, second.dx - first.dx);
+    _gestureStartDistance = (second - first).distance;
+    _transformStartElement = _draw.selectedElement;
+  }
+
+  void _applyTwoFingerTransform() {
+    final index = _draw.selectedIndex;
+    final startElement = _transformStartElement;
+    final points = _pointers.values.toList(growable: false);
+    final first = points.firstOrNull;
+    final second = points.elementAtOrNull(1);
+    if (index == null || startElement == null || first == null || second == null) return;
+
+    final focal = (first + second) / 2;
+    final distance = (second - first).distance;
+    final rotationDelta = atan2(second.dy - first.dy, second.dx - first.dx) - _gestureStartAngle;
+    final scaleFactor = _gestureStartDistance == 0 ? 1.0 : distance / _gestureStartDistance;
+    final translation = focal - _gestureStartFocal;
+
+    final transformed = startElement.transformedBy(
+      (x: _gestureStartFocal.dx, y: _gestureStartFocal.dy),
+      rotationDelta,
+      scaleFactor: scaleFactor,
+      translation: (x: translation.dx, y: translation.dy),
+    );
+    final snapped = _snapDegrees(transformed.rotation);
+    _draw.updateElement(
+      snapped == transformed.rotation ? transformed : transformed.copyWith(rotation: snapped),
+      index,
+    );
+  }
+
   void _handlePointerMove(PointerMoveEvent event) {
+    if (_pointers.containsKey(event.pointer)) {
+      _trackPointer(event.pointer, _transform.toScene(event.localPosition));
+    }
+
+    if (_isTwoFingerTransform) {
+      _applyTwoFingerTransform();
+
+      return;
+    }
+
     if (_activePointerId != null && event.pointer != _activePointerId) return;
+
+    if (_isRotating) {
+      final rotateIndex = _draw.selectedIndex;
+      final rotateTarget = _draw.selectedElement;
+      if (rotateIndex == null || rotateTarget == null) return;
+      final scene = _transform.toScene(event.localPosition);
+      final degrees = _snapDegrees(rotateTarget.angleToPoint((x: scene.dx, y: scene.dy)));
+      _draw.updateElement(rotateTarget.copyWith(rotation: degrees), rotateIndex);
+
+      return;
+    }
 
     final start = _creationStartPoint;
     final pIndex = _resolvePreviewIndex;
@@ -359,7 +524,7 @@ class _DrawEditorState extends State<DrawEditor> {
 
     final updated = handle == null
         ? selected.moved(delta.dx, delta.dy)
-        : selected.resized(dx: delta.dx, dy: delta.dy, handle: handle);
+        : selected.rotatedResized(dx: delta.dx, dy: delta.dy, handle: handle);
 
     _draw.updateElement(updated, index);
   }
@@ -375,8 +540,19 @@ class _DrawEditorState extends State<DrawEditor> {
   }
 
   void _handlePointerUp(PointerUpEvent event) {
+    _untrackPointer(event.pointer);
     _pointerCount = max(0, _pointerCount - 1);
-    if (_pointerCount == 0) _dragStartMatrix = null;
+    if (_pointerCount == 0) {
+      _dragStartMatrix = null;
+      _clearPointers();
+    }
+
+    if (_isTwoFingerTransform && _pointerCount >= 1) {
+      _downgradeToSingleFinger();
+
+      return;
+    }
+
     if (_activePointerId != null && event.pointer != _activePointerId) return;
     if (_draw.activeTool == .polygon) {
       final point = _transform.toScene(event.localPosition);
@@ -416,8 +592,19 @@ class _DrawEditorState extends State<DrawEditor> {
   /// pins a stale element reference. Mid-drag mutations are kept (user already saw them) but no
   /// command is committed, so the partial drag isn't pushed onto the undo stack.
   void _handlePointerCancel(PointerCancelEvent event) {
+    _untrackPointer(event.pointer);
     _pointerCount = max(0, _pointerCount - 1);
-    if (_pointerCount == 0) _dragStartMatrix = null;
+    if (_pointerCount == 0) {
+      _dragStartMatrix = null;
+      _clearPointers();
+    }
+
+    if (_isTwoFingerTransform && _pointerCount >= 1) {
+      _downgradeToSingleFinger();
+
+      return;
+    }
+
     if (_activePointerId != null && event.pointer != _activePointerId) return;
     if (_draw.activeTool == .polygon) {
       _draw.updateCursorPosition(null);
@@ -440,10 +627,51 @@ class _DrawEditorState extends State<DrawEditor> {
     _isDragging.value = true;
   }
 
+  // `_pointers` is a private live buffer; in-place mutation is intentional.
+  void _trackPointer(int pointer, Offset scene) {
+    // ignore: avoid-collection-mutating-methods, intentional live-buffer write.
+    _pointers[pointer] = scene;
+  }
+
+  void _untrackPointer(int pointer) {
+    // ignore: avoid-collection-mutating-methods,avoid-ignoring-return-values, drop the lifted pointer.
+    _pointers.remove(pointer);
+  }
+
+  void _clearPointers() {
+    // ignore: avoid-collection-mutating-methods, reset the live buffer once all fingers are up.
+    _pointers.clear();
+  }
+
+  /// Ends a two-finger transform when a finger lifts, handing control to the
+  /// remaining pointer as a plain single-finger move (the snapshot from drag
+  /// start is preserved for one commit; the next move re-reads the live delta).
+  void _downgradeToSingleFinger() {
+    _isTwoFingerTransform = false;
+    _activeHandle = null;
+    _activePointerId = _pointers.keys.firstOrNull;
+    if (_pointerCount == 1) _dragStartMatrix = _transform.value;
+  }
+
+  /// Snaps [degrees] to the nearest snap-increment multiple when it lands within
+  /// [_rotationSnapThreshold]; otherwise leaves it free. `0` disables snapping.
+  int _snapDegrees(int degrees) {
+    final snap = widget._rotationSnap;
+    if (snap <= 0) return degrees;
+    final nearest = (degrees / snap).round() * snap;
+    if ((degrees - nearest).abs() > _rotationSnapThreshold) return degrees;
+    final normalized = nearest % 360;
+
+    return normalized < 0 ? normalized + 360 : normalized;
+  }
+
   void _resetDragState() {
     _activeHandle = null;
     _dragSnapshot = null;
     _isDragging.value = false;
+    _isRotating = false;
+    _isTwoFingerTransform = false;
+    _transformStartElement = null;
     _dragStartMatrix = null;
     _activePointerId = null;
   }
@@ -518,7 +746,11 @@ class _DrawEditorState extends State<DrawEditor> {
                 onInteractionUpdate: widget.onInteractionUpdate,
                 panAxis: widget.panAxis,
                 panEnabled: !isInteracting && _canPan.value,
-                scaleEnabled: widget.scaleEnabled,
+                // Suppress canvas zoom while dragging a shape so a second finger
+                // rotates/scales the element instead of the board. Flipping with
+                // `isDragging` (a notifier) means scale is already off before the
+                // second finger lands — no gesture-arena race.
+                scaleEnabled: widget.scaleEnabled && !isDragging,
                 scaleFactor: widget.scaleFactor,
                 trackpadScrollCausesScale: widget.trackpadScrollCausesScale,
                 transformationController: _transform,
@@ -544,10 +776,14 @@ class _DrawEditorState extends State<DrawEditor> {
                       backgroundImage: uiImage,
                       creationTemplate: _draw.creationTemplate,
                       cursorPosition: _draw.cursorPosition,
+                      handleBorderWidth: _handleBorderWidth,
                       handleRadius: _handleRadius,
                       outlineStrokeWidth: _outlineStrokeWidth,
                       pendingVertices: _draw.pendingVertices,
+                      rotationKnobDistance: _rotationKnobDistance,
+                      rotationKnobRadius: _rotationKnobRadius,
                       selectedIndex: _draw.selectedIndex,
+                      shouldShowRotationKnob: _isSelectionRotatable,
                       tolerance: _closeTolerance / _viewScale,
                     ),
                     size: info.size,
