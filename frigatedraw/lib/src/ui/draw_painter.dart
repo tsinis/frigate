@@ -1,4 +1,5 @@
-// ignore_for_file: prefer-moving-to-variable, avoid-long-functions, avoid-explicit-type-declaration, use-existing-destructuring, prefer-class-destructuring, avoid-long-files
+// ignore_for_file: avoid-long-files, avoid-long-functions, prefer-class-destructuring, use-existing-destructuring, prefer-moving-to-variable
+
 import 'dart:typed_data' show Float64x2;
 import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
@@ -14,10 +15,14 @@ class DrawPainter extends CustomPainter {
     this.backgroundImage,
     this.creationTemplate,
     this.cursorPosition,
+    this.handleBorderWidth = 2.0,
     this.handleRadius = 12.0,
     this.outlineStrokeWidth = 4.0,
     this.pendingVertices,
+    this.rotationKnobDistance = 32.0,
+    this.rotationKnobRadius = 12.0,
     this.selectedIndex,
+    this.shouldShowRotationKnob = false,
     this.tolerance = 20.0,
   });
 
@@ -26,19 +31,32 @@ class DrawPainter extends CustomPainter {
   final DrawElement? creationTemplate;
   final Offset? cursorPosition;
   final List<DrawElement> elements;
+
+  /// Border stroke width (in board pixels) of the selection handles and knob
+  /// stem. Passed pre-divided by the view scale from `DrawEditor` so the stroke
+  /// stays a constant 2 logical pixels on screen at any zoom level.
+  final double handleBorderWidth;
   final double handleRadius;
   final double outlineStrokeWidth;
   final List<Float64x2>? pendingVertices;
+
+  /// Gap (in board pixels) between the shape's top-center handle and the
+  /// rotation knob drawn above it.
+  final double rotationKnobDistance;
+
+  /// Radius (in board pixels) of the rotation knob.
+  final double rotationKnobRadius;
   final int? selectedIndex;
+
+  /// Whether to draw the rotation knob + stem for the selected element.
+  final bool shouldShowRotationKnob;
   final double tolerance;
 
-  /// Paint instances live at class scope so we don't rebuild them per handle, per frame.
-  /// Colors and stroke are constant, nothing to parameterize.
+  /// Black fill for selection handles.
   static final _handleFillPaint = Paint()..color = const Color(0xFF000000);
-  static final _handleBorderPaint = Paint()
-    ..color = const Color(0xFFFFFFFF)
-    ..style = .stroke
-    ..strokeWidth = 2;
+
+  /// White fill for the rotation knob (inverted vs handles).
+  static final _knobFillPaint = Paint()..color = const Color(0xFFFFFFFF);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -57,19 +75,38 @@ class DrawPainter extends CustomPainter {
     if (selected is! TextElement && selected.width > 0 && selected.height > 0) {
       final stroke = outlineStrokeWidth;
       final bounds = selected.rect.inflate(stroke * 2);
-      canvas
-        ..saveLayer(bounds, Paint()..blendMode = .difference)
-        ..drawRect(
-          selected.rect,
-          Paint()
-            ..color = const Color(0xFFFFFFFF)
-            ..style = .stroke
-            ..strokeWidth = stroke,
-        )
-        ..restore();
+      _withRotation(
+        canvas,
+        selected,
+        // ignore: avoid-returning-cascades, we want to return the canvas for the cascade.
+        () => canvas
+          ..saveLayer(bounds, Paint()..blendMode = .difference)
+          ..drawRect(
+            selected.rect,
+            Paint()
+              ..color = const Color(0xFFFFFFFF)
+              ..style = .stroke
+              ..strokeWidth = stroke,
+          )
+          ..restore(),
+      );
 
+      final handleBorderPaint = Paint()
+        ..color = const Color(0xFFFFFFFF)
+        ..style = .stroke
+        ..strokeWidth = handleBorderWidth;
       for (final handle in HandlePosition.values) {
-        _paintHandle(canvas, selected.handleCenter(handle), handleRadius);
+        _paintHandle(canvas, handleBorderPaint, selected.handleCenter(handle), handleRadius);
+      }
+
+      if (shouldShowRotationKnob) {
+        _paintRotationKnob(
+          canvas,
+          selected,
+          borderWidth: handleBorderWidth,
+          distance: rotationKnobDistance,
+          radius: rotationKnobRadius,
+        );
       }
     }
   }
@@ -304,7 +341,7 @@ class DrawPainter extends CustomPainter {
     final bounds = clipPath.getBounds().intersect(fullRect);
     if (bounds.isEmpty || bounds.width <= 0 || bounds.height <= 0) return;
 
-    final double padding = blurSigma * 3.0;
+    final padding = blurSigma * 3.0;
     final paddedBounds = Rect.fromLTRB(
       (bounds.left - padding).clamp(0.0, canvasSize.width),
       (bounds.top - padding).clamp(0.0, canvasSize.height),
@@ -361,9 +398,9 @@ class DrawPainter extends CustomPainter {
     double outlineStroke,
   ) {
     if (element.vertices.length < 3) return;
-    final path = DrawElementExtension.getPathForPolygon(element);
+    final path = _rotatedPath(element, DrawElementExtension.getPathForPolygon(element));
 
-    final bool shouldShowBlurPreview = element.blur > 0 && element.uiFillColor.a < 1.0;
+    final shouldShowBlurPreview = element.blur > 0 && element.uiFillColor.a < 1.0;
 
     if (shouldShowBlurPreview) {
       if (bgImage == null) {
@@ -379,7 +416,7 @@ class DrawPainter extends CustomPainter {
       }
     }
 
-    final bool shouldDrawHelperOutline =
+    final shouldDrawHelperOutline =
         shouldShowBlurPreview && (element.outlineThickness == 0 || element.uiOutlineColor.a == 0);
 
     if (shouldDrawHelperOutline) {
@@ -438,47 +475,49 @@ class DrawPainter extends CustomPainter {
       MaskRegionElement() || OvalElement() || TextElement() => 0,
     };
     final isRounded = cornerRadius > 0;
-    final bool shouldShowBlurPreview = element.blur > 0 && uiFillColor.a < 1.0;
+    final shouldShowBlurPreview = element.blur > 0 && uiFillColor.a < 1.0;
 
     if (shouldShowBlurPreview) {
       if (bgImage == null) {
         final fillPaint = Paint()
           ..color = const Color(0x44FFFFFF)
           ..isAntiAlias = isRounded;
-        if (isRounded) {
-          canvas.drawRRect(
-            RRect.fromRectAndRadius(
-              rect,
-              .circular(cornerRadius.toDouble().clamp(0.0, rect.shortestSide / 2)),
-            ),
-            fillPaint,
-          );
-        } else {
-          canvas.drawRect(rect, fillPaint);
-        }
+        _withRotation(
+          canvas,
+          element,
+          () => isRounded
+              ? canvas.drawRRect(
+                  RRect.fromRectAndRadius(
+                    rect,
+                    .circular(cornerRadius.toDouble().clamp(0.0, rect.shortestSide / 2)),
+                  ),
+                  fillPaint,
+                )
+              : canvas.drawRect(rect, fillPaint),
+        );
       } else {
-        final path = Path();
+        final basePath = Path();
         if (isRounded) {
-          path.addRRect(
+          basePath.addRRect(
             RRect.fromRectAndRadius(
               rect,
               .circular(cornerRadius.toDouble().clamp(0.0, rect.shortestSide / 2)),
             ),
           );
         } else {
-          path.addRect(rect);
+          basePath.addRect(rect);
         }
         _applyBlur(
           bgImage: bgImage,
           blurSigma: element.blur / 3.0,
           canvas: canvas,
           canvasSize: canvasSize,
-          clipPath: path,
+          clipPath: _rotatedPath(element, basePath),
         );
       }
     }
 
-    final bool shouldDrawHelperOutline =
+    final shouldDrawHelperOutline =
         shouldShowBlurPreview && (outlineThickness == 0 || uiOutlineColor.a == 0);
 
     if (shouldDrawHelperOutline) {
@@ -487,35 +526,37 @@ class DrawPainter extends CustomPainter {
         ..style = .stroke
         ..strokeWidth = 1.5
         ..isAntiAlias = isRounded;
-      final path = Path();
+      final basePath = Path();
       if (isRounded) {
-        path.addRRect(
+        basePath.addRRect(
           RRect.fromRectAndRadius(
             rect,
             .circular(cornerRadius.toDouble().clamp(0.0, rect.shortestSide / 2)),
           ),
         );
       } else {
-        path.addRect(rect);
+        basePath.addRect(rect);
       }
-      _drawDashedPath(canvas, strokePaint, path);
+      _drawDashedPath(canvas, strokePaint, _rotatedPath(element, basePath));
     }
 
     if (uiFillColor.a > 0) {
       final fillPaint = Paint()
         ..color = uiFillColor
         ..isAntiAlias = isRounded;
-      if (isRounded) {
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            rect,
-            .circular(cornerRadius.toDouble().clamp(0.0, rect.shortestSide / 2)),
-          ),
-          fillPaint,
-        );
-      } else {
-        canvas.drawRect(rect, fillPaint);
-      }
+      _withRotation(
+        canvas,
+        element,
+        () => isRounded
+            ? canvas.drawRRect(
+                RRect.fromRectAndRadius(
+                  rect,
+                  .circular(cornerRadius.toDouble().clamp(0.0, rect.shortestSide / 2)),
+                ),
+                fillPaint,
+              )
+            : canvas.drawRect(rect, fillPaint),
+      );
     }
 
     if (outlineThickness > 0 && uiOutlineColor.a > 0) {
@@ -525,37 +566,40 @@ class DrawPainter extends CustomPainter {
         ..style = .stroke
         ..strokeWidth = outlineStroke
         ..isAntiAlias = isRounded;
-
-      canvas.saveLayer(bounds, Paint()..blendMode = .difference);
-      if (isRounded) {
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            rect,
-            .circular(cornerRadius.toDouble().clamp(0.0, rect.shortestSide / 2)),
-          ),
-          diffPaint,
-        );
-      } else {
-        canvas.drawRect(rect, diffPaint);
-      }
-      canvas.restore();
-
       final strokePaint = Paint()
         ..color = uiOutlineColor
         ..style = .stroke
         ..strokeWidth = outlineThickness.toDouble()
         ..isAntiAlias = isRounded;
-      if (isRounded) {
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            rect,
-            .circular(cornerRadius.toDouble().clamp(0.0, rect.shortestSide / 2)),
-          ),
-          strokePaint,
-        );
-      } else {
-        canvas.drawRect(rect, strokePaint);
-      }
+
+      // ignore: prefer-extracting-function-callbacks, it's the only place.
+      _withRotation(canvas, element, () {
+        canvas.saveLayer(bounds, Paint()..blendMode = .difference);
+        if (isRounded) {
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(
+              rect,
+              .circular(cornerRadius.toDouble().clamp(0.0, rect.shortestSide / 2)),
+            ),
+            diffPaint,
+          );
+        } else {
+          canvas.drawRect(rect, diffPaint);
+        }
+        canvas.restore();
+
+        if (isRounded) {
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(
+              rect,
+              .circular(cornerRadius.toDouble().clamp(0.0, rect.shortestSide / 2)),
+            ),
+            strokePaint,
+          );
+        } else {
+          canvas.drawRect(rect, strokePaint);
+        }
+      });
     }
   }
 
@@ -570,11 +614,15 @@ class DrawPainter extends CustomPainter {
         element;
     if (width <= 0 || height <= 0) return;
 
-    final bool shouldShowBlurPreview = element.blur > 0 && uiFillColor.a < 1.0;
+    final shouldShowBlurPreview = element.blur > 0 && uiFillColor.a < 1.0;
 
     if (shouldShowBlurPreview) {
       if (bgImage == null) {
-        canvas.drawOval(rect, Paint()..color = const Color(0x44FFFFFF));
+        _withRotation(
+          canvas,
+          element,
+          () => canvas.drawOval(rect, Paint()..color = const Color(0x44FFFFFF)),
+        );
       } else {
         final path = Path()..addOval(rect);
         _applyBlur(
@@ -582,12 +630,12 @@ class DrawPainter extends CustomPainter {
           blurSigma: element.blur / 3.0,
           canvas: canvas,
           canvasSize: canvasSize,
-          clipPath: path,
+          clipPath: _rotatedPath(element, path),
         );
       }
     }
 
-    final bool shouldDrawHelperOutline =
+    final shouldDrawHelperOutline =
         shouldShowBlurPreview && (outlineThickness == 0 || uiOutlineColor.a == 0);
 
     if (shouldDrawHelperOutline) {
@@ -598,33 +646,38 @@ class DrawPainter extends CustomPainter {
           ..color = const Color(0x88FFFFFF)
           ..style = .stroke
           ..strokeWidth = 1.5,
-        path,
+        _rotatedPath(element, path),
       );
     }
 
     if (uiFillColor.a > 0) {
-      canvas.drawOval(rect, Paint()..color = uiFillColor);
+      _withRotation(canvas, element, () => canvas.drawOval(rect, Paint()..color = uiFillColor));
     }
 
     if (outlineThickness > 0 && uiOutlineColor.a > 0) {
       final bounds = rect.inflate(outlineStroke * 2);
-      canvas
-        ..saveLayer(bounds, Paint()..blendMode = .difference)
-        ..drawOval(
-          rect,
-          Paint()
-            ..color = const Color(0xFFFFFFFF)
-            ..style = .stroke
-            ..strokeWidth = outlineStroke,
-        )
-        ..restore()
-        ..drawOval(
-          rect,
-          Paint()
-            ..color = uiOutlineColor
-            ..style = .stroke
-            ..strokeWidth = outlineThickness.toDouble(),
-        );
+      _withRotation(
+        canvas,
+        element,
+        // ignore: avoid-returning-cascades, it's a cascade for the canvas.
+        () => canvas
+          ..saveLayer(bounds, Paint()..blendMode = .difference)
+          ..drawOval(
+            rect,
+            Paint()
+              ..color = const Color(0xFFFFFFFF)
+              ..style = .stroke
+              ..strokeWidth = outlineStroke,
+          )
+          ..restore()
+          ..drawOval(
+            rect,
+            Paint()
+              ..color = uiOutlineColor
+              ..style = .stroke
+              ..strokeWidth = outlineThickness.toDouble(),
+          ),
+      );
     }
   }
 
@@ -638,8 +691,12 @@ class DrawPainter extends CustomPainter {
     if (!identical(oldDelegate.creationTemplate, creationTemplate)) return true;
     if (oldDelegate.tolerance != tolerance) return true;
     if (oldDelegate.backgroundImage != backgroundImage) return true;
+    if (oldDelegate.handleBorderWidth != handleBorderWidth) return true;
     if (oldDelegate.handleRadius != handleRadius) return true;
     if (oldDelegate.outlineStrokeWidth != outlineStrokeWidth) return true;
+    if (oldDelegate.shouldShowRotationKnob != shouldShowRotationKnob) return true;
+    if (oldDelegate.rotationKnobRadius != rotationKnobRadius) return true;
+    if (oldDelegate.rotationKnobDistance != rotationKnobDistance) return true;
 
     return false;
   }
@@ -661,9 +718,71 @@ class DrawPainter extends CustomPainter {
     return false;
   }
 
-  static void _paintHandle(Canvas canvas, Offset center, double radius) {
+  // ignore: parameters-ordering, canvas must be first by Flutter convention.
+  static void _paintHandle(Canvas canvas, Paint borderPaint, Offset center, double radius) {
     canvas
       ..drawCircle(center, radius, _handleFillPaint)
-      ..drawCircle(center, radius, _handleBorderPaint);
+      ..drawCircle(center, radius, borderPaint);
+  }
+
+  /// Runs [render] with the canvas rotated about [element]'s center, matching the
+  /// backend's pivot. A no-op fast path when the element is un-rotated keeps the
+  /// un-rotated render byte-identical (and the primitive-type tests green).
+  static void _withRotation(Canvas canvas, DrawElement element, VoidCallback render) {
+    if (element.rotation == 0) return render();
+
+    canvas
+      ..save()
+      ..translate(element.centerX, element.centerY)
+      ..rotate(element.rotationRadians)
+      ..translate(-element.centerX, -element.centerY);
+    render();
+    canvas.restore();
+  }
+
+  /// Returns [path] rotated about [element]'s center. Used for the blur clip so
+  /// the background is sampled axis-aligned (rotating the canvas would spin the
+  /// sampled pixels, not just the clip region).
+  static Path _rotatedPath(DrawElement element, Path path) {
+    if (element.rotation == 0) return path;
+    final matrix = Matrix4.identity()
+      ..translateByDouble(element.centerX, element.centerY, 0, 1)
+      ..rotateZ(element.rotationRadians)
+      ..translateByDouble(-element.centerX, -element.centerY, 0, 1);
+
+    return path.transform(matrix.storage);
+  }
+
+  /// Draws the rotation knob (and the stem connecting it to the top-center
+  /// handle), following the element's rotation. [radius] and [distance] are in
+  /// board pixels. The knob is inverted vs the resize handles: white fill with
+  /// a black border so it is visually distinct.
+  static void _paintRotationKnob(
+    Canvas canvas,
+    DrawElement element, {
+    required double borderWidth,
+    required double distance,
+    required double radius,
+  }) {
+    final stem = element.handleCenter(.topCenter);
+    final knob = element.rotationKnobOffset(distance);
+    canvas
+      ..drawLine(
+        stem,
+        knob,
+        Paint()
+          ..color = const Color(0xFFFFFFFF)
+          ..style = .stroke
+          ..strokeWidth = borderWidth,
+      )
+      ..drawCircle(knob, radius, _knobFillPaint)
+      ..drawCircle(
+        knob,
+        radius,
+        Paint()
+          ..color = const Color(0xFF000000)
+          ..style = .stroke
+          ..strokeWidth = borderWidth,
+      );
   }
 }

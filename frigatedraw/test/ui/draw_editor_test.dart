@@ -145,37 +145,7 @@ void main() => group(DrawEditor, () {
     );
   });
 
-  testWidgets('scales handle radius proportionally for large images', (tester) async {
-    final controller = DrawController();
-    // 3200x2400 image: max dimension = 3200, scale = 3200/800 = 4 -> handleRadius = 48.
-    final restore = FfiImageFile.setInfoBuilder(
-      (_) => Future.value(const ImageInformation(height: 2400, width: 3200)),
-    );
-    addTearDown(restore);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: SizedBox(height: 600, width: 800, child: DrawEditor(file, controller: controller)),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final painter = tester
-        .widgetList<CustomPaint>(find.byType(CustomPaint))
-        .map((customPaint) => customPaint.foregroundPainter)
-        .whereType<DrawPainter>()
-        .firstOrNull;
-
-    expect(
-      painter?.handleRadius,
-      closeTo(48.0, 0.001),
-      reason: 'handle radius should scale 4x for a 3200-wide image',
-    );
-  });
-
-  testWidgets('handle radius stays at 12 for 800x600 reference image', (tester) async {
+  testWidgets('keeps handle radius constant on screen across zoom levels', (tester) async {
     final controller = DrawController();
     final restore = FfiImageFile.setInfoBuilder(
       (_) => Future.value(const ImageInformation(height: 600, width: 800)),
@@ -191,24 +161,35 @@ void main() => group(DrawEditor, () {
     );
     await tester.pumpAndSettle();
 
-    final painter = tester
+    final transform = tester
+        .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+        .transformationController;
+
+    // ignore: avoid-local-functions, just a test.
+    DrawPainter? painter() => tester
         .widgetList<CustomPaint>(find.byType(CustomPaint))
         .map((customPaint) => customPaint.foregroundPainter)
         .whereType<DrawPainter>()
         .firstOrNull;
+    // ignore: avoid-local-functions, just a test.
+    double onScreenRadius() =>
+        (painter()?.handleRadius ?? 0) * (transform?.value.storage.firstOrNull ?? 1.0);
 
-    expect(
-      painter?.handleRadius,
-      closeTo(12.0, 0.001),
-      reason: 'handle radius must not shrink below reference at 800x600',
-    );
+    expect(onScreenRadius(), closeTo(21.0, 0.001), reason: 'default 42px-diameter handle at fit');
+
+    transform?.value = Matrix4.diagonal3Values(3, 3, 1);
+    await tester.pump();
+    expect(onScreenRadius(), closeTo(21.0, 0.001), reason: 'stays 21px when zoomed in 3x');
+
+    transform?.value = Matrix4.diagonal3Values(0.5, 0.5, 1);
+    await tester.pump();
+    expect(onScreenRadius(), closeTo(21.0, 0.001), reason: 'stays 21px when zoomed out');
   });
 
-  testWidgets('handle radius does not shrink below 12 for small images', (tester) async {
+  testWidgets('keeps handle radius independent of image size', (tester) async {
     final controller = DrawController();
-    // 320x240 is smaller than the 800x600 base — should clamp to 12.
     final restore = FfiImageFile.setInfoBuilder(
-      (_) => Future.value(const ImageInformation(height: 240, width: 320)),
+      (_) => Future.value(const ImageInformation(height: 2400, width: 3200)),
     );
     addTearDown(restore);
 
@@ -221,6 +202,13 @@ void main() => group(DrawEditor, () {
     );
     await tester.pumpAndSettle();
 
+    tester
+            .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+            .transformationController
+            ?.value =
+        Matrix4.identity();
+    await tester.pump();
+
     final painter = tester
         .widgetList<CustomPaint>(find.byType(CustomPaint))
         .map((customPaint) => customPaint.foregroundPainter)
@@ -229,9 +217,50 @@ void main() => group(DrawEditor, () {
 
     expect(
       painter?.handleRadius,
-      closeTo(12.0, 0.001),
-      reason: 'handle radius must clamp to 12 for images smaller than the 800px reference',
+      closeTo(21.0, 0.001),
+      reason: 'at scale 1 the board-space radius equals the on-screen base for any image size',
     );
+  });
+
+  testWidgets('keeps handle border width constant on screen across zoom levels', (tester) async {
+    final controller = DrawController();
+    final restore = FfiImageFile.setInfoBuilder(
+      (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+    );
+    addTearDown(restore);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(height: 600, width: 800, child: DrawEditor(file, controller: controller)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final transform = tester
+        .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+        .transformationController;
+
+    // ignore: avoid-local-functions, just a test.
+    DrawPainter? painter() => tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((customPaint) => customPaint.foregroundPainter)
+        .whereType<DrawPainter>()
+        .firstOrNull;
+    // ignore: avoid-local-functions, just a test.
+    double onScreenBorderWidth() =>
+        (painter()?.handleBorderWidth ?? 0) * (transform?.value.storage.firstOrNull ?? 1.0);
+
+    expect(onScreenBorderWidth(), closeTo(2.0, 0.001), reason: 'default 2px border at fit');
+
+    transform?.value = Matrix4.diagonal3Values(3, 3, 1);
+    await tester.pump();
+    expect(onScreenBorderWidth(), closeTo(2.0, 0.001), reason: 'stays 2px when zoomed in 3x');
+
+    transform?.value = Matrix4.diagonal3Values(0.5, 0.5, 1);
+    await tester.pump();
+    expect(onScreenBorderWidth(), closeTo(2.0, 0.001), reason: 'stays 2px when zoomed out');
   });
 
   testWidgets('scales outline stroke at half handle rate for large images', (tester) async {
@@ -570,6 +599,50 @@ void main() => group(DrawEditor, () {
     await tester.pump();
     expect(controller.elements.firstOrNull?.x, closeTo(70.0, 0.1));
     expect(controller.elements.firstOrNull?.width, closeTo(140.0, 0.1));
+  });
+
+  testWidgets('resize honors the configured minShapeSize, not the extension default', (
+    tester,
+  ) async {
+    final controller = DrawController();
+    const rect = RectElement(height: 100, width: 100, x: 100, y: 100);
+    controller
+      ..addElement(rect)
+      ..selectedIndex = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            width: 800,
+            child: DrawEditor(
+              file,
+              controller: controller,
+              minShapeSize: 50,
+              size: const Size(800, 600),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final topLeft = tester.getTopLeft(find.byType(InteractiveViewer));
+    // Drag the bottom-right handle (200, 200) far inward; width would collapse to
+    // 20 with the extension's default clamp of 10, but minShapeSize is 50.
+    final gesture = await tester.startGesture(topLeft + const Offset(200, 200));
+    await tester.pump();
+    await gesture.moveBy(const Offset(-80, -80));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+
+    expect(
+      (controller.elements.firstOrNull?.width, controller.elements.firstOrNull?.height),
+      equals((50.0, 50.0)),
+      reason: 'resize must clamp to the configured minShapeSize of 50',
+    );
   });
 
   testWidgets('cancels drag on pointer cancel', (tester) async {
@@ -1099,7 +1172,7 @@ void main() => group(DrawEditor, () {
         .whereType<DrawPainter>()
         .firstOrNull;
 
-    testWidgets('defaults to 12 at the 800x600 reference image', (tester) async {
+    testWidgets('defaults to 21 at fit scale', (tester) async {
       final controller = DrawController();
       final restore = FfiImageFile.setInfoBuilder(
         (_) => Future.value(const ImageInformation(height: 600, width: 800)),
@@ -1121,12 +1194,12 @@ void main() => group(DrawEditor, () {
 
       expect(
         painterOf(tester)?.handleRadius,
-        closeTo(12.0, 0.001),
-        reason: 'default base must remain 12 to preserve existing behavior',
+        closeTo(21.0, 0.001),
+        reason: 'default base is a 42px-diameter on-screen handle (radius 21)',
       );
     });
 
-    testWidgets('uses the custom base at the reference image', (tester) async {
+    testWidgets('uses the custom base at fit scale', (tester) async {
       final controller = DrawController();
       final restore = FfiImageFile.setInfoBuilder(
         (_) => Future.value(const ImageInformation(height: 600, width: 800)),
@@ -1149,86 +1222,27 @@ void main() => group(DrawEditor, () {
       expect(
         painterOf(tester)?.handleRadius,
         closeTo(20.0, 0.001),
-        reason: 'custom handleRadius must be used as the base at the 800px reference',
+        reason: 'custom handleRadius is the on-screen base, used directly at fit scale 1',
       );
     });
 
-    testWidgets('custom base still scales up for large images', (tester) async {
-      final controller = DrawController();
-      // 3200x2400: scale factor = 3200/800 = 4 -> 4 * 20 = 80.
-      final restore = FfiImageFile.setInfoBuilder(
-        (_) => Future.value(const ImageInformation(height: 2400, width: 3200)),
-      );
-      addTearDown(restore);
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: SizedBox(
-              height: 600,
-              width: 800,
-              child: DrawEditor(file, controller: controller, handleRadius: 20),
-            ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
+    test('asserts handleRadius and minShapeSize are positive', () {
       expect(
-        painterOf(tester)?.handleRadius,
-        closeTo(80.0, 0.001),
-        reason: 'scaling must still apply on top of the custom base (4x * 20)',
+        () => DrawEditor(file, handleRadius: 0),
+        throwsAssertionError,
+        reason: 'a non-positive handleRadius must fail fast',
       );
-    });
-
-    testWidgets('custom base does not shrink for images smaller than reference', (tester) async {
-      final controller = DrawController();
-      final restore = FfiImageFile.setInfoBuilder(
-        (_) => Future.value(const ImageInformation(height: 240, width: 320)),
-      );
-      addTearDown(restore);
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: SizedBox(
-              height: 600,
-              width: 800,
-              child: DrawEditor(file, controller: controller, handleRadius: 20),
-            ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
       expect(
-        painterOf(tester)?.handleRadius,
-        closeTo(20.0, 0.001),
-        reason: 'clamp must keep the custom base intact for small images',
+        () => DrawEditor(file, minShapeSize: 0),
+        throwsAssertionError,
+        reason: 'a non-positive minShapeSize must fail fast',
       );
-    });
-
-    test('asserts handleRadius is greater than minShapeSize', () {
       expect(
         () => DrawEditor(file, handleRadius: 5, minShapeSize: 8),
-        throwsAssertionError,
-        reason: 'handleRadius below minShapeSize must fail fast',
-      );
-      expect(
-        () => DrawEditor(file, handleRadius: 8, minShapeSize: 8),
-        throwsAssertionError,
-        reason: 'handleRadius equal to minShapeSize must also fail (strictly greater)',
-      );
-      expect(
-        () => DrawEditor(file, handleRadius: 9, minShapeSize: 8),
         returnsNormally,
-        reason: 'handleRadius greater than minShapeSize must construct fine',
+        reason: 'handleRadius and minShapeSize are independent coordinate spaces now',
       );
-      expect(
-        () => DrawEditor(file),
-        returnsNormally,
-        reason: 'defaults (handleRadius 12 > minShapeSize 10) must satisfy the assert',
-      );
+      expect(() => DrawEditor(file), returnsNormally, reason: 'defaults must satisfy the asserts');
     });
 
     testWidgets('responds to handleRadius change on rebuild', (tester) async {
@@ -1626,6 +1640,131 @@ void main() => group(DrawEditor, () {
 
       await gesture.up();
       await tester.pump();
+    });
+  });
+
+  group('Rotation interaction', () {
+    // Image == viewport == 800x600 -> fit scale 1, identity transform, so scene
+    // coordinates equal `topLeft + offset` in screen space.
+    // ignore: avoid-local-functions, just a test.
+    Future<(Offset, DrawController)> pumpSelectedRect(
+      WidgetTester tester, {
+      bool canRotate = true,
+      int rotationSnap = 15,
+    }) async {
+      final controller = DrawController()
+        ..addElement(const RectElement(height: 100, width: 100, x: 100, y: 100))
+        ..selectedIndex = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 600,
+              width: 800,
+              child: DrawEditor(
+                file,
+                controller: controller,
+                enableRotation: canRotate,
+                rotationSnap: rotationSnap,
+                size: const Size(800, 600),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      return (tester.getTopLeft(find.byType(InteractiveViewer)), controller);
+    }
+
+    // ignore: avoid-local-functions, just a test.
+    DrawPainter? knobPainter(WidgetTester tester) => tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((customPaint) => customPaint.foregroundPainter)
+        .whereType<DrawPainter>()
+        .firstOrNull;
+
+    testWidgets('rotates via the knob and snaps to the nearest increment', (tester) async {
+      final (topLeft, controller) = await pumpSelectedRect(tester);
+
+      // Knob sits 56px above the top-center handle (150, 100), i.e. at (150, 44).
+      final gesture = await tester.startGesture(topLeft + const Offset(150, 44));
+      await tester.pump();
+      // Drag to (260, 48): angle from center (150,150) is about 47 deg, snaps to 45.
+      await gesture.moveBy(const Offset(110, 4));
+      await tester.pump();
+
+      expect(controller.elements.firstOrNull?.rotation, 45);
+
+      await gesture.up();
+      await tester.pump();
+    });
+
+    testWidgets('leaves rotation free when snapping is disabled', (tester) async {
+      final (topLeft, controller) = await pumpSelectedRect(tester, rotationSnap: 0);
+
+      final gesture = await tester.startGesture(topLeft + const Offset(150, 44));
+      await tester.pump();
+      await gesture.moveBy(const Offset(110, 4));
+      await tester.pump();
+
+      expect(controller.elements.firstOrNull?.rotation, 47, reason: 'no snap keeps the raw angle');
+
+      await gesture.up();
+      await tester.pump();
+    });
+
+    testWidgets('two fingers rotate the selected shape and commit one command', (tester) async {
+      final (topLeft, controller) = await pumpSelectedRect(tester);
+
+      // First finger grabs the shape center, starting a move drag.
+      final first = await tester.startGesture(topLeft + const Offset(150, 150));
+      await tester.pump();
+      // Second finger lands to the right, upgrading to a two-finger transform.
+      final second = await tester.startGesture(topLeft + const Offset(250, 150));
+      await tester.pump();
+      // Turn the finger line from horizontal to vertical: a quarter turn, scale 1.
+      await second.moveBy(const Offset(-100, 100));
+      await tester.pump();
+
+      final rotated = controller.elements.firstOrNull;
+      expect(rotated?.rotation, 90, reason: 'finger line turned a quarter turn clockwise');
+      expect(rotated?.width, closeTo(100, 0.5), reason: 'equal finger distance means no scaling');
+      expect(rotated?.x, closeTo(100, 0.5), reason: 'centered transform keeps the box in place');
+
+      await second.up();
+      await first.up();
+      await tester.pump();
+
+      expect(controller.commandStack.canUndo, isTrue, reason: 'one undoable command recorded');
+      controller.undo();
+      expect(controller.elements.firstOrNull?.rotation, 0, reason: 'undo restores the original');
+    });
+
+    testWidgets('does not rotate with two fingers when rotation is disabled', (tester) async {
+      final (topLeft, controller) = await pumpSelectedRect(tester, canRotate: false);
+
+      final first = await tester.startGesture(topLeft + const Offset(150, 150));
+      await tester.pump();
+      final second = await tester.startGesture(topLeft + const Offset(250, 150));
+      await tester.pump();
+      await second.moveBy(const Offset(-100, 100));
+      await tester.pump();
+
+      expect(controller.elements.firstOrNull?.rotation, 0, reason: 'rotation gesture is gated off');
+
+      await second.up();
+      await first.up();
+      await tester.pump();
+    });
+
+    testWidgets('shows the rotation knob only when rotation is enabled', (tester) async {
+      await pumpSelectedRect(tester);
+      expect(knobPainter(tester)?.shouldShowRotationKnob, isTrue);
+
+      await pumpSelectedRect(tester, canRotate: false);
+      expect(knobPainter(tester)?.shouldShowRotationKnob, isFalse);
     });
   });
 });

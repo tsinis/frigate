@@ -61,84 +61,27 @@ extension DrawElementExtension on DrawElement {
     MaskRegionElement() => .rectangle,
   };
 
+  /// Rotation-aware screen-space center of [handle]. Delegates the geometry to
+  /// `frigatebird`'s [DrawElementRotationExtension.handleCenterFor] and wraps
+  /// the result into an [Offset].
   Offset handleCenter(HandlePosition handle) {
-    final Rect(
-      :bottomCenter,
-      :bottomLeft,
-      :bottomRight,
-      :centerLeft,
-      :centerRight,
-      :topCenter,
-      :topLeft,
-      :topRight,
-    ) = rect;
+    final center = handleCenterFor(handle);
 
-    return switch (handle) {
-      .topLeft => topLeft,
-      .topCenter => topCenter,
-      .topRight => topRight,
-      .centerLeft => centerLeft,
-      .centerRight => centerRight,
-      .bottomLeft => bottomLeft,
-      .bottomCenter => bottomCenter,
-      .bottomRight => bottomRight,
-    };
+    return Offset(center.x, center.y);
   }
 
-  HandlePosition? hitTestHandle(Offset point, [double customHandleRadius = 12]) {
-    if (width <= 0 || height <= 0) return null;
+  /// Screen-space center of the rotation knob, [knobDistance] above the shape.
+  Offset rotationKnobOffset(double knobDistance) {
+    final knob = rotationKnobCenter(knobDistance);
 
-    final self = this;
-    switch (self) {
-      case TextElement():
-        return null;
-
-      case RectElement():
-      case OvalElement():
-      case PolygonElement():
-      case MaskRegionElement():
-        for (final handle in HandlePosition.values) {
-          final center = handleCenter(handle);
-          if ((point - center).distance <= customHandleRadius) return handle;
-        }
-
-        return null;
-    }
+    return Offset(knob.x, knob.y);
   }
 
-  bool isPointOnShape(Offset point) {
-    if (width <= 0 || height <= 0) return false;
+  HandlePosition? hitTestHandle(Offset point, [double customHandleRadius = 12]) =>
+      handleHitTest((x: point.dx, y: point.dy), customHandleRadius);
 
-    final half = outlineThickness.toDouble() / 2 + _hitSlop;
-    final outer = rect.inflate(half);
+  bool isPointOnRotationKnob(double knobDistance, double knobRadius, Offset point) =>
+      isPointOnKnob(knobDistance, knobRadius, (x: point.dx, y: point.dy));
 
-    if (!outer.contains(point)) return false;
-
-    final self = this;
-
-    return switch (self) {
-      OvalElement() => _isPointInEllipse(outer, point),
-      PolygonElement() => _isPointInPolygon(point, self),
-      RectElement() || TextElement() || MaskRegionElement() => true,
-    };
-  }
-
-  bool _isPointInPolygon(Offset point, PolygonElement poly) {
-    if (poly.vertices.length < 3) return false;
-
-    final path = getPathForPolygon(poly);
-
-    return path.contains(point);
-  }
-
-  bool _isPointInEllipse(Rect outerRect, Offset point) {
-    final axisA = outerRect.width / 2;
-    final axisB = outerRect.height / 2;
-    if (axisA <= 0 || axisB <= 0) return false;
-
-    final diffX = point.dx - outerRect.center.dx;
-    final diffY = point.dy - outerRect.center.dy;
-
-    return (diffX * diffX) / (axisA * axisA) + (diffY * diffY) / (axisB * axisB) <= 1.0;
-  }
+  bool isPointOnShape(Offset point) => isPointInside((x: point.dx, y: point.dy), slop: _hitSlop);
 }
