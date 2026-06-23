@@ -66,7 +66,7 @@ void main() {
       );
     });
 
-    test('fromCode round-trips all known wire codes (0..8, excludes unknown)', () {
+    test('fromCode round-trips all known wire codes (0..9, excludes unknown)', () {
       for (final code in FfiErrorCode.values) {
         if (code == .unknown) continue; // No wire code for unknown.
         expect(

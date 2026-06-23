@@ -122,7 +122,8 @@ void main() {
 
   group('ImageInfoException', () {
     test('toString contains code and message', () {
-      const ex = ImageInfoException(codeWire: 9, message: 'some error');
+      // Wire code 10 is 'unknown' (out of the 0–9 known range); wire code 9 is 'truncated'.
+      const ex = ImageInfoException(codeWire: 10, message: 'some error');
       expect(ex.toString(), contains('unknown'));
       expect(ex.toString(), contains('some error'));
     });

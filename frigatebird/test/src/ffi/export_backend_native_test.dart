@@ -38,7 +38,7 @@ void main() => group(ExportBackendNative, () {
           isA<StateError>().having(
             (e) => e.message,
             'message',
-            contains('Failed to read/decode background image'),
+            contains('Failed to read background image'),
           ),
         ),
       );

@@ -27,6 +27,11 @@ enum FfiErrorCode {
   render,
   utf8,
 
+  /// Input file was read but is incomplete/truncated (e.g. a JPEG missing its trailing EOI
+  /// marker). Distinct from [decode] so the caller can treat it as transient — a torn copy or an
+  /// interrupted write — and retry, rather than as permanently corrupt input.
+  truncated,
+
   /// A wire code outside the known range — typically a version skew where a newer Rust binary
   /// emits a discriminant this Dart build doesn't recognize. Kept separate from [panic] so
   /// telemetry can distinguish a real Rust panic from a version-skew mismatch.
@@ -37,8 +42,8 @@ enum FfiErrorCode {
   /// Returns [unknown] for any code outside the known range — a newer Rust binary returning an
   /// unrecognized discriminant surfaces as [unknown] rather than being misreported as [panic].
   static FfiErrorCode fromCode(int code) {
-    // `unknown` is at index 9 and is NOT a wire code emitted by Rust; codes 0–8 map 1:1.
-    const wireCount = 9;
+    // `unknown` is at index 10 and is NOT a wire code emitted by Rust; codes 0–9 map 1:1.
+    const wireCount = 10;
 
     return !code.isNegative && code < wireCount ? values[code] : unknown;
   }
@@ -54,6 +59,7 @@ enum FfiErrorCode {
     font => 'font parse failed',
     render => 'render error',
     utf8 => 'invalid UTF-8',
+    truncated => 'input image truncated/incomplete',
     unknown => 'unrecognized error code',
   };
 }

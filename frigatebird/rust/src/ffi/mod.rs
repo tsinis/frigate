@@ -4,7 +4,11 @@ use safer_ffi::prelude::*;
 ///
 /// The numeric values **are part of the wire contract**: they are encoded in every
 /// `FfiError.code` byte that crosses the FFI boundary. The Dart counterpart (`FfiErrorCode`)
-/// must list variants in the same order. `u8` is sufficient — only 9 discriminants (0–8).
+/// must list variants in the same order. `u8` is sufficient — 11 discriminants (0–10).
+///
+/// NOTE on ordering: new real codes are inserted *before* `Unknown`, and `Unknown` is bumped to the
+/// next value. Existing codes (0–8) never change, so an older native binary's wire bytes are never
+/// re-interpreted by a newer Dart build.
 #[derive_ReprC]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,7 +22,11 @@ pub enum FfiErrorCode {
     Font = 6,
     Render = 7,
     Utf8 = 8,
-    Unknown = 9,
+    /// Input file was read but is incomplete/truncated (e.g. a JPEG missing its trailing EOI
+    /// marker). Distinct from `Decode` so a caller can treat it as transient — a torn copy or an
+    /// interrupted write — and retry, rather than as permanently corrupt input.
+    Truncated = 9,
+    Unknown = 10,
 }
 
 /// A multi-buffer arena for passing variable-length data across FFI.

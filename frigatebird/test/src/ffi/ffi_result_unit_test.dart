@@ -77,9 +77,14 @@ void main() {
       expect(FfiErrorCode.utf8.index, 8);
     });
 
-    test('unknown has index 9', () {
-      expect(FfiErrorCode.unknown.index, 9);
-    });
+    test(
+      'unknown has index 10',
+      () => expect(
+        FfiErrorCode.unknown.index,
+        10,
+        reason: 'truncated was inserted at index 9; unknown shifted to 10.',
+      ),
+    );
 
     test('fromCode maps valid indices', () {
       expect(FfiErrorCode.fromCode(0), FfiErrorCode.success);
