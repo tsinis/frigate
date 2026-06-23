@@ -98,7 +98,8 @@ void main() {
       // to a grey-filled buffer instead of erroring. This test ensures the package fails loud.
       final srcBytes = File(imagePath).readAsBytesSync();
       final truncated = srcBytes.sublist(0, srcBytes.length * 6 ~/ 10);
-      final tmpPath = '${Directory.systemTemp.path}/frigate_test_truncated.jpg';
+      final tmpPath = _ensureTempFileAbsent('frigate_test_truncated.jpg');
+      final outPath = _ensureTempFileAbsent('frigate_test_truncated_out.jpg');
       File(tmpPath).writeAsBytesSync(truncated);
 
       try {
@@ -106,12 +107,16 @@ void main() {
           RenderImage.run(
             backgroundPath: tmpPath,
             elements: const [RectElement(height: 10, width: 10, x: 0, y: 0)],
-            outputPath: '${Directory.systemTemp.path}/frigate_test_truncated_out.jpg',
+            outputPath: outPath,
           ),
           throwsA(isA<RenderException>().having((e) => e.code, 'code', FfiErrorCode.truncated)),
         );
       } finally {
-        File(tmpPath).deleteSync();
+        if (File(tmpPath).existsSync()) File(tmpPath).deleteSync();
+        if (File(outPath).existsSync()) File(outPath).deleteSync();
+        // Post-condition: neither temp file must linger after this test.
+        expect(File(tmpPath).existsSync(), isFalse, reason: 'input temp file must be cleaned up');
+        expect(File(outPath).existsSync(), isFalse, reason: 'output temp file must be cleaned up');
       }
     });
 

@@ -264,6 +264,10 @@ fn test_ffi_to_jpg_truncated_input_returns_truncated_code() {
         "ffi_to_jpg Truncated message must explain the cause, got: {msg_str:?}"
     );
     std::fs::remove_file(&path).ok();
+    std::fs::remove_file(&out).ok();
+    // Post-condition: neither temp file must linger after this test.
+    assert!(!path.exists(), "input temp file must be cleaned up");
+    assert!(!out.exists(), "output temp file must be cleaned up");
 }
 
 #[test]
