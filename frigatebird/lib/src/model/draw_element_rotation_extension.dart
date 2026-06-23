@@ -106,7 +106,7 @@ extension DrawElementRotationExtension on DrawElement {
 
     final self = this;
     final isInShape = switch (self) {
-      OvalElement() => _isInEllipse(posX, posY),
+      OvalElement() => _isInEllipse(posX, posY, slop),
       PolygonElement() => _RotationMath.isInPolygon(posX, posY, self.vertices),
       RectElement() || TextElement() || MaskRegionElement() => true,
     };
@@ -121,16 +121,18 @@ extension DrawElementRotationExtension on DrawElement {
   DrawElement transformedBy(
     DrawPoint pivot,
     double rotationDeltaRad, {
+    double minSize = 10.0,
     double scaleFactor = 1,
     DrawPoint translation = (x: 0, y: 0),
   }) {
+    final clampedScale = _clampScaleToMinSize(minSize, scaleFactor);
     final cosD = cos(rotationDeltaRad);
     final sinD = sin(rotationDeltaRad);
     final dx = centerX - pivot.x;
     final dy = centerY - pivot.y;
     final newCenter = (
-      x: pivot.x + (dx * cosD - dy * sinD) * scaleFactor + translation.x,
-      y: pivot.y + (dx * sinD + dy * cosD) * scaleFactor + translation.y,
+      x: pivot.x + (dx * cosD - dy * sinD) * clampedScale + translation.x,
+      y: pivot.y + (dx * sinD + dy * cosD) * clampedScale + translation.y,
     );
     final newRotation = _RotationMath.normalizeDegrees(
       rotation + (rotationDeltaRad * 180 / pi).round(),
@@ -139,7 +141,7 @@ extension DrawElementRotationExtension on DrawElement {
     final self = this;
     if (self is PolygonElement) {
       final scaled = _RotationMath.scaleVertices(
-        scaleFactor,
+        clampedScale,
         self.vertices,
         newCenter: newCenter,
         oldCenter: (x: centerX, y: centerY),
@@ -148,8 +150,8 @@ extension DrawElementRotationExtension on DrawElement {
       return self.copyWith(rotation: newRotation, vertices: scaled);
     }
 
-    final newWidth = width * scaleFactor;
-    final newHeight = height * scaleFactor;
+    final newWidth = width * clampedScale;
+    final newHeight = height * clampedScale;
 
     return copyWith(
       height: newHeight,
@@ -213,9 +215,20 @@ extension DrawElementRotationExtension on DrawElement {
     .bottomRight => (x: x + width, y: y + height),
   };
 
-  bool _isInEllipse(double posX, double posY) {
-    final axisA = width / 2 + outlineThickness / 2;
-    final axisB = height / 2 + outlineThickness / 2;
+  /// Raises [scaleFactor] to the smallest value that keeps both the width and
+  /// the height at or above [minSize], so a two-finger pinch can't collapse the
+  /// shape. Zero-size dimensions impose no lower bound.
+  double _clampScaleToMinSize(double minSize, double scaleFactor) {
+    final widthLimit = width > 0 ? minSize / width : 0.0;
+    final heightLimit = height > 0 ? minSize / height : 0.0;
+    final limit = widthLimit > heightLimit ? widthLimit : heightLimit;
+
+    return scaleFactor > limit ? scaleFactor : limit;
+  }
+
+  bool _isInEllipse(double posX, double posY, double slop) {
+    final axisA = width / 2 + outlineThickness / 2 + slop;
+    final axisB = height / 2 + outlineThickness / 2 + slop;
     if (axisA <= 0 || axisB <= 0) return false;
     final diffX = posX - centerX;
     final diffY = posY - centerY;

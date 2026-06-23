@@ -601,6 +601,50 @@ void main() => group(DrawEditor, () {
     expect(controller.elements.firstOrNull?.width, closeTo(140.0, 0.1));
   });
 
+  testWidgets('resize honors the configured minShapeSize, not the extension default', (
+    tester,
+  ) async {
+    final controller = DrawController();
+    const rect = RectElement(height: 100, width: 100, x: 100, y: 100);
+    controller
+      ..addElement(rect)
+      ..selectedIndex = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            width: 800,
+            child: DrawEditor(
+              file,
+              controller: controller,
+              minShapeSize: 50,
+              size: const Size(800, 600),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final topLeft = tester.getTopLeft(find.byType(InteractiveViewer));
+    // Drag the bottom-right handle (200, 200) far inward; width would collapse to
+    // 20 with the extension's default clamp of 10, but minShapeSize is 50.
+    final gesture = await tester.startGesture(topLeft + const Offset(200, 200));
+    await tester.pump();
+    await gesture.moveBy(const Offset(-80, -80));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+
+    expect(
+      (controller.elements.firstOrNull?.width, controller.elements.firstOrNull?.height),
+      equals((50.0, 50.0)),
+      reason: 'resize must clamp to the configured minShapeSize of 50',
+    );
+  });
+
   testWidgets('cancels drag on pointer cancel', (tester) async {
     final controller = DrawController();
     const rect = RectElement(height: 100, width: 100, x: 50, y: 50);

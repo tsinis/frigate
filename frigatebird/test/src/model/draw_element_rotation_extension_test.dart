@@ -98,6 +98,16 @@ void main() => group('DrawElementRotationExtension', () {
       expect(oval.isPointInside((x: 2, y: 2)), isFalse, reason: 'corner is outside the ellipse');
     });
 
+    test('honors slop for ovals near the edge', () {
+      const oval = OvalElement(height: 100, width: 100, x: 0, y: 0);
+
+      expect(
+        oval.isPointInside((x: 103, y: 50), slop: 4),
+        isTrue,
+        reason: 'a point just past the ellipse edge but within slop must register a hit',
+      );
+    });
+
     test('ray-casts polygons', () {
       final triangle = PolygonElement(
         height: 100,
@@ -182,6 +192,37 @@ void main() => group('DrawElementRotationExtension', () {
       final result = triangle.transformedBy((x: 50, y: 50), 0, scaleFactor: 2);
 
       expect((result.width, result.height), equals((200.0, 200.0)));
+    });
+
+    test('keeps the polygon bounding box in sync with the scaled vertices', () {
+      final triangle = PolygonElement(
+        height: 100,
+        vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(100, 0), Float64x2(50, 100)]),
+        width: 100,
+        x: 0,
+        y: 0,
+      );
+      final result = triangle.transformedBy((x: 50, y: 50), 0, scaleFactor: 2);
+      final box = switch (result) {
+        PolygonElement(:final vertices) => PolygonElement.boundingBoxOf(vertices),
+        RectElement() || OvalElement() || TextElement() || MaskRegionElement() => null,
+      };
+
+      expect(
+        (result.x, result.y, result.width, result.height),
+        equals((box?.x, box?.y, box?.width, box?.height)),
+        reason: 'copyWith recomputes the bbox from vertices, so x/y/width/height stay consistent',
+      );
+    });
+
+    test('clamps the scale so neither dimension shrinks below minSize', () {
+      final result = square.transformedBy((x: 50, y: 50), 0, scaleFactor: 0.01);
+
+      expect(
+        (result.width, result.height),
+        equals((10.0, 10.0)),
+        reason: 'pinching far down must clamp to the default minSize, not collapse to ~1px',
+      );
     });
   });
 

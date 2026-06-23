@@ -454,6 +454,7 @@ class _DrawEditorState extends State<DrawEditor> {
     final transformed = startElement.transformedBy(
       (x: _gestureStartFocal.dx, y: _gestureStartFocal.dy),
       rotationDelta,
+      minSize: widget._minShapeSize,
       scaleFactor: scaleFactor,
       translation: (x: translation.dx, y: translation.dy),
     );
@@ -469,12 +470,7 @@ class _DrawEditorState extends State<DrawEditor> {
       _trackPointer(event.pointer, _transform.toScene(event.localPosition));
     }
 
-    if (_isTwoFingerTransform) {
-      _applyTwoFingerTransform();
-
-      return;
-    }
-
+    if (_isTwoFingerTransform) return _applyTwoFingerTransform();
     if (_activePointerId != null && event.pointer != _activePointerId) return;
 
     if (_isRotating) {
@@ -483,9 +479,8 @@ class _DrawEditorState extends State<DrawEditor> {
       if (rotateIndex == null || rotateTarget == null) return;
       final scene = _transform.toScene(event.localPosition);
       final degrees = _snapDegrees(rotateTarget.angleToPoint((x: scene.dx, y: scene.dy)));
-      _draw.updateElement(rotateTarget.copyWith(rotation: degrees), rotateIndex);
 
-      return;
+      return _draw.updateElement(rotateTarget.copyWith(rotation: degrees), rotateIndex);
     }
 
     final start = _creationStartPoint;
@@ -507,8 +502,11 @@ class _DrawEditorState extends State<DrawEditor> {
       return _draw.updateCursorPosition(_transform.toScene(event.localPosition));
     }
 
-    if (!_isDragging.value) return;
+    if (_isDragging.value) _dragSelectedShape(event);
+  }
 
+  /// Moves or (handle-)resizes the selected shape for a single-finger drag.
+  void _dragSelectedShape(PointerMoveEvent event) {
     final index = _draw.selectedIndex;
     final selected = _draw.selectedElement;
     final handle = _activeHandle;
@@ -524,7 +522,12 @@ class _DrawEditorState extends State<DrawEditor> {
 
     final updated = handle == null
         ? selected.moved(delta.dx, delta.dy)
-        : selected.rotatedResized(dx: delta.dx, dy: delta.dy, handle: handle);
+        : selected.rotatedResized(
+            dx: delta.dx,
+            dy: delta.dy,
+            handle: handle,
+            minSize: widget._minShapeSize,
+          );
 
     _draw.updateElement(updated, index);
   }
@@ -547,11 +550,7 @@ class _DrawEditorState extends State<DrawEditor> {
       _clearPointers();
     }
 
-    if (_isTwoFingerTransform && _pointerCount >= 1) {
-      _downgradeToSingleFinger();
-
-      return;
-    }
+    if (_isTwoFingerTransform && _pointerCount >= 1) return _downgradeToSingleFinger();
 
     if (_activePointerId != null && event.pointer != _activePointerId) return;
     if (_draw.activeTool == .polygon) {
@@ -599,12 +598,7 @@ class _DrawEditorState extends State<DrawEditor> {
       _clearPointers();
     }
 
-    if (_isTwoFingerTransform && _pointerCount >= 1) {
-      _downgradeToSingleFinger();
-
-      return;
-    }
-
+    if (_isTwoFingerTransform && _pointerCount >= 1) return _downgradeToSingleFinger();
     if (_activePointerId != null && event.pointer != _activePointerId) return;
     if (_draw.activeTool == .polygon) {
       _draw.updateCursorPosition(null);
