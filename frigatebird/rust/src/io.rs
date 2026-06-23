@@ -56,19 +56,22 @@ pub fn read_image(path: &Path) -> Result<DynamicImage, IoError> {
 
 /// Reject incomplete JPEG inputs *before* decoding.
 ///
-/// A complete JPEG always ends with the EOI marker `0xFF 0xD9`. Inside entropy-coded scan data a
-/// literal `0xFF` is always byte-stuffed as `0xFF 0x00`, so `FF D9` cannot legally appear
-/// mid-stream — its absence means the file was truncated (a torn copy, an interrupted write, etc.).
+/// A complete JPEG always ends with the EOI marker `0xFF 0xD9` as its **final two bytes**. We
+/// check only those two bytes — not the entire file — for two reasons:
 ///
-/// Without this guard, zune-jpeg decodes such a file *non-strictly*: it returns `Ok` with the
-/// undecoded region reconstructed to mid-grey (128, the IDCT of all-zero coefficients after the
-/// level shift), which silently produces a half-grey output image. We fail loud instead.
+/// 1. **Correctness**: JPEG files often embed EXIF thumbnails near the beginning of the file.
+///    Those thumbnails are self-contained JPEGs and contain their own interior `0xFF 0xD9` EOI
+///    markers. A file-wide scan would find a thumbnail's EOI and incorrectly report a truncated
+///    main image as complete. Checking only the last two bytes is the spec-correct check.
+/// 2. **Performance**: O(1) regardless of file size.
+///
+/// Without this guard, zune-jpeg decodes a truncated JPEG *non-strictly*: it returns `Ok` with
+/// the undecoded region reconstructed to mid-grey (128, the IDCT level-shift default), silently
+/// producing a half-grey output image. We fail loud instead.
 ///
 /// Only JPEG is checked here; PNG/other inputs are left to the (already strict) `image` decoders.
-/// The EOI search runs back-to-front, so valid files (marker at the end) short-circuit immediately.
 fn ensure_complete_jpeg(bytes: &[u8]) -> Result<(), IoError> {
-    let is_jpeg = bytes.starts_with(&[0xFF, 0xD8]);
-    if is_jpeg && !bytes.windows(2).rev().any(|w| w[0] == 0xFF && w[1] == 0xD9) {
+    if bytes.starts_with(&[0xFF, 0xD8]) && !bytes.ends_with(&[0xFF, 0xD9]) {
         return Err(IoError::Truncated);
     }
     Ok(())
@@ -352,6 +355,33 @@ mod tests {
             .encode(&rgb, w, h, image::ExtendedColorType::Rgb8)
             .expect("gradient JPEG encode must succeed");
         buf
+    }
+
+    #[test]
+    fn ensure_complete_jpeg_is_not_fooled_by_interior_eoi() {
+        // Regression for false-positive: JPEG files often embed thumbnails in APP1/EXIF data.
+        // Those thumbnails are self-contained JPEGs and contain their own 0xFF 0xD9 EOI markers
+        // near the START of the file. A backward window scan finds that interior EOI and
+        // incorrectly reports the file as complete, even when the main scan is truncated.
+        //
+        // The fix (check only the final 2 bytes) must NOT be fooled by this.
+        let mut bytes = vec![
+            0xFF, 0xD8, // SOI
+            0xFF, 0xE1, // APP1 (EXIF block)
+            0xFF, 0xD9, // Interior EOI — simulates embedded thumbnail's EOI inside EXIF
+            0xAB, 0xCD, 0xEF, // Truncated scan data — no terminal EOI follows
+        ];
+        // Sanity: the interior EOI is present but the file doesn't end with it.
+        assert!(!bytes.ends_with(&[0xFF, 0xD9]));
+        // The function must detect truncation despite the interior 0xFF 0xD9.
+        assert_eq!(
+            ensure_complete_jpeg(&bytes),
+            Err(IoError::Truncated),
+            "interior EOI from EXIF thumbnail must not mask a truncated main image"
+        );
+        // A trailing byte appended so the file ends in a non-EOI byte also fails.
+        bytes.push(0x00);
+        assert_eq!(ensure_complete_jpeg(&bytes), Err(IoError::Truncated));
     }
 
     #[test]
