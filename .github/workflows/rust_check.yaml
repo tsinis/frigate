@@ -28,11 +28,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        runner: [ubuntu-latest, ubuntu-26.04-arm]
 
     steps:
       - name: 📚 Git checkout
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7.0.0
 
       - name: 🛠️ Install Rust components (pinned nightly)
         run: |
