@@ -93,6 +93,33 @@ void main() {
       outFile.deleteSync();
     });
 
+    test('throws RenderException(truncated) for a truncated source JPEG', () async {
+      // Regression: zune-jpeg (the image-crate JPEG backend) silently decodes a truncated JPEG
+      // to a grey-filled buffer instead of erroring. This test ensures the package fails loud.
+      final srcBytes = File(imagePath).readAsBytesSync();
+      final truncated = srcBytes.sublist(0, srcBytes.length * 6 ~/ 10);
+      final tmpPath = _ensureTempFileAbsent('frigate_test_truncated.jpg');
+      final outPath = _ensureTempFileAbsent('frigate_test_truncated_out.jpg');
+      File(tmpPath).writeAsBytesSync(truncated);
+
+      try {
+        await expectLater(
+          RenderImage.run(
+            backgroundPath: tmpPath,
+            elements: const [RectElement(height: 10, width: 10, x: 0, y: 0)],
+            outputPath: outPath,
+          ),
+          throwsA(isA<RenderException>().having((e) => e.code, 'code', FfiErrorCode.truncated)),
+        );
+      } finally {
+        if (File(tmpPath).existsSync()) File(tmpPath).deleteSync();
+        if (File(outPath).existsSync()) File(outPath).deleteSync();
+        // Post-condition: neither temp file must linger after this test.
+        expect(File(tmpPath).existsSync(), isFalse, reason: 'input temp file must be cleaned up');
+        expect(File(outPath).existsSync(), isFalse, reason: 'output temp file must be cleaned up');
+      }
+    });
+
     test('throws RenderException(io) for a missing source image', () async {
       const text = TextElement(text: 'x', x: 0, y: 0);
       final sysTempPath = Directory.systemTemp.path;

@@ -22,6 +22,10 @@ pub enum IoError {
     Read,
     /// File was read but its bytes could not be decoded by the `image` crate.
     Decode,
+    /// File was read but is incomplete/truncated — e.g. a JPEG missing its trailing EOI marker.
+    /// Detected *before* decode because zune-jpeg (the `image`-crate JPEG backend) would otherwise
+    /// silently return a partially-decoded, grey-filled buffer with `Ok` instead of an error.
+    Truncated,
     /// Writing encoded bytes to disk failed (usually out-of-space or permission).
     Write,
     /// Encoder returned an error while producing the output bytes.
@@ -41,12 +45,36 @@ pub enum IoError {
 /// avoiding a second file open for orientation detection.
 pub fn read_image(path: &Path) -> Result<DynamicImage, IoError> {
     let bytes = std::fs::read(path).map_err(|_| IoError::Read)?;
+    ensure_complete_jpeg(&bytes)?;
     let orientation = read_orientation_from_bytes(&bytes);
     let mut img = image::load_from_memory(&bytes).map_err(|_| IoError::Decode)?;
     if orientation > 1 {
         img = apply_orientation(img, orientation);
     }
     Ok(img)
+}
+
+/// Reject incomplete JPEG inputs *before* decoding.
+///
+/// A complete JPEG always ends with the EOI marker `0xFF 0xD9` as its **final two bytes**. We
+/// check only those two bytes — not the entire file — for two reasons:
+///
+/// 1. **Correctness**: JPEG files often embed EXIF thumbnails near the beginning of the file.
+///    Those thumbnails are self-contained JPEGs and contain their own interior `0xFF 0xD9` EOI
+///    markers. A file-wide scan would find a thumbnail's EOI and incorrectly report a truncated
+///    main image as complete. Checking only the last two bytes is the spec-correct check.
+/// 2. **Performance**: O(1) regardless of file size.
+///
+/// Without this guard, zune-jpeg decodes a truncated JPEG *non-strictly*: it returns `Ok` with
+/// the undecoded region reconstructed to mid-grey (128, the IDCT level-shift default), silently
+/// producing a half-grey output image. We fail loud instead.
+///
+/// Only JPEG is checked here; PNG/other inputs are left to the (already strict) `image` decoders.
+fn ensure_complete_jpeg(bytes: &[u8]) -> Result<(), IoError> {
+    if bytes.starts_with(&[0xFF, 0xD8]) && !bytes.ends_with(&[0xFF, 0xD9]) {
+        return Err(IoError::Truncated);
+    }
+    Ok(())
 }
 
 /// Extracts and validates the EXIF orientation tag from an existing Exif container.
@@ -303,5 +331,101 @@ mod tests {
         let dyn_img = DynamicImage::ImageRgba8(img);
         let res = apply_orientation(dyn_img, 9);
         assert_eq!(res.width(), 2);
+    }
+
+    /// Builds a gradient image whose JPEG carries substantial entropy-coded scan data, so
+    /// truncating the encoded bytes lands inside the scan (header intact) — the real-world
+    /// torn-file shape — rather than inside the tiny header of a flat-colour image.
+    ///
+    /// Encodes in-memory (no temp file) so parallel tests cannot race on a shared path.
+    fn gradient_jpeg_bytes() -> Vec<u8> {
+        let mut img = RgbaImage::new(256, 256);
+        for (x, y, px) in img.enumerate_pixels_mut() {
+            *px = image::Rgba([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8, 255]);
+        }
+        let (w, h) = img.dimensions();
+        // JPEG has no alpha channel — strip it to plain RGB first.
+        let rgb: Vec<u8> = img
+            .as_raw()
+            .chunks_exact(4)
+            .flat_map(|c| [c[0], c[1], c[2]])
+            .collect();
+        let mut buf = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 85)
+            .encode(&rgb, w, h, image::ExtendedColorType::Rgb8)
+            .expect("gradient JPEG encode must succeed");
+        buf
+    }
+
+    #[test]
+    fn ensure_complete_jpeg_is_not_fooled_by_interior_eoi() {
+        // Regression for false-positive: JPEG files often embed thumbnails in APP1/EXIF data.
+        // Those thumbnails are self-contained JPEGs and contain their own 0xFF 0xD9 EOI markers
+        // near the START of the file. A backward window scan finds that interior EOI and
+        // incorrectly reports the file as complete, even when the main scan is truncated.
+        //
+        // The fix (check only the final 2 bytes) must NOT be fooled by this.
+        let mut bytes = vec![
+            0xFF, 0xD8, // SOI
+            0xFF, 0xE1, // APP1 (EXIF block)
+            0xFF, 0xD9, // Interior EOI — simulates embedded thumbnail's EOI inside EXIF
+            0xAB, 0xCD, 0xEF, // Truncated scan data — no terminal EOI follows
+        ];
+        // Sanity: the interior EOI is present but the file doesn't end with it.
+        assert!(!bytes.ends_with(&[0xFF, 0xD9]));
+        // The function must detect truncation despite the interior 0xFF 0xD9.
+        assert_eq!(
+            ensure_complete_jpeg(&bytes),
+            Err(IoError::Truncated),
+            "interior EOI from EXIF thumbnail must not mask a truncated main image"
+        );
+        // A trailing byte appended so the file ends in a non-EOI byte also fails.
+        bytes.push(0x00);
+        assert_eq!(ensure_complete_jpeg(&bytes), Err(IoError::Truncated));
+    }
+
+    #[test]
+    fn read_image_rejects_truncated_jpeg() {
+        // Regression for the rare "bottom-of-image-is-grey" bug: a torn/partial JPEG. The image
+        // crate's JPEG backend decodes this to a grey-filled buffer and returns Ok; read_image
+        // must instead fail loud so the caller never renders onto garbage pixels.
+        let mut bytes = gradient_jpeg_bytes();
+        assert!(bytes.len() > 64, "sanity: a real JPEG was produced");
+        // Keep the header + part of the scan; drop the trailing EOI (0xFF 0xD9) marker.
+        bytes.truncate(bytes.len() * 6 / 10);
+        let tmp = tmp_path("frigate_io_truncated.jpg");
+        std::fs::write(&tmp, &bytes).unwrap();
+
+        let err = read_image(&tmp).unwrap_err();
+        assert_eq!(
+            err,
+            IoError::Truncated,
+            "a truncated JPEG must fail loud, not silently decode to grey"
+        );
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn read_image_accepts_a_complete_jpeg() {
+        // The gate must be a no-op for valid JPEGs — no false positives on good input.
+        let bytes = gradient_jpeg_bytes();
+        let tmp = tmp_path("frigate_io_complete.jpg");
+        std::fs::write(&tmp, &bytes).unwrap();
+        let decoded = read_image(&tmp).unwrap().into_rgba8();
+        assert_eq!(decoded.dimensions(), (256, 256));
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn image_crate_decodes_truncated_jpeg_without_error() {
+        // Documents the root cause the gate defends against: the underlying decoder accepts a
+        // truncated JPEG WITHOUT error (this bypasses read_image's gate by calling the decoder
+        // directly). This silent success is exactly why a higher-level integrity check is required.
+        let mut bytes = gradient_jpeg_bytes();
+        bytes.truncate(bytes.len() * 6 / 10);
+        assert!(
+            image::load_from_memory(&bytes).is_ok(),
+            "image crate silently decodes a truncated JPEG; read_image now gates this"
+        );
     }
 }

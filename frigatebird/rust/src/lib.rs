@@ -114,6 +114,7 @@ pub unsafe extern "C" fn ffi_force_error(
             6 => FfiErrorCode::Font,
             7 => FfiErrorCode::Render,
             8 => FfiErrorCode::Utf8,
+            9 => FfiErrorCode::Truncated,
             0 => FfiErrorCode::Success,
             _ => FfiErrorCode::Unknown,
         };
@@ -285,12 +286,20 @@ pub fn merge(
                 foreground_png.as_slice()
             };
 
-            let mut bg_img = io::read_image(Path::new(bg_p)).map_err(|e| {
-                let code = match e {
-                    io::IoError::Read => FfiErrorCode::Io,
-                    _ => FfiErrorCode::Decode,
-                };
-                (code, "Failed to read/decode background image".to_string())
+            let mut bg_img = io::read_image(Path::new(bg_p)).map_err(|e| match e {
+                io::IoError::Read => (
+                    FfiErrorCode::Io,
+                    "Failed to read background image".to_string(),
+                ),
+                io::IoError::Truncated => (
+                    FfiErrorCode::Truncated,
+                    "Background image is truncated/incomplete (missing JPEG EOI marker)"
+                        .to_string(),
+                ),
+                _ => (
+                    FfiErrorCode::Decode,
+                    "Failed to decode background image".to_string(),
+                ),
             })?;
 
             let fg_img = image::load_from_memory(fg_bytes).map_err(|_| {
@@ -533,12 +542,13 @@ fn draw_elements_safe(
     };
 
     let img = io::read_image(Path::new(image_path))
-        .map_err(|e| {
-            let code = match e {
-                io::IoError::Read => FfiErrorCode::Io,
-                _ => FfiErrorCode::Decode,
-            };
-            (code, "Failed to read/decode image".to_string())
+        .map_err(|e| match e {
+            io::IoError::Read => (FfiErrorCode::Io, "Failed to read image".to_string()),
+            io::IoError::Truncated => (
+                FfiErrorCode::Truncated,
+                "Input image is truncated/incomplete (missing JPEG EOI marker)".to_string(),
+            ),
+            _ => (FfiErrorCode::Decode, "Failed to decode image".to_string()),
         })?
         .into_rgba8();
 
@@ -1074,12 +1084,13 @@ pub fn blur_region(
             }
 
             let mut img = io::read_image(Path::new(img_p))
-                .map_err(|e| {
-                    let code = match e {
-                        io::IoError::Read => FfiErrorCode::Io,
-                        _ => FfiErrorCode::Decode,
-                    };
-                    (code, "Failed to read/decode image".to_string())
+                .map_err(|e| match e {
+                    io::IoError::Read => (FfiErrorCode::Io, "Failed to read image".to_string()),
+                    io::IoError::Truncated => (
+                        FfiErrorCode::Truncated,
+                        "Input image is truncated/incomplete (missing JPEG EOI marker)".to_string(),
+                    ),
+                    _ => (FfiErrorCode::Decode, "Failed to decode image".to_string()),
                 })?
                 .into_rgba8();
 
@@ -1146,12 +1157,13 @@ pub fn blur(
             }
 
             let img = io::read_image(Path::new(img_p))
-                .map_err(|e| {
-                    let code = match e {
-                        io::IoError::Read => FfiErrorCode::Io,
-                        _ => FfiErrorCode::Decode,
-                    };
-                    (code, "Failed to read/decode image".to_string())
+                .map_err(|e| match e {
+                    io::IoError::Read => (FfiErrorCode::Io, "Failed to read image".to_string()),
+                    io::IoError::Truncated => (
+                        FfiErrorCode::Truncated,
+                        "Input image is truncated/incomplete (missing JPEG EOI marker)".to_string(),
+                    ),
+                    _ => (FfiErrorCode::Decode, "Failed to decode image".to_string()),
                 })?
                 .into_rgba8();
 
@@ -1214,12 +1226,13 @@ pub fn rotate(
                 return Ok(());
             }
 
-            let img = io::read_image(Path::new(img_p)).map_err(|e| {
-                let code = match e {
-                    io::IoError::Read => FfiErrorCode::Io,
-                    _ => FfiErrorCode::Decode,
-                };
-                (code, "Failed to read/decode image".to_string())
+            let img = io::read_image(Path::new(img_p)).map_err(|e| match e {
+                io::IoError::Read => (FfiErrorCode::Io, "Failed to read image".to_string()),
+                io::IoError::Truncated => (
+                    FfiErrorCode::Truncated,
+                    "Input image is truncated/incomplete (missing JPEG EOI marker)".to_string(),
+                ),
+                _ => (FfiErrorCode::Decode, "Failed to decode image".to_string()),
             })?;
 
             let rotated = ops::rotate::Rotate { quarter_turns }.apply(img).unwrap();
@@ -1279,14 +1292,21 @@ pub fn to_jpg(
                 quality: image_quality,
             }
             .apply(Path::new(img_p), Path::new(out_p))
-            .map_err(|e| {
-                let code = match e {
-                    io::IoError::Read => FfiErrorCode::Io,
-                    io::IoError::Decode => FfiErrorCode::Decode,
-                    io::IoError::UnsupportedFormat | io::IoError::Encode => FfiErrorCode::Encode,
-                    io::IoError::Write => FfiErrorCode::Io,
-                };
-                (code, "Failed to convert to JPEG".to_string())
+            .map_err(|e| match e {
+                io::IoError::Read => (FfiErrorCode::Io, "Failed to convert to JPEG".to_string()),
+                io::IoError::Truncated => (
+                    FfiErrorCode::Truncated,
+                    "Input image is truncated/incomplete (missing JPEG EOI marker)".to_string(),
+                ),
+                io::IoError::Decode => (
+                    FfiErrorCode::Decode,
+                    "Failed to convert to JPEG".to_string(),
+                ),
+                io::IoError::UnsupportedFormat | io::IoError::Encode => (
+                    FfiErrorCode::Encode,
+                    "Failed to convert to JPEG".to_string(),
+                ),
+                io::IoError::Write => (FfiErrorCode::Io, "Failed to convert to JPEG".to_string()),
             })?;
 
             Ok(())
@@ -1352,17 +1372,20 @@ pub fn resize(
                     FfiErrorCode::InvalidArg,
                     "Width and height must be > 0".to_string(),
                 ),
-                ops::resize::ResizeError::Io(io_err) => {
-                    let code = match io_err {
-                        io::IoError::Read => FfiErrorCode::Io,
-                        io::IoError::Decode => FfiErrorCode::Decode,
-                        io::IoError::UnsupportedFormat | io::IoError::Encode => {
-                            FfiErrorCode::Encode
-                        }
-                        io::IoError::Write => FfiErrorCode::Io,
-                    };
-                    (code, "Failed to resize image".to_string())
-                }
+                ops::resize::ResizeError::Io(io_err) => match io_err {
+                    io::IoError::Read => (FfiErrorCode::Io, "Failed to resize image".to_string()),
+                    io::IoError::Truncated => (
+                        FfiErrorCode::Truncated,
+                        "Input image is truncated/incomplete (missing JPEG EOI marker)".to_string(),
+                    ),
+                    io::IoError::Decode => {
+                        (FfiErrorCode::Decode, "Failed to resize image".to_string())
+                    }
+                    io::IoError::UnsupportedFormat | io::IoError::Encode => {
+                        (FfiErrorCode::Encode, "Failed to resize image".to_string())
+                    }
+                    io::IoError::Write => (FfiErrorCode::Io, "Failed to resize image".to_string()),
+                },
             })?;
 
             Ok(())

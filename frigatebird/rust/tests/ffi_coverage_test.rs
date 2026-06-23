@@ -212,6 +212,87 @@ fn test_ffi_resize_zero_dimensions() {
     std::fs::remove_file(&path).ok();
 }
 
+/// Builds a truncated JPEG in a temp file and returns its path.
+/// Encodes in-memory, then cuts to 60 % of the encoded length so the EOI is stripped.
+fn write_truncated_jpeg(name: &str) -> std::path::PathBuf {
+    let mut img = image::RgbaImage::new(64, 64);
+    for (x, y, px) in img.enumerate_pixels_mut() {
+        *px = image::Rgba([(x % 256) as u8, (y % 64) as u8, 128, 255]);
+    }
+    let (w, h) = img.dimensions();
+    let rgb: Vec<u8> = img
+        .as_raw()
+        .chunks_exact(4)
+        .flat_map(|c| [c[0], c[1], c[2]])
+        .collect();
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 85)
+        .encode(&rgb, w, h, image::ExtendedColorType::Rgb8)
+        .expect("encode must succeed");
+    jpeg.truncate(jpeg.len() * 6 / 10);
+    let path = std::env::temp_dir().join(name);
+    std::fs::write(&path, &jpeg).unwrap();
+    path
+}
+
+#[test]
+fn test_ffi_to_jpg_truncated_input_returns_truncated_code() {
+    let path = write_truncated_jpeg("ffi_to_jpg_truncated.jpg");
+    let out = path.with_extension("out.jpg");
+    let p_in = safer_ffi::char_p::new(path.to_str().unwrap());
+    let p_out = safer_ffi::char_p::new(out.to_str().unwrap());
+    let mut arena = FfiArena {
+        error: vec![0u8; 512].into_boxed_slice().into(),
+        ..FfiArena::default()
+    };
+    let res = to_jpg(
+        Some(p_in.as_ref()),
+        Some(p_out.as_ref()),
+        100,
+        Some(&mut arena),
+    );
+    assert_eq!(
+        res,
+        FfiErrorCode::Truncated as u8,
+        "ffi_to_jpg must return Truncated for a torn JPEG, not silently produce a grey image"
+    );
+    // The error message must name the truncation cause so consumers can identify it as retryable.
+    let msg = unsafe { std::ffi::CStr::from_ptr(arena.error.as_ptr().cast()) };
+    let msg_str = msg.to_str().expect("arena error must be valid UTF-8");
+    assert!(
+        msg_str.contains("truncated") || msg_str.contains("EOI"),
+        "ffi_to_jpg Truncated message must explain the cause, got: {msg_str:?}"
+    );
+    std::fs::remove_file(&path).ok();
+    std::fs::remove_file(&out).ok();
+    // Post-condition: neither temp file must linger after this test.
+    assert!(!path.exists(), "input temp file must be cleaned up");
+    assert!(!out.exists(), "output temp file must be cleaned up");
+}
+
+#[test]
+fn test_ffi_resize_truncated_input_returns_truncated_code() {
+    let path = write_truncated_jpeg("ffi_resize_truncated.jpg");
+    let p = safer_ffi::char_p::new(path.to_str().unwrap());
+    let mut arena = FfiArena {
+        error: vec![0u8; 512].into_boxed_slice().into(),
+        ..FfiArena::default()
+    };
+    let res = resize(Some(p.as_ref()), None, 32, 32, 0, 100, Some(&mut arena));
+    assert_eq!(
+        res,
+        FfiErrorCode::Truncated as u8,
+        "ffi_resize must return Truncated for a torn JPEG, not silently produce a grey image"
+    );
+    let msg = unsafe { std::ffi::CStr::from_ptr(arena.error.as_ptr().cast()) };
+    let msg_str = msg.to_str().expect("arena error must be valid UTF-8");
+    assert!(
+        msg_str.contains("truncated") || msg_str.contains("EOI"),
+        "ffi_resize Truncated message must explain the cause, got: {msg_str:?}"
+    );
+    std::fs::remove_file(&path).ok();
+}
+
 #[cfg(feature = "ffi-test-helpers")]
 #[test]
 fn test_ffi_helpers() {
