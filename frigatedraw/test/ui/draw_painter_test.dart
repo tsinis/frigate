@@ -766,6 +766,90 @@ void main() => group(DrawPainter, () {
       );
     });
   });
+
+  group('blur preview coverage', () {
+    // A translucent fill makes uiFillColor.a < 1, which enables the blur preview.
+    const blurFill = FfiColor(0x80000000);
+
+    test('rounded blur rect without a background draws placeholder fill + helper outline', () {
+      final canvas = _DrawPainterTest();
+      const rounded = RectElement(
+        blur: 15,
+        cornerRadius: 8,
+        height: 50,
+        outlineColor: .transparent,
+        outlineThickness: 0,
+        width: 100,
+        x: 10,
+        y: 20,
+      );
+      const DrawPainter([rounded]).paint(canvas, const Size(200, 200));
+
+      expect(canvas.drawRRectCount, 1, reason: 'rounded placeholder fill uses drawRRect');
+      expect(canvas.drawPathCount, 1, reason: 'rounded helper outline uses a dashed path');
+    });
+
+    test('rotated blur rect routes its helper outline through the rotated clip path', () {
+      final canvas = _DrawPainterTest();
+      const rotated = RectElement(
+        blur: 15,
+        height: 50,
+        outlineColor: .transparent,
+        outlineThickness: 0,
+        rotation: 45,
+        width: 100,
+        x: 10,
+        y: 20,
+      );
+
+      expect(
+        () => const DrawPainter([rotated]).paint(canvas, const Size(200, 200)),
+        returnsNormally,
+        reason: 'a rotated blur clip must transform the path without throwing',
+      );
+      expect(canvas.drawPathCount, 1, reason: 'rotated helper outline still drawn once');
+    });
+
+    test('rounded rect, polygon, and oval blur all sample the background image', () async {
+      final imageRecorder = PictureRecorder();
+      _drawOpaquePixel(imageRecorder);
+      final frameImage = await imageRecorder.endRecording().toImage(1, 1);
+      addTearDown(frameImage.dispose);
+
+      const roundedRect = RectElement(
+        blur: 18,
+        cornerRadius: 8,
+        fillColor: blurFill,
+        height: 50,
+        width: 100,
+        x: 10,
+        y: 20,
+      );
+      const oval = OvalElement(blur: 18, fillColor: blurFill, height: 50, width: 100, x: 5, y: 5);
+      final polygon = PolygonElement(
+        blur: 18,
+        fillColor: blurFill,
+        height: 100,
+        vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(100, 0), Float64x2(50, 100)]),
+        width: 100,
+        x: 0,
+        y: 0,
+      );
+
+      for (final element in <DrawElement>[roundedRect, oval, polygon]) {
+        final canvas = _DrawPainterTest();
+        expect(
+          () => DrawPainter(
+            [element],
+            backgroundImage: frameImage, // Dart 3.8 formatting.
+          ).paint(canvas, const Size(200, 200)),
+          returnsNormally,
+          reason: '${element.runtimeType} blur-with-background must render without throwing',
+        );
+        expect(canvas.drawPathCount, greaterThanOrEqualTo(1), reason: 'blur clip path is drawn');
+      }
+    });
+  });
 });
 
 void _drawOpaquePixel(PictureRecorder recorder) {

@@ -253,5 +253,42 @@ void main() => group('DrawElementRotationExtension', () {
 
       expect((resized.width, resized.height), equals((10.0, 10.0)));
     });
+
+    test('pins the opposite edge midpoint for edge handles when rotated', () {
+      const rotated = RectElement(height: 100, rotation: 30, width: 100, x: 0, y: 0);
+      const pairs = <({HandlePosition handle, HandlePosition opposite})>[
+        (handle: .topCenter, opposite: .bottomCenter),
+        (handle: .bottomCenter, opposite: .topCenter),
+        (handle: .centerLeft, opposite: .centerRight),
+        (handle: .centerRight, opposite: .centerLeft),
+      ];
+
+      for (final (:handle, :opposite) in pairs) {
+        final before = rotated.handleCenterFor(opposite);
+        final after = rotated
+            .rotatedResized(dx: 20, dy: 20, handle: handle)
+            .handleCenterFor(opposite);
+
+        expect(after.x, closeTo(before.x, 1e-6), reason: '$handle must pin $opposite (x)');
+        expect(after.y, closeTo(before.y, 1e-6), reason: '$handle must pin $opposite (y)');
+      }
+    });
+
+    test('resizes a rotated polygon, shifting vertices to pin the opposite corner', () {
+      final triangle = PolygonElement(
+        height: 100,
+        rotation: 30,
+        vertices: Float64x2List.fromList([Float64x2(0, 0), Float64x2(100, 0), Float64x2(50, 100)]),
+        width: 100,
+        x: 0,
+        y: 0,
+      );
+      final before = triangle.handleCenterFor(.topLeft);
+      final resized = triangle.rotatedResized(dx: 25, dy: 15, handle: .bottomRight);
+      final after = resized.handleCenterFor(.topLeft);
+
+      expect(after.x, closeTo(before.x, 1e-6));
+      expect(after.y, closeTo(before.y, 1e-6));
+    });
   });
 });
