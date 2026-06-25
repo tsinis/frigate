@@ -294,7 +294,7 @@ sealed class RenderImage {
         ..ref.outlineColorArgb = region.outlineColor.argb
         ..ref.outlineThickness = region.outlineThickness.clamp(0, 255)
         ..ref.blur = region.blur.clamp(0, 255)
-        ..ref.cornerRadius = region.cornerRadius;
+        ..ref.cornerRadius = region.cornerRadius.clamp(0, 65535);
 
       final code = ffi.blur_region(imageCStr, outputCStr, payloadPtr.ref, imageQuality, arena.ptr);
 

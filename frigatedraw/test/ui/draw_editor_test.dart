@@ -1858,6 +1858,53 @@ void main() => group(DrawEditor, () {
       controller.dispose();
     });
 
+    testWidgets('resize handle does not throw when minShapeSize exceeds the board dimension', (
+      tester,
+    ) async {
+      // When minShapeSize > board.width/height, the clamp lower bound (left + minSize) can
+      // exceed the upper bound (board.width), crashing with ArgumentError. The fix caps
+      // the effective minimum to the board dimension.
+      final controller = DrawController();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 600,
+              width: 800,
+              child: DrawEditor(
+                file,
+                controller: controller,
+                minShapeSize: 1000,
+                size: const Size(800, 600),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      controller
+        ..enterBackgroundMode(const Size(800, 600))
+        ..updateBackgroundTreatment(const BackgroundElement(height: 600, width: 800, x: 0, y: 0));
+      await tester.pump();
+
+      // Tapping the top-left corner of the viewer lands on the topLeft resize handle
+      // (it is within the handle radius), which triggers a resize — not a body drag.
+      final topLeft = tester.getTopLeft(find.byType(InteractiveViewer));
+      final gesture = await tester.startGesture(topLeft + const Offset(1, 1));
+      await tester.pump();
+      await gesture.moveBy(const Offset(10, 10));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      final treatment = controller.backgroundTreatment;
+      expect(treatment?.width, isPositive, reason: 'clamped resize must yield a positive width');
+      expect(treatment?.height, isPositive, reason: 'clamped resize must yield a positive height');
+
+      controller.dispose();
+    });
+
     testWidgets('selectTool(.background) lazily sizes a full-image treatment to the board', (
       tester,
     ) async {

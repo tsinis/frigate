@@ -421,11 +421,12 @@ class _DrawEditorState extends State<DrawEditor> {
       return element.copyWith(x: element.x.clamp(0.0, maxX), y: element.y.clamp(0.0, maxY));
     }
 
-    final minSize = widget._minShapeSize;
-    final left = element.x.clamp(0.0, (board.width - minSize).clamp(0.0, board.width));
-    final top = element.y.clamp(0.0, (board.height - minSize).clamp(0.0, board.height));
-    final right = (element.x + element.width).clamp(left + minSize, board.width);
-    final bottom = (element.y + element.height).clamp(top + minSize, board.height);
+    final minWidth = widget._minShapeSize.clamp(0.0, board.width);
+    final minHeight = widget._minShapeSize.clamp(0.0, board.height);
+    final left = element.x.clamp(0.0, (board.width - minWidth).clamp(0.0, board.width));
+    final top = element.y.clamp(0.0, (board.height - minHeight).clamp(0.0, board.height));
+    final right = (element.x + element.width).clamp(left + minWidth, board.width);
+    final bottom = (element.y + element.height).clamp(top + minHeight, board.height);
 
     return element.copyWith(height: bottom - top, width: right - left, x: left, y: top);
   }
