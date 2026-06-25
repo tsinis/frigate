@@ -45,7 +45,9 @@ pub fn crop_rgba(
         return Ok(None); // Full-image crop == no crop.
     }
 
-    Ok(Some(image::imageops::crop_imm(img, x0, y0, cw, ch).to_image()))
+    Ok(Some(
+        image::imageops::crop_imm(img, x0, y0, cw, ch).to_image(),
+    ))
 }
 
 #[cfg(test)]
@@ -58,19 +60,27 @@ mod tests {
 
     #[test]
     fn full_image_rect_is_no_crop() {
-        assert!(crop_rgba(&img(100, 80), 0.0, 0.0, 100.0, 80.0).unwrap().is_none());
+        assert!(
+            crop_rgba(&img(100, 80), 0.0, 0.0, 100.0, 80.0)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
     fn sub_region_crops_to_dimensions() {
-        let out = crop_rgba(&img(100, 80), 10.0, 20.0, 40.0, 30.0).unwrap().unwrap();
+        let out = crop_rgba(&img(100, 80), 10.0, 20.0, 40.0, 30.0)
+            .unwrap()
+            .unwrap();
         assert_eq!(out.dimensions(), (40, 30));
     }
 
     #[test]
     fn out_of_bounds_rect_clamps_then_crops() {
         // Far edge beyond the image clamps to the image bound.
-        let out = crop_rgba(&img(100, 80), 90.0, 0.0, 50.0, 80.0).unwrap().unwrap();
+        let out = crop_rgba(&img(100, 80), 90.0, 0.0, 50.0, 80.0)
+            .unwrap()
+            .unwrap();
         assert_eq!(out.dimensions(), (10, 80));
     }
 
@@ -85,7 +95,9 @@ mod tests {
     #[test]
     fn fully_outside_rect_errors() {
         assert_eq!(
-            crop_rgba(&img(100, 80), 200.0, 200.0, 10.0, 10.0).unwrap_err().0,
+            crop_rgba(&img(100, 80), 200.0, 200.0, 10.0, 10.0)
+                .unwrap_err()
+                .0,
             FfiErrorCode::InvalidArg
         );
     }

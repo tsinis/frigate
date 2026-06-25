@@ -572,7 +572,10 @@ class _DrawEditorState extends State<DrawEditor> {
       TextElement() || BackgroundElement() => false,
     };
     if (!canMove) return;
-    _draw.updateElement(_resizeOrMove(event.localDelta / _viewScale, selected, handle: _activeHandle), index);
+    _draw.updateElement(
+      _resizeOrMove(event.localDelta / _viewScale, selected, handle: _activeHandle),
+      index,
+    );
   }
 
   void _abortCreation() {
@@ -680,13 +683,13 @@ class _DrawEditorState extends State<DrawEditor> {
   /// specific handle is given. Used by both shape drags and background crop drags.
   DrawElement _resizeOrMove(Offset delta, DrawElement element, {HandlePosition? handle}) =>
       handle == null
-          ? element.moved(delta.dx, delta.dy)
-          : element.rotatedResized(
-              dx: delta.dx,
-              dy: delta.dy,
-              handle: handle,
-              minSize: widget._minShapeSize,
-            );
+      ? element.moved(delta.dx, delta.dy)
+      : element.rotatedResized(
+          dx: delta.dx,
+          dy: delta.dy,
+          handle: handle,
+          minSize: widget._minShapeSize,
+        );
 
   // `_pointers` is a private live buffer; in-place mutation is intentional.
   void _trackPointer(int pointer, Offset scene) {

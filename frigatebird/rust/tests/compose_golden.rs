@@ -41,7 +41,14 @@ fn cstr(value: &str) -> CString {
 }
 
 /// A treatment rectangle (crop region + full-image blur + tint).
-fn treatment(x: f64, y: f64, width: f64, height: f64, blur: u8, fill_argb: u32) -> RectanglePayload {
+fn treatment(
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    blur: u8,
+    fill_argb: u32,
+) -> RectanglePayload {
     RectanglePayload {
         x,
         y,
@@ -243,7 +250,11 @@ fn golden_compose_crop() {
     assert_eq!(status, FfiErrorCode::Success as u8);
 
     let result = image::open(&out).unwrap().into_rgba8();
-    assert_eq!(result.dimensions(), (200, 150), "output is cropped to the treatment rect");
+    assert_eq!(
+        result.dimensions(),
+        (200, 150),
+        "output is cropped to the treatment rect"
+    );
     assert_golden(&result, &golden_path("compose_crop.png"));
     std::fs::remove_file(&out).ok();
 }
@@ -291,7 +302,10 @@ fn golden_compose_full_pipeline() {
 
     let result = image::open(&out).unwrap().into_rgba8();
     // Cropped to ~80% of each axis (exact pixel count depends on crop ceil/floor rounding).
-    assert!(result.width() < w && result.height() < h, "output is cropped smaller than the base");
+    assert!(
+        result.width() < w && result.height() < h,
+        "output is cropped smaller than the base"
+    );
     assert_golden(&result, &golden_path("compose_full_pipeline.png"));
     std::fs::remove_file(&out).ok();
     std::fs::remove_file(&fg_path).ok();

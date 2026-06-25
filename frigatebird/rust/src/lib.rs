@@ -499,7 +499,12 @@ pub unsafe extern "C" fn compose(
         } else {
             unsafe { std::ffi::CStr::from_ptr(image_path) }
                 .to_str()
-                .map_err(|_| (FfiErrorCode::Utf8, "Invalid UTF-8 in image path".to_string()))?
+                .map_err(|_| {
+                    (
+                        FfiErrorCode::Utf8,
+                        "Invalid UTF-8 in image path".to_string(),
+                    )
+                })?
         };
 
         let out_p = if output_path.is_null() {
@@ -507,7 +512,12 @@ pub unsafe extern "C" fn compose(
         } else {
             unsafe { std::ffi::CStr::from_ptr(output_path) }
                 .to_str()
-                .map_err(|_| (FfiErrorCode::Utf8, "Invalid UTF-8 in output path".to_string()))?
+                .map_err(|_| {
+                    (
+                        FfiErrorCode::Utf8,
+                        "Invalid UTF-8 in output path".to_string(),
+                    )
+                })?
         };
 
         let elements = if elements_count == 0 {
@@ -767,7 +777,11 @@ fn compose_safe(
         FfiElement::Polygon(p) => p.blur > 0,
         FfiElement::Text(_) => false,
     });
-    let clean_img = if needs_clean_img { Some(img.clone()) } else { None };
+    let clean_img = if needs_clean_img {
+        Some(img.clone())
+    } else {
+        None
+    };
     let mut surface = Surface::Rgba(img);
     for element in elements {
         draw_element_on_surface(
