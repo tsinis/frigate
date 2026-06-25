@@ -255,6 +255,20 @@ class _DrawEditorState extends State<DrawEditor> {
     if (_boardSize != info.size) setState(() => _boardSize = info.size);
   }
 
+  /// When the background tool is armed via `selectTool(.background)` (which has no image size),
+  /// the treatment slot starts empty. Once the board size is known, lazily instantiate a
+  /// full-image treatment (post-frame, so it never calls `notifyListeners` during build).
+  void _ensureBackgroundSized() {
+    if (!_draw.isBackgroundMode || _draw.backgroundTreatment != null) return;
+    final board = _boardSize;
+    if (board == null || board.isEmpty) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_draw.isBackgroundMode || _draw.backgroundTreatment != null) return;
+      _draw.enterBackgroundMode(board);
+    });
+  }
+
   void _applyInitialFitIfReady(Size viewport) {
     if (_didApplyInitialFit) return;
     final board = _boardSize;
@@ -298,6 +312,9 @@ class _DrawEditorState extends State<DrawEditor> {
 
     final pointerId = event.pointer;
 
+    // In background mode only the crop handles are interactive; anything else falls through to
+    // pan/zoom (no shape creation/selection).
+    if (_draw.isBackgroundMode) return _didHandleBackgroundGesture(point, pointerId);
     if (_didHandlePolygonTool(point, pointerId)) return;
     if (_didHandleCreationTool(point, pointerId)) return;
     if (_didHandleRotationKnob(point, pointerId)) return;
@@ -364,6 +381,54 @@ class _DrawEditorState extends State<DrawEditor> {
     _previewElement = element;
 
     return true;
+  }
+
+  /// Background-mode pointer-down: claims the pointer when it lands on a crop handle (resize) or
+  /// inside the crop body (move), so a press fully outside stays available for pan/zoom.
+  void _didHandleBackgroundGesture(Offset point, int pointerId) {
+    final background = _draw.backgroundTreatment;
+    if (background == null) return;
+
+    final handle = background.hitTestHandle(point, _handleRadius);
+    if (handle == null && !background.isPointOnShape(point)) return;
+
+    if (_pointerCount == 1) _dragStartMatrix = _transform.value;
+    _activePointerId = pointerId;
+    _startDrag(handle: handle, snapshot: background);
+  }
+
+  /// Moves (body drag) or resizes (handle drag) the crop rect, clamped to the image bounds.
+  void _dragBackground(PointerMoveEvent event) {
+    final background = _draw.backgroundTreatment;
+    if (background == null) return;
+    final handle = _activeHandle;
+    final updated = _resizeOrMove(event.localDelta / _viewScale, background, handle: handle);
+    if (updated is! BackgroundElement) return;
+    _draw.updateBackgroundTreatment(_clampToBoard(updated, isMove: handle == null));
+  }
+
+  /// Clamps a crop rect to the image bounds. A body move ([isMove]) slides the rect back inside
+  /// while preserving its size; a handle resize clamps each edge but never collapses the rect below
+  /// [DrawEditor._minShapeSize] (a zero/negative crop would fail the Rust export with `invalidArg`).
+  BackgroundElement _clampToBoard(BackgroundElement element, {required bool isMove}) {
+    final board = _boardSize;
+    if (board == null || board.isEmpty) return element;
+
+    if (isMove) {
+      final maxX = (board.width - element.width).clamp(0.0, board.width);
+      final maxY = (board.height - element.height).clamp(0.0, board.height);
+
+      return element.copyWith(x: element.x.clamp(0.0, maxX), y: element.y.clamp(0.0, maxY));
+    }
+
+    final minWidth = widget._minShapeSize.clamp(0.0, board.width);
+    final minHeight = widget._minShapeSize.clamp(0.0, board.height);
+    final left = element.x.clamp(0.0, (board.width - minWidth).clamp(0.0, board.width));
+    final top = element.y.clamp(0.0, (board.height - minHeight).clamp(0.0, board.height));
+    final right = (element.x + element.width).clamp(left + minWidth, board.width);
+    final bottom = (element.y + element.height).clamp(top + minHeight, board.height);
+
+    return element.copyWith(height: bottom - top, width: right - left, x: left, y: top);
   }
 
   bool _didHandleSelectedHandleInteraction(Offset point, int pointerId) {
@@ -473,6 +538,8 @@ class _DrawEditorState extends State<DrawEditor> {
     if (_isTwoFingerTransform) return _applyTwoFingerTransform();
     if (_activePointerId != null && event.pointer != _activePointerId) return;
 
+    if (_draw.isBackgroundMode && _isDragging.value) return _dragBackground(event);
+
     if (_isRotating) {
       final rotateIndex = _draw.selectedIndex;
       final rotateTarget = _draw.selectedElement;
@@ -509,27 +576,18 @@ class _DrawEditorState extends State<DrawEditor> {
   void _dragSelectedShape(PointerMoveEvent event) {
     final index = _draw.selectedIndex;
     final selected = _draw.selectedElement;
-    final handle = _activeHandle;
     if (index == null || selected == null) return;
     // TODO(tsinis): Enable TextElement movement once _paintElement supports text bounds/handles.
     final canMove = switch (selected) {
       RectElement() || OvalElement() || PolygonElement() || MaskRegionElement() => true,
-      TextElement() => false,
+      // BackgroundElement is never a list selection — it is edited via the background-mode path.
+      TextElement() || BackgroundElement() => false,
     };
     if (!canMove) return;
-
-    final delta = event.localDelta / _viewScale;
-
-    final updated = handle == null
-        ? selected.moved(delta.dx, delta.dy)
-        : selected.rotatedResized(
-            dx: delta.dx,
-            dy: delta.dy,
-            handle: handle,
-            minSize: widget._minShapeSize,
-          );
-
-    _draw.updateElement(updated, index);
+    _draw.updateElement(
+      _resizeOrMove(event.localDelta / _viewScale, selected, handle: _activeHandle),
+      index,
+    );
   }
 
   void _abortCreation() {
@@ -553,6 +611,17 @@ class _DrawEditorState extends State<DrawEditor> {
     if (_isTwoFingerTransform && _pointerCount >= 1) return _downgradeToSingleFinger();
 
     if (_activePointerId != null && event.pointer != _activePointerId) return;
+
+    if (_draw.isBackgroundMode && _isDragging.value) {
+      final snapshot = _dragSnapshot;
+      final current = _draw.backgroundTreatment;
+      if (snapshot is BackgroundElement && current != null) {
+        _draw.commitBackgroundTreatment(after: current, before: snapshot);
+      }
+
+      return _resetDragState();
+    }
+
     if (_draw.activeTool == .polygon) {
       final point = _transform.toScene(event.localPosition);
       _didHandlePolygonUp(point);
@@ -600,6 +669,7 @@ class _DrawEditorState extends State<DrawEditor> {
 
     if (_isTwoFingerTransform && _pointerCount >= 1) return _downgradeToSingleFinger();
     if (_activePointerId != null && event.pointer != _activePointerId) return;
+    if (_draw.isBackgroundMode && _isDragging.value) return _resetDragState();
     if (_draw.activeTool == .polygon) {
       _draw.updateCursorPosition(null);
 
@@ -615,11 +685,23 @@ class _DrawEditorState extends State<DrawEditor> {
     }
   }
 
-  void _startDrag({HandlePosition? handle}) {
+  void _startDrag({HandlePosition? handle, DrawElement? snapshot}) {
     _activeHandle = handle;
-    _dragSnapshot = _draw.selectedElement;
+    _dragSnapshot = snapshot ?? _draw.selectedElement;
     _isDragging.value = true;
   }
+
+  /// Applies [delta] to [element]: moves it when [handle] is null, or resizes/rotates it when a
+  /// specific handle is given. Used by both shape drags and background crop drags.
+  DrawElement _resizeOrMove(Offset delta, DrawElement element, {HandlePosition? handle}) =>
+      handle == null
+      ? element.moved(delta.dx, delta.dy)
+      : element.rotatedResized(
+          dx: delta.dx,
+          dy: delta.dy,
+          handle: handle,
+          minSize: widget._minShapeSize,
+        );
 
   // `_pointers` is a private live buffer; in-place mutation is intentional.
   void _trackPointer(int pointer, Offset scene) {
@@ -716,6 +798,7 @@ class _DrawEditorState extends State<DrawEditor> {
     // ignore: avoid-long-functions, TODO(tsinis): Refactor it later.
     builder: (_, constraints) {
       _applyInitialFitIfReady(constraints.biggest);
+      _ensureBackgroundSized();
 
       return Listener(
         onPointerCancel: _handlePointerCancel,
@@ -768,6 +851,7 @@ class _DrawEditorState extends State<DrawEditor> {
                       _draw.elements,
                       activeTool: _draw.activeTool,
                       backgroundImage: uiImage,
+                      backgroundTreatment: _draw.backgroundTreatment,
                       creationTemplate: _draw.creationTemplate,
                       cursorPosition: _draw.cursorPosition,
                       handleBorderWidth: _handleBorderWidth,
@@ -777,6 +861,7 @@ class _DrawEditorState extends State<DrawEditor> {
                       rotationKnobDistance: _rotationKnobDistance,
                       rotationKnobRadius: _rotationKnobRadius,
                       selectedIndex: _draw.selectedIndex,
+                      shouldShowBackgroundHandles: _draw.isBackgroundMode,
                       shouldShowRotationKnob: _isSelectionRotatable,
                       tolerance: _closeTolerance / _viewScale,
                     ),

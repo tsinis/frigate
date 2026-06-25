@@ -2,6 +2,8 @@
 
 This directory houses the reference visual golden regression assets (`*.png`) for standard and composite shapes (Rectangle, Oval, Text, Polygon) in `frigatebird/rust`.
 
+The `compose_*.png` goldens cover the unified background-tool pipeline (`compose`): full-image blur, tint, shapes-then-foreground ordering, crop, and the full pipeline combined.
+
 ## Regenerating Goldens
 
 If you introduce visual changes or add new shapes and need to regenerate the reference `.png` images, perform the following:

@@ -168,6 +168,7 @@ fn handle_panic(arena: Option<&mut FfiArena>, payload: Box<dyn std::any::Any + S
 //
 // - `draw_elements`: takes `*const FfiElement` — safer_ffi 0.2.0-rc1 cannot derive
 //   ReprC for #[repr(C, u8)] tagged-union enums. Tracked upstream.
+// - `compose`: same reason — it also takes a `*const FfiElement` array.
 
 /// Returns oriented dimensions and metadata for an image without decoding full pixel data.
 /// Returns a `u8` status code. Result info is written to `*out`.
@@ -455,6 +456,141 @@ pub unsafe extern "C" fn draw_elements(
     }
 }
 
+/// Background-treatment + foreground composite render.
+///
+/// Pipeline (original image space, crop last): full-image blur → tint → draw shapes →
+/// composite sharp foreground → crop.
+///
+/// - `treatment_ptr` (nullable): a `RectanglePayload` carrying the crop rect (`x`/`y`/`width`/
+///   `height`), the full-image background `blur`, and the `fill_color_argb` tint. Its rotation,
+///   outline and corner-radius fields are ignored. Null = no treatment (behaves like `draw_elements`).
+/// - `foreground_path` (nullable): an alpha PNG composited sharp at (0,0) **after** shapes and
+///   **before** crop. Expected to match the background's pixel dimensions; it is clipped, never
+///   scaled (same semantics as `merge`).
+/// - The shapes are the usual `FfiElement` array + `arena` text sidecar.
+///
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
+///
+/// # Safety
+///
+/// All pointer arguments must be valid for the duration of the call.
+///
+/// NOTE: `#[unsafe(no_mangle)]` rather than `#[ffi_export]` for the same reason as `draw_elements`
+/// (it takes a `*const FfiElement` array).
+#[allow(unsafe_code, clippy::too_many_arguments)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn compose(
+    image_path: *const std::ffi::c_char,
+    output_path: *const std::ffi::c_char,
+    font_path: *const std::ffi::c_char,
+    treatment_ptr: *const RectanglePayload,
+    foreground_path: *const std::ffi::c_char,
+    elements_ptr: *const FfiElement,
+    elements_count: usize,
+    image_quality: u8,
+    arena: *mut FfiArena,
+) -> u8 {
+    // SAFETY: Caller guarantees `arena` is a valid pointer to `FfiArena` (or null).
+    let arena_opt = unsafe { arena.as_mut() };
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let img_p = if image_path.is_null() {
+            return Err((FfiErrorCode::InvalidArg, "Missing image path".to_string()));
+        } else {
+            unsafe { std::ffi::CStr::from_ptr(image_path) }
+                .to_str()
+                .map_err(|_| {
+                    (
+                        FfiErrorCode::Utf8,
+                        "Invalid UTF-8 in image path".to_string(),
+                    )
+                })?
+        };
+
+        let out_p = if output_path.is_null() {
+            img_p
+        } else {
+            unsafe { std::ffi::CStr::from_ptr(output_path) }
+                .to_str()
+                .map_err(|_| {
+                    (
+                        FfiErrorCode::Utf8,
+                        "Invalid UTF-8 in output path".to_string(),
+                    )
+                })?
+        };
+
+        let elements = if elements_count == 0 {
+            &[][..]
+        } else if elements_ptr.is_null() {
+            return Err((
+                FfiErrorCode::InvalidArg,
+                "Missing elements pointer".to_string(),
+            ));
+        } else {
+            // SAFETY: Caller guarantees `elements_ptr` points to `elements_count` valid `FfiElement`s.
+            unsafe { std::slice::from_raw_parts(elements_ptr, elements_count) }
+        };
+
+        let text_buffer = match arena_opt.as_deref() {
+            None | Some(FfiArena { text_len: 0, .. }) => &[][..],
+            Some(a) if a.text_buf.is_null() => {
+                return Err((
+                    FfiErrorCode::InvalidArg,
+                    "Missing text buffer pointer".to_string(),
+                ));
+            }
+            // SAFETY: Caller guarantees `text_buf` points to `text_len` valid bytes.
+            Some(a) => unsafe { std::slice::from_raw_parts(a.text_buf, a.text_len) },
+        };
+
+        let font_p = if font_path.is_null() {
+            None
+        } else {
+            Some(
+                unsafe { std::ffi::CStr::from_ptr(font_path) }
+                    .to_str()
+                    .map_err(|_| (FfiErrorCode::Utf8, "Invalid UTF-8 in font path".to_string()))?,
+            )
+        };
+
+        let fg_p = if foreground_path.is_null() {
+            None
+        } else {
+            Some(
+                unsafe { std::ffi::CStr::from_ptr(foreground_path) }
+                    .to_str()
+                    .map_err(|_| {
+                        (
+                            FfiErrorCode::Utf8,
+                            "Invalid UTF-8 in foreground path".to_string(),
+                        )
+                    })?,
+            )
+        };
+
+        // SAFETY: Caller guarantees `treatment_ptr` is a valid `RectanglePayload` pointer or null.
+        let treatment = unsafe { treatment_ptr.as_ref() };
+
+        compose_safe(
+            img_p,
+            out_p,
+            font_p,
+            treatment,
+            fg_p,
+            elements,
+            text_buffer,
+            image_quality,
+        )
+    }));
+
+    match result {
+        Ok(Ok(())) => FfiErrorCode::Success as u8,
+        Ok(Err((code, msg))) => write_error_to_arena(arena_opt, code, &msg).code,
+        Err(payload) => handle_panic(arena_opt, payload),
+    }
+}
+
 fn get_rotated_aabb(
     x: f64,
     y: f64,
@@ -577,6 +713,107 @@ fn draw_elements_safe(
     }
 
     let img = surface.into_rgba();
+    io::write_image(Path::new(output_path), &img, image_quality).map_err(|e| {
+        let code = match e {
+            io::IoError::UnsupportedFormat | io::IoError::Encode => FfiErrorCode::Encode,
+            _ => FfiErrorCode::Io,
+        };
+        (code, "Failed to write image".to_string())
+    })
+}
+
+/// The safe core of `compose`. See `compose` for the pipeline contract.
+#[allow(clippy::too_many_arguments)]
+fn compose_safe(
+    image_path: &str,
+    output_path: &str,
+    font_path: Option<&str>,
+    treatment: Option<&RectanglePayload>,
+    foreground_path: Option<&str>,
+    elements: &[FfiElement],
+    text_buffer: &[u8],
+    image_quality: u8,
+) -> Result<(), (FfiErrorCode, String)> {
+    // Font is only needed when a Text element is present (same as draw_elements_safe).
+    let needs_font = elements.iter().any(|e| matches!(e, FfiElement::Text(_)));
+    let font_bytes_holder;
+    let font: Option<ab_glyph::FontRef<'_>> = if needs_font {
+        let f_path =
+            font_path.ok_or((FfiErrorCode::InvalidArg, "Missing font path".to_string()))?;
+        font_bytes_holder = io::read_font(Path::new(f_path))
+            .map_err(|_| (FfiErrorCode::Io, "Failed to read font".to_string()))?;
+        Some(
+            ab_glyph::FontRef::try_from_slice(&font_bytes_holder)
+                .map_err(|_| (FfiErrorCode::Font, "Failed to parse font".to_string()))?,
+        )
+    } else {
+        None
+    };
+
+    let mut img = io::read_image(Path::new(image_path))
+        .map_err(|e| match e {
+            io::IoError::Read => (FfiErrorCode::Io, "Failed to read image".to_string()),
+            io::IoError::Truncated => (
+                FfiErrorCode::Truncated,
+                "Input image is truncated/incomplete (missing JPEG EOI marker)".to_string(),
+            ),
+            _ => (FfiErrorCode::Decode, "Failed to decode image".to_string()),
+        })?
+        .into_rgba8();
+
+    // 1) Full-image background blur, then 2) tint. (Both keyed off the treatment.)
+    if let Some(t) = treatment {
+        if t.blur > 0 {
+            img = image::imageops::blur(&img, f32::from(t.blur) / 3.0);
+        }
+        ops::tint::tint_rgba(&mut img, t.fill_color_argb);
+    }
+
+    // 3) Shapes. `clean_img` clones the *treated* background so per-shape blur samples a backdrop
+    // that already reflects the blur/tint (no seam) and not the sharp foreground (drawn later).
+    let needs_clean_img = elements.iter().any(|e| match e {
+        FfiElement::Rectangle(p) => p.blur > 0,
+        FfiElement::Oval(p) => p.blur > 0,
+        FfiElement::Polygon(p) => p.blur > 0,
+        FfiElement::Text(_) => false,
+    });
+    let clean_img = if needs_clean_img {
+        Some(img.clone())
+    } else {
+        None
+    };
+    let mut surface = Surface::Rgba(img);
+    for element in elements {
+        draw_element_on_surface(
+            &mut surface,
+            clean_img.as_ref(),
+            element,
+            font.as_ref(),
+            text_buffer,
+        )?;
+    }
+    let mut img = surface.into_rgba();
+
+    // 4) Sharp foreground composite (after shapes, before crop) at (0,0). Clipped, never scaled.
+    if let Some(fg_p) = foreground_path {
+        let fg = image::open(Path::new(fg_p))
+            .map_err(|_| {
+                (
+                    FfiErrorCode::Decode,
+                    "Failed to decode foreground image".to_string(),
+                )
+            })?
+            .into_rgba8();
+        image::imageops::overlay(&mut img, &fg, 0, 0);
+    }
+
+    // 5) Crop (last). A treatment rect equal to the full image is a no-op.
+    if let Some(t) = treatment
+        && let Some(cropped) = ops::crop::crop_rgba(&img, t.x, t.y, t.width, t.height)?
+    {
+        img = cropped;
+    }
+
     io::write_image(Path::new(output_path), &img, image_quality).map_err(|e| {
         let code = match e {
             io::IoError::UnsupportedFormat | io::IoError::Encode => FfiErrorCode::Encode,

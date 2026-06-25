@@ -59,6 +59,7 @@ extension DrawElementExtension on DrawElement {
     OvalElement() => .oval,
     PolygonElement() => .polygon,
     MaskRegionElement() => .rectangle,
+    BackgroundElement() => .background,
   };
 
   /// Rotation-aware screen-space center of [handle]. Delegates the geometry to

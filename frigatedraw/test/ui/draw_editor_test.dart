@@ -1767,4 +1767,216 @@ void main() => group(DrawEditor, () {
       expect(knobPainter(tester)?.shouldShowRotationKnob, isFalse);
     });
   });
+
+  group('background mode', () {
+    testWidgets('crops via a corner handle drag and commits an undoable change', (tester) async {
+      final controller = DrawController();
+      await _pumpBackgroundEditor(tester, controller, file);
+      controller
+        ..enterBackgroundMode(const Size(800, 600))
+        ..updateBackgroundTreatment(
+          const BackgroundElement(height: 300, width: 400, x: 100, y: 100),
+        );
+      await tester.pump();
+
+      final topLeft = tester.getTopLeft(find.byType(InteractiveViewer));
+      // Bottom-right handle center is at scene (500, 400) (fit scale is 1:1).
+      final gesture = await tester.startGesture(topLeft + const Offset(500, 400));
+      await tester.pump();
+      await gesture.moveBy(const Offset(-100, -50));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      final treatment = controller.backgroundTreatment;
+      expect(treatment?.width, closeTo(300, 0.5));
+      expect(treatment?.height, closeTo(250, 0.5));
+      expect(controller.elements, isEmpty, reason: 'no shape is created in background mode');
+      expect(controller.canUndo, isTrue, reason: 'the crop drag is committed');
+
+      controller.dispose();
+    });
+
+    testWidgets('body drag moves the crop window and commits an undoable change', (tester) async {
+      final controller = DrawController();
+      await _pumpBackgroundEditor(tester, controller, file);
+      controller
+        ..enterBackgroundMode(const Size(800, 600))
+        ..updateBackgroundTreatment(
+          const BackgroundElement(height: 300, width: 400, x: 100, y: 100),
+        );
+      await tester.pump();
+
+      final topLeft = tester.getTopLeft(find.byType(InteractiveViewer));
+      // (300, 250) is the centre of the crop rect in scene space (fit scale 1:1).
+      final gesture = await tester.startGesture(topLeft + const Offset(300, 250));
+      await tester.pump();
+      await gesture.moveBy(const Offset(50, 30));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      final treatment = controller.backgroundTreatment;
+      expect(treatment?.x, closeTo(150, 0.5), reason: 'body drag shifted x by 50');
+      expect(treatment?.y, closeTo(130, 0.5), reason: 'body drag shifted y by 30');
+      expect(treatment?.width, closeTo(400, 0.5), reason: 'width unchanged on body drag');
+      expect(treatment?.height, closeTo(300, 0.5), reason: 'height unchanged on body drag');
+      expect(controller.elements, isEmpty, reason: 'no shape is created in background mode');
+      expect(controller.canUndo, isTrue, reason: 'the body drag is committed');
+
+      controller.dispose();
+    });
+
+    testWidgets('body drag past the board edge clamps position without shrinking', (tester) async {
+      final controller = DrawController();
+      await _pumpBackgroundEditor(tester, controller, file);
+      controller
+        ..enterBackgroundMode(const Size(800, 600))
+        ..updateBackgroundTreatment(
+          const BackgroundElement(height: 300, width: 400, x: 100, y: 100),
+        );
+      await tester.pump();
+
+      final topLeft = tester.getTopLeft(find.byType(InteractiveViewer));
+      // Body-drag from the crop centre (300, 250) far past the left edge: x would reach -200.
+      final gesture = await tester.startGesture(topLeft + const Offset(300, 250));
+      await tester.pump();
+      await gesture.moveBy(const Offset(-300, 0));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      final treatment = controller.backgroundTreatment;
+      expect(treatment?.x, closeTo(0, 0.5), reason: 'position clamped to the left board edge');
+      expect(
+        treatment?.width,
+        closeTo(400, 0.5),
+        reason: 'a move must preserve the crop width, not shrink it at the edge',
+      );
+      expect(treatment?.height, closeTo(300, 0.5), reason: 'a move preserves the crop height');
+
+      controller.dispose();
+    });
+
+    testWidgets('resize handle does not throw when minShapeSize exceeds the board dimension', (
+      tester,
+    ) async {
+      // When minShapeSize > board.width/height, the clamp lower bound (left + minSize) can
+      // exceed the upper bound (board.width), crashing with ArgumentError. The fix caps
+      // the effective minimum to the board dimension.
+      final controller = DrawController();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 600,
+              width: 800,
+              child: DrawEditor(
+                file,
+                controller: controller,
+                minShapeSize: 1000,
+                size: const Size(800, 600),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      controller
+        ..enterBackgroundMode(const Size(800, 600))
+        ..updateBackgroundTreatment(const BackgroundElement(height: 600, width: 800, x: 0, y: 0));
+      await tester.pump();
+
+      // Tapping the top-left corner of the viewer lands on the topLeft resize handle
+      // (it is within the handle radius), which triggers a resize — not a body drag.
+      final topLeft = tester.getTopLeft(find.byType(InteractiveViewer));
+      final gesture = await tester.startGesture(topLeft + const Offset(1, 1));
+      await tester.pump();
+      await gesture.moveBy(const Offset(10, 10));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      final treatment = controller.backgroundTreatment;
+      expect(treatment?.width, isPositive, reason: 'clamped resize must yield a positive width');
+      expect(treatment?.height, isPositive, reason: 'clamped resize must yield a positive height');
+
+      controller.dispose();
+    });
+
+    testWidgets('selectTool(.background) lazily sizes a full-image treatment to the board', (
+      tester,
+    ) async {
+      final controller = DrawController();
+      await _pumpBackgroundEditor(tester, controller, file);
+      expect(
+        controller.backgroundTreatment,
+        isNull,
+        reason: 'no treatment before the tool is armed',
+      );
+
+      // Arming the background tool without a size defers sizing to the next layout pass.
+      // Re-pumping the tree forces that rebuild, as the surrounding UI would.
+      controller.selectTool(.background);
+      await _pumpBackgroundEditor(tester, controller, file);
+      await tester.pumpAndSettle();
+
+      expect(controller.isBackgroundMode, isTrue);
+      expect(
+        controller.backgroundTreatment,
+        const BackgroundElement.cover(height: 600, width: 800),
+        reason: 'the editor instantiates a full-image cover once the board size is known',
+      );
+
+      controller.dispose();
+    });
+
+    testWidgets('a press off any handle does not create or select a shape', (tester) async {
+      final controller = DrawController();
+      await _pumpBackgroundEditor(tester, controller, file);
+      controller
+        ..enterBackgroundMode(const Size(800, 600))
+        ..updateBackgroundTreatment(
+          const BackgroundElement(height: 200, width: 200, x: 100, y: 100),
+        );
+      await tester.pump();
+      final treatment = controller.backgroundTreatment;
+
+      final topLeft = tester.getTopLeft(find.byType(InteractiveViewer));
+      // (400, 400) is outside the crop rect (x: 100-300, y: 100-300), so the gesture falls through.
+      final gesture = await tester.startGesture(topLeft + const Offset(400, 400));
+      await tester.pump();
+      await gesture.moveBy(const Offset(20, 20));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      expect(controller.elements, isEmpty);
+      expect(controller.selectedIndex, isNull);
+      expect(controller.backgroundTreatment, treatment, reason: 'treatment left untouched');
+
+      controller.dispose();
+    });
+  });
 });
+
+// ignore: parameters-ordering, tester must be first by Flutter convention.
+Future<void> _pumpBackgroundEditor(
+  WidgetTester tester,
+  DrawController controller,
+  File imageFile,
+) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          height: 600,
+          width: 800,
+          child: DrawEditor(imageFile, controller: controller, size: const Size(800, 600)),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}

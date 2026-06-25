@@ -76,6 +76,10 @@ void main() => group('DrawElementExtension', () {
       expect(poly.tool, DrawTool.polygon);
       expect(text.tool, DrawTool.text);
       expect(mask.tool, DrawTool.rectangle);
+      expect(
+        const BackgroundElement(height: 100, width: 200, x: 0, y: 0).tool,
+        DrawTool.background,
+      );
     });
   });
 

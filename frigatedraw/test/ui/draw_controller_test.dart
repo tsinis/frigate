@@ -4,6 +4,7 @@
 // ignore_for_file: prefer-extracting-function-callbacks, prefer-class-destructuring
 
 import 'dart:typed_data';
+import 'dart:ui' show Size;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frigatedraw/frigatedraw.dart';
@@ -342,6 +343,112 @@ void main() {
       controller.selectTool(.rectangle, template: custom);
 
       expect(controller.creationTemplate, custom);
+    });
+
+    group('background mode', () {
+      test('starts with no treatment and not in background mode', () {
+        expect(controller.backgroundTreatment, isNull);
+        expect(controller.isBackgroundMode, isFalse);
+      });
+
+      test('enterBackgroundMode creates a full-image cover treatment and arms the tool', () {
+        controller
+          ..addListener(_handleNotification)
+          ..enterBackgroundMode(const Size(640, 480));
+
+        expect(controller.isBackgroundMode, isTrue);
+        expect(controller.activeTool, DrawTool.background);
+        expect(
+          controller.backgroundTreatment,
+          const BackgroundElement.cover(height: 480, width: 640),
+        );
+        expect(_wasNotified, isTrue);
+      });
+
+      test('selectTool(.background) arms the mode without sizing the treatment', () {
+        controller.selectTool(.background);
+
+        expect(controller.isBackgroundMode, isTrue);
+        expect(controller.activeTool, DrawTool.background);
+        expect(controller.backgroundTreatment, isNull);
+      });
+
+      test('entering background mode clears any shape selection', () {
+        controller
+          ..addElement(rect)
+          ..enterBackgroundMode(const Size(100, 100));
+
+        expect(controller.selectedIndex, isNull);
+      });
+
+      test('selecting a shape tool exits background mode but keeps the treatment', () {
+        controller
+          ..enterBackgroundMode(const Size(100, 100))
+          ..selectTool(.rectangle);
+
+        expect(controller.isBackgroundMode, isFalse);
+        expect(
+          controller.backgroundTreatment,
+          const BackgroundElement.cover(height: 100, width: 100),
+          reason: 'treatment persists after tool switch',
+        );
+      });
+
+      test('exitBackgroundMode disarms but keeps the treatment', () {
+        controller
+          ..enterBackgroundMode(const Size(100, 100))
+          ..exitBackgroundMode();
+
+        expect(controller.isBackgroundMode, isFalse);
+        expect(controller.backgroundTreatment, isNotNull);
+      });
+
+      test('updateBackgroundTreatment replaces the slot and notifies', () {
+        const next = BackgroundElement(blur: 40, height: 60, width: 60, x: 10, y: 10);
+        controller
+          ..enterBackgroundMode(const Size(100, 100))
+          ..addListener(_handleNotification)
+          ..updateBackgroundTreatment(next);
+
+        expect(controller.backgroundTreatment, next);
+        expect(_wasNotified, isTrue);
+      });
+
+      test('commitBackgroundTreatment supports undo and redo', () {
+        controller.enterBackgroundMode(const Size(100, 100));
+        const before = BackgroundElement.cover(height: 100, width: 100);
+        final after = before.copyWith(blur: 50);
+
+        controller.commitBackgroundTreatment(after: after, before: before);
+        expect(controller.backgroundTreatment, after);
+        expect(controller.canUndo, isTrue);
+
+        controller.undo();
+        expect(controller.backgroundTreatment, before);
+
+        controller.redo();
+        // ignore: avoid-duplicate-test-assertions, intentional: verifies redo re-applies state.
+        expect(controller.backgroundTreatment, after);
+      });
+
+      test('commitBackgroundTreatment is a no-op when before == after', () {
+        controller.enterBackgroundMode(const Size(100, 100));
+        const treatment = BackgroundElement.cover(height: 100, width: 100);
+
+        controller.commitBackgroundTreatment(after: treatment, before: treatment);
+
+        expect(controller.canUndo, isFalse);
+      });
+
+      test('clearing the treatment via the setter notifies', () {
+        controller
+          ..enterBackgroundMode(const Size(100, 100))
+          ..addListener(_handleNotification)
+          ..backgroundTreatment = null;
+
+        expect(controller.backgroundTreatment, isNull);
+        expect(_wasNotified, isTrue);
+      });
     });
   });
 }

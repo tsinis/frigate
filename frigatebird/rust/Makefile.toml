@@ -78,8 +78,13 @@ command = "cargo"
 args = ["expand"]
 
 [tasks.trust]
-command = "cargo"
-args = ["trust"]
+script = '''
+if cargo trust --version > /dev/null 2>&1; then
+    cargo trust
+else
+    echo "cargo-trust not available on this platform, skipping"
+fi
+'''
 
 [tasks.install-macos-targets]
 condition = { platforms = ["macos"] }

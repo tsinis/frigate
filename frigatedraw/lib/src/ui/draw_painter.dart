@@ -13,6 +13,7 @@ class DrawPainter extends CustomPainter {
     this.elements, {
     this.activeTool,
     this.backgroundImage,
+    this.backgroundTreatment,
     this.creationTemplate,
     this.cursorPosition,
     this.handleBorderWidth = 2.0,
@@ -22,12 +23,17 @@ class DrawPainter extends CustomPainter {
     this.rotationKnobDistance = 32.0,
     this.rotationKnobRadius = 12.0,
     this.selectedIndex,
+    this.shouldShowBackgroundHandles = false,
     this.shouldShowRotationKnob = false,
     this.tolerance = 20.0,
   });
 
   final DrawTool? activeTool;
   final ui.Image? backgroundImage;
+
+  /// The single image-wide background treatment (full-image blur + tint, with the crop region
+  /// dimmed by [_cropDimColor]). Drawn under the shapes; `null` = no treatment.
+  final BackgroundElement? backgroundTreatment;
   final DrawElement? creationTemplate;
   final Offset? cursorPosition;
   final List<DrawElement> elements;
@@ -48,6 +54,10 @@ class DrawPainter extends CustomPainter {
   final double rotationKnobRadius;
   final int? selectedIndex;
 
+  /// Whether the background tool is armed: draws the crop resize handles (no rotation knob)
+  /// around [backgroundTreatment].
+  final bool shouldShowBackgroundHandles;
+
   /// Whether to draw the rotation knob + stem for the selected element.
   final bool shouldShowRotationKnob;
   final double tolerance;
@@ -58,13 +68,24 @@ class DrawPainter extends CustomPainter {
   /// White fill for the rotation knob (inverted vs handles).
   static final _knobFillPaint = Paint()..color = const Color(0xFFFFFFFF);
 
+  /// `Colors.black54` — dims the area outside the crop region so a smaller background rect reads
+  /// as a crop (distinct from an ordinary blur/tint rectangle).
+  static const _cropDimColor = Color(0x8A000000);
+
   @override
   void paint(Canvas canvas, Size size) {
+    final background = backgroundTreatment;
+    // Background treatment renders UNDER the shapes: blur the whole image, then tint it.
+    if (background != null) _paintBackgroundTreatment(canvas, size, background);
+
     for (final element in elements) {
       _paintElement(canvas, size, element, outlineStrokeWidth);
     }
 
     _paintPolygonPreview(canvas, outlineStrokeWidth);
+
+    // Crop dimming + crop handles render ON TOP of everything else.
+    if (background != null) _paintBackgroundOverlay(canvas, size, background);
 
     final index = selectedIndex;
     if (index == null || index.isNegative || index >= elements.length) return;
@@ -328,6 +349,55 @@ class DrawPainter extends CustomPainter {
     canvas.drawPath(dashedPath, paint);
   }
 
+  /// Renders the background treatment that sits UNDER the shapes: a full-image GPU blur (reusing
+  /// [_applyBlur] with a full-canvas clip) followed by the tint fill.
+  // ignore: parameters-ordering, canvas must be first by Flutter convention.
+  void _paintBackgroundTreatment(Canvas canvas, Size canvasSize, BackgroundElement background) {
+    final image = backgroundImage;
+    if (background.blur > 0 && image != null) {
+      _applyBlur(
+        bgImage: image,
+        blurSigma: background.blur / 3.0,
+        canvas: canvas,
+        canvasSize: canvasSize,
+        clipPath: Path()..addRect(Offset.zero & canvasSize),
+      );
+    }
+
+    final tint = background.uiFillColor;
+    if (tint.a > 0) canvas.drawRect(Offset.zero & canvasSize, Paint()..color = tint);
+  }
+
+  /// Renders the crop affordance ON TOP of everything: dims the area outside the crop rect with
+  /// [_cropDimColor], and (when armed) draws the 8 resize handles — never a rotation knob.
+  // ignore: parameters-ordering, canvas must be first by Flutter convention.
+  void _paintBackgroundOverlay(Canvas canvas, Size canvasSize, BackgroundElement background) {
+    final cropRect = background.rect;
+    final fullRect = Offset.zero & canvasSize;
+    final isFullCover =
+        cropRect.left <= fullRect.left &&
+        cropRect.top <= fullRect.top &&
+        cropRect.right >= fullRect.right &&
+        cropRect.bottom >= fullRect.bottom;
+    if (!isFullCover) {
+      final dimPath = Path()
+        ..fillType = .evenOdd
+        ..addRect(fullRect)
+        ..addRect(cropRect);
+      canvas.drawPath(dimPath, Paint()..color = _cropDimColor);
+    }
+
+    if (shouldShowBackgroundHandles) {
+      final handlePaint = Paint()
+        ..color = const Color(0xFFFFFFFF)
+        ..style = .stroke
+        ..strokeWidth = handleBorderWidth;
+      for (final handle in HandlePosition.values) {
+        _paintHandle(canvas, handlePaint, background.handleCenter(handle), handleRadius);
+      }
+    }
+  }
+
   static void _applyBlur({
     required ui.Image bgImage,
     required double blurSigma,
@@ -387,7 +457,10 @@ class DrawPainter extends CustomPainter {
     MaskRegionElement() => _paintRect(backgroundImage, canvas, canvasSize, element, outlineStroke),
     OvalElement() => _paintOval(backgroundImage, canvas, canvasSize, element, outlineStroke),
     PolygonElement() => _paintPolygon(backgroundImage, canvas, canvasSize, element, outlineStroke),
-    TextElement() => null, // TODO(tsinis): render TextElement in the preview painter.
+    // TextElement: TODO(tsinis): render in the preview painter.
+    // BackgroundElement: never in the element list — rendered by the dedicated background pass in
+    // `paint()` (full-image blur/tint + crop affordance), not here.
+    TextElement() || BackgroundElement() => null,
   };
 
   static void _paintPolygon(
@@ -472,7 +545,7 @@ class DrawPainter extends CustomPainter {
 
     final cornerRadius = switch (element) {
       RectElement(cornerRadius: final rectCornerRadius) => rectCornerRadius,
-      MaskRegionElement() || OvalElement() || TextElement() => 0,
+      MaskRegionElement() || OvalElement() || TextElement() || BackgroundElement() => 0,
     };
     final isRounded = cornerRadius > 0;
     final shouldShowBlurPreview = element.blur > 0 && uiFillColor.a < 1.0;
@@ -691,6 +764,8 @@ class DrawPainter extends CustomPainter {
     if (!identical(oldDelegate.creationTemplate, creationTemplate)) return true;
     if (oldDelegate.tolerance != tolerance) return true;
     if (oldDelegate.backgroundImage != backgroundImage) return true;
+    if (oldDelegate.backgroundTreatment != backgroundTreatment) return true;
+    if (oldDelegate.shouldShowBackgroundHandles != shouldShowBackgroundHandles) return true;
     if (oldDelegate.handleBorderWidth != handleBorderWidth) return true;
     if (oldDelegate.handleRadius != handleRadius) return true;
     if (oldDelegate.outlineStrokeWidth != outlineStrokeWidth) return true;

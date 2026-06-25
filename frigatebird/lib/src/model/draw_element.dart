@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../constants/draw_constants.dart';
 import 'ffi_color.dart';
 
+part 'background_element.dart';
 part 'immutable_draw_element.dart';
 part 'mask_region_element.dart';
 part 'oval_element.dart';

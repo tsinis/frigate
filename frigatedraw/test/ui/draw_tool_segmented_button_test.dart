@@ -61,7 +61,7 @@ void main() => group(DrawToolSegmentedButton, () {
     expect(segmentedFinder, findsOneWidget);
 
     final segments = tester.widget<SegmentedButton<DrawTool>>(segmentedFinder).segments;
-    expect(segments.length, 5);
+    expect(segments.length, 6);
 
     expect(find.descendant(matching: find.byType(Text), of: segmentedFinder), findsNothing);
 

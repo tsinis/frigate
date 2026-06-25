@@ -252,19 +252,28 @@ void main() {
     });
   });
 
-  group('BlurFullImage golden', () {
+  group('Compose full-image blur golden', () {
     test('blur is deterministic (byte-identical across two runs)', () async {
       final pathAlpha = _tempPath('frigate_blur_golden_a.jpg');
       final pathBeta = _tempPath('frigate_blur_golden_b.jpg');
       addTearDown(() => _cleanup([pathAlpha, pathBeta]));
 
-      await RenderImage.blurFullImage(imagePath: imagePath, outputPath: pathAlpha, radius: 10);
-      await RenderImage.blurFullImage(imagePath: imagePath, outputPath: pathBeta, radius: 10);
+      final treatment = await _coverBlur(imagePath, 10);
+      await RenderImage.compose(
+        backgroundPath: imagePath,
+        backgroundTreatment: treatment,
+        outputPath: pathAlpha,
+      );
+      await RenderImage.compose(
+        backgroundPath: imagePath,
+        backgroundTreatment: treatment,
+        outputPath: pathBeta,
+      );
 
       expect(
         _hashFile(pathAlpha),
         _hashFile(pathBeta),
-        reason: 'BlurFullImage must produce byte-identical output across runs.',
+        reason: 'compose must produce byte-identical output across runs.',
       );
     });
 
@@ -273,11 +282,15 @@ void main() {
       addTearDown(() => _cleanup([outPath]));
 
       final original = await ImageInformation.probe(imagePath);
-      await RenderImage.blurFullImage(imagePath: imagePath, outputPath: outPath, radius: 5);
+      await RenderImage.compose(
+        backgroundPath: imagePath,
+        backgroundTreatment: await _coverBlur(imagePath, 5),
+        outputPath: outPath,
+      );
       final blurred = await ImageInformation.probe(outPath);
 
-      expect(blurred.width, original.width, reason: 'Blur preserves width.');
-      expect(blurred.height, original.height, reason: 'Blur preserves height.');
+      expect(blurred.width, original.width, reason: 'Full-image blur preserves width.');
+      expect(blurred.height, original.height, reason: 'Full-image blur preserves height.');
     });
 
     test('blur output differs from original (not a no-op)', () async {
@@ -287,11 +300,11 @@ void main() {
 
       // Make a copy at same quality for fair comparison.
       await RenderImage.toJpg(imagePath: imagePath, imageQuality: 80, outputPath: origCopy);
-      await RenderImage.blurFullImage(
-        imagePath: imagePath,
+      await RenderImage.compose(
+        backgroundPath: imagePath,
+        backgroundTreatment: await _coverBlur(imagePath, 15),
         imageQuality: 80,
         outputPath: outPath,
-        radius: 15,
       );
 
       expect(
@@ -301,6 +314,15 @@ void main() {
       );
     });
   });
+}
+
+Future<BackgroundElement> _coverBlur(String imagePath, int radius) async {
+  final info = await ImageInformation.probe(imagePath);
+
+  return BackgroundElement.cover(
+    height: info.height.toDouble(),
+    width: info.width.toDouble(),
+  ).copyWith(blur: radius);
 }
 
 String _hashFile(String path) => sha256.convert(File(path).readAsBytesSync()).toString();

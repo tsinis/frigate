@@ -205,7 +205,11 @@ void main() => group('DrawElementRotationExtension', () {
       final result = triangle.transformedBy((x: 50, y: 50), 0, scaleFactor: 2);
       final box = switch (result) {
         PolygonElement(:final vertices) => PolygonElement.boundingBoxOf(vertices),
-        RectElement() || OvalElement() || TextElement() || MaskRegionElement() => null,
+        RectElement() ||
+        OvalElement() ||
+        TextElement() ||
+        MaskRegionElement() ||
+        BackgroundElement() => null,
       };
 
       expect(

@@ -1,5 +1,5 @@
 // ! Integration tests for the RenderImage entry point.
-// ignore_for_file: avoid-ignoring-return-values, avoid-similar-names
+// ignore_for_file: avoid-ignoring-return-values, avoid-long-files, avoid-similar-names
 // ignore_for_file: avoid-non-ascii-symbols, no-empty-string, prefer-first
 // ignore_for_file: avoid-unsafe-collection-methods, prefer-moving-to-variable
 
@@ -197,9 +197,17 @@ void main() {
       outFile.deleteSync();
     });
 
-    test('blurFullImage applies full image blur', () async {
-      final outPath = _ensureTempFileAbsent('frigate_blur_full.jpg');
-      await RenderImage.blurFullImage(imagePath: imagePath, outputPath: outPath, radius: 10);
+    test('compose applies a full-image blur treatment', () async {
+      final outPath = _ensureTempFileAbsent('frigate_compose_blur_full.jpg');
+      final info = await ImageInformation.probe(imagePath);
+      await RenderImage.compose(
+        backgroundPath: imagePath,
+        backgroundTreatment: BackgroundElement.cover(
+          height: info.height.toDouble(),
+          width: info.width.toDouble(),
+        ).copyWith(blur: 10),
+        outputPath: outPath,
+      );
 
       final outFile = File(outPath);
       expect(outFile.existsSync(), isTrue);
@@ -219,10 +227,9 @@ void main() {
       outFile.deleteSync();
     });
 
-    test('blurFullImage throws RenderException for non-existent image', () async {
-      final future = RenderImage.blurFullImage(
-        imagePath: '${Directory.systemTemp.path}/does_not_exist.jpg',
-        radius: 10,
+    test('compose throws RenderException for non-existent image', () async {
+      final future = RenderImage.compose(
+        backgroundPath: '${Directory.systemTemp.path}/does_not_exist.jpg',
       );
       await expectLater(
         future,
@@ -230,31 +237,35 @@ void main() {
       );
     });
 
-    test('blurFullImage throws RenderException for empty imagePath', () {
+    test('compose throws RenderException for empty backgroundPath', () {
       const emptyPath = '';
       expect(
-        () =>
-            // ignore: avoid-async-call-in-sync-function, it throws synchronously before returning Future.
-            RenderImage.blurFullImage(imagePath: emptyPath, radius: 10),
+        // ignore: avoid-async-call-in-sync-function, it throws synchronously before returning Future.
+        () => RenderImage.compose(backgroundPath: emptyPath),
         throwsA(isA<RenderException>().having((e) => e.code, 'code', FfiErrorCode.invalidArg)),
       );
     });
 
-    test('blurFullImage respects imageQuality param', () async {
-      final outPathHigh = _ensureTempFileAbsent('frigate_blur_q100.jpg');
-      final outPathLow = _ensureTempFileAbsent('frigate_blur_q10.jpg');
+    test('compose respects imageQuality param', () async {
+      final outPathHigh = _ensureTempFileAbsent('frigate_compose_q100.jpg');
+      final outPathLow = _ensureTempFileAbsent('frigate_compose_q10.jpg');
+      final info = await ImageInformation.probe(imagePath);
+      final treatment = BackgroundElement.cover(
+        height: info.height.toDouble(),
+        width: info.width.toDouble(),
+      ).copyWith(blur: 5);
 
-      await RenderImage.blurFullImage(
-        imagePath: imagePath,
+      await RenderImage.compose(
+        backgroundPath: imagePath,
+        backgroundTreatment: treatment,
         imageQuality: 100,
         outputPath: outPathHigh,
-        radius: 5,
       );
-      await RenderImage.blurFullImage(
-        imagePath: imagePath,
+      await RenderImage.compose(
+        backgroundPath: imagePath,
+        backgroundTreatment: treatment,
         imageQuality: 10,
         outputPath: outPathLow,
-        radius: 5,
       );
 
       final highFile = File(outPathHigh);
@@ -268,6 +279,37 @@ void main() {
       );
       highFile.deleteSync();
       lowFile.deleteSync();
+    });
+
+    test('compose crops the output to the treatment rect dimensions', () async {
+      final outPath = _ensureTempFileAbsent('frigate_compose_crop.png');
+      final info = await ImageInformation.probe(imagePath);
+      const cropWidth = 64.0;
+      const cropHeight = 48.0;
+      await RenderImage.compose(
+        backgroundPath: imagePath,
+        backgroundTreatment: const BackgroundElement(
+          height: cropHeight,
+          width: cropWidth,
+          x: 10,
+          y: 10,
+        ),
+        outputPath: outPath,
+      );
+
+      final cropped = await ImageInformation.probe(outPath);
+      expect((cropped.width, cropped.height), (cropWidth.toInt(), cropHeight.toInt()));
+      expect((info.width, info.height), isNot((cropWidth.toInt(), cropHeight.toInt())));
+      File(outPath).deleteSync();
+    });
+
+    test('compose with no treatment and no elements writes a passthrough', () async {
+      final outPath = _ensureTempFileAbsent('frigate_compose_passthrough.png');
+      await RenderImage.compose(backgroundPath: imagePath, outputPath: outPath);
+
+      final outFile = File(outPath);
+      expect(outFile.existsSync(), isTrue);
+      outFile.deleteSync();
     });
   });
 
