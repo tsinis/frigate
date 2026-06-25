@@ -124,8 +124,9 @@ sealed class RenderImage {
   /// **crop**, writing the result to [outputPath] (or overwriting [backgroundPath] when null).
   ///
   /// - [backgroundTreatment] (a [BackgroundElement]) carries the crop rect (`x/y/width/height`),
-  ///   the full-image background `blur`, and the `fillColor` tint. Null = no treatment, in which
-  ///   case this behaves like [run] (just shapes).
+  ///   the full-image background `blur`, and the `fillColor` tint. Null = no background
+  ///   blur/tint/crop is applied; with no [foregroundPath] either, this behaves like [run]
+  ///   (just shapes).
   /// - [foregroundPath] is an alpha PNG composited sharp at (0,0) **after** shapes and **before**
   ///   crop; it must match the background's pixel dimensions (clipped, never scaled).
   /// - [fontPath] is required when [elements] contains any [TextElement].

@@ -46,6 +46,22 @@ void main() => group(BackgroundElement, () {
     expect(updated.fillColor, FfiColor.black);
   });
 
+  test('copyWith preserves fields that are not overridden', () {
+    const original = BackgroundElement(
+      blur: 25,
+      fillColor: .black,
+      height: 80,
+      width: 100,
+      x: 1,
+      y: 2,
+    );
+    final updated = original.copyWith(x: 5);
+
+    expect(updated.blur, 25, reason: 'omitted blur falls back to the original');
+    expect(updated.fillColor, FfiColor.black, reason: 'omitted tint falls back to the original');
+    expect((updated.x, updated.y, updated.width, updated.height), (5.0, 2.0, 100.0, 80.0));
+  });
+
   test('copyWith asserts rotation stays 0', () {
     const original = BackgroundElement(height: 80, width: 100, x: 0, y: 0);
 
@@ -67,6 +83,18 @@ void main() => group(BackgroundElement, () {
     expect(alpha, twin);
     expect(alpha.hashCode, twin.hashCode);
     expect(alpha, isNot(gamma));
+  });
+
+  test('equality compares the tint for non-identical instances', () {
+    // Runtime copyWith results aren't canonicalized like const literals.
+    // The `==` chain therefore skips the identity short-circuit and compares every field.
+    const template = BackgroundElement(blur: 10, height: 8, width: 9, x: 0, y: 0);
+    final base = template.copyWith(fillColor: .black);
+    final sameFill = template.copyWith(fillColor: .black);
+    final otherFill = template.copyWith(); // Keeps the default transparent tint.
+
+    expect(base == sameFill, isTrue, reason: 'equal in every field including tint');
+    expect(base == otherFill, isFalse, reason: 'differs only in tint');
   });
 
   test('toString surfaces the treatment fields', () {

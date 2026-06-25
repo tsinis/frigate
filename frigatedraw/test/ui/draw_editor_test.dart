@@ -1827,6 +1827,64 @@ void main() => group(DrawEditor, () {
       controller.dispose();
     });
 
+    testWidgets('body drag past the board edge clamps position without shrinking', (tester) async {
+      final controller = DrawController();
+      await _pumpBackgroundEditor(tester, controller, file);
+      controller
+        ..enterBackgroundMode(const Size(800, 600))
+        ..updateBackgroundTreatment(
+          const BackgroundElement(height: 300, width: 400, x: 100, y: 100),
+        );
+      await tester.pump();
+
+      final topLeft = tester.getTopLeft(find.byType(InteractiveViewer));
+      // Body-drag from the crop centre (300, 250) far past the left edge: x would reach -200.
+      final gesture = await tester.startGesture(topLeft + const Offset(300, 250));
+      await tester.pump();
+      await gesture.moveBy(const Offset(-300, 0));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      final treatment = controller.backgroundTreatment;
+      expect(treatment?.x, closeTo(0, 0.5), reason: 'position clamped to the left board edge');
+      expect(
+        treatment?.width,
+        closeTo(400, 0.5),
+        reason: 'a move must preserve the crop width, not shrink it at the edge',
+      );
+      expect(treatment?.height, closeTo(300, 0.5), reason: 'a move preserves the crop height');
+
+      controller.dispose();
+    });
+
+    testWidgets('selectTool(.background) lazily sizes a full-image treatment to the board', (
+      tester,
+    ) async {
+      final controller = DrawController();
+      await _pumpBackgroundEditor(tester, controller, file);
+      expect(
+        controller.backgroundTreatment,
+        isNull,
+        reason: 'no treatment before the tool is armed',
+      );
+
+      // Arming the background tool without a size defers sizing to the next layout pass.
+      // Re-pumping the tree forces that rebuild, as the surrounding UI would.
+      controller.selectTool(.background);
+      await _pumpBackgroundEditor(tester, controller, file);
+      await tester.pumpAndSettle();
+
+      expect(controller.isBackgroundMode, isTrue);
+      expect(
+        controller.backgroundTreatment,
+        const BackgroundElement.cover(height: 600, width: 800),
+        reason: 'the editor instantiates a full-image cover once the board size is known',
+      );
+
+      controller.dispose();
+    });
+
     testWidgets('a press off any handle does not create or select a shape', (tester) async {
       final controller = DrawController();
       await _pumpBackgroundEditor(tester, controller, file);

@@ -452,7 +452,11 @@ class _DrawingScreenState extends State<DrawingScreen> {
       child: ListenableBuilder(
         builder: (context, _) {
           final isSelected = _controller.selectedElement != null;
-          final sliderValue = isSelected
+          // In background mode the slider drives the treatment, so it must read its blur back
+          // (otherwise the thumb desyncs to `_selectedBlur` after a controller notification).
+          final sliderValue = _controller.isBackgroundMode
+              ? (_controller.backgroundTreatment?.blur.toDouble() ?? _selectedBlur)
+              : isSelected
               ? (_controller.selectedElement?.blur.toDouble() ?? 0)
               : _selectedBlur;
 

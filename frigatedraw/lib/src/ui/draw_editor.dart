@@ -401,20 +401,31 @@ class _DrawEditorState extends State<DrawEditor> {
   void _dragBackground(PointerMoveEvent event) {
     final background = _draw.backgroundTreatment;
     if (background == null) return;
-    final updated = _resizeOrMove(event.localDelta / _viewScale, background, handle: _activeHandle);
+    final handle = _activeHandle;
+    final updated = _resizeOrMove(event.localDelta / _viewScale, background, handle: handle);
     if (updated is! BackgroundElement) return;
-    _draw.updateBackgroundTreatment(_clampToBoard(updated));
+    _draw.updateBackgroundTreatment(_clampToBoard(updated, isMove: handle == null));
   }
 
-  /// Clamps a crop rect so it never extends past the image bounds.
-  BackgroundElement _clampToBoard(BackgroundElement element) {
+  /// Clamps a crop rect to the image bounds. A body move ([isMove]) slides the rect back inside
+  /// while preserving its size; a handle resize clamps each edge but never collapses the rect below
+  /// [DrawEditor._minShapeSize] (a zero/negative crop would fail the Rust export with `invalidArg`).
+  BackgroundElement _clampToBoard(BackgroundElement element, {required bool isMove}) {
     final board = _boardSize;
     if (board == null || board.isEmpty) return element;
 
-    final left = element.x.clamp(0.0, board.width);
-    final top = element.y.clamp(0.0, board.height);
-    final right = (element.x + element.width).clamp(0.0, board.width);
-    final bottom = (element.y + element.height).clamp(0.0, board.height);
+    if (isMove) {
+      final maxX = (board.width - element.width).clamp(0.0, board.width);
+      final maxY = (board.height - element.height).clamp(0.0, board.height);
+
+      return element.copyWith(x: element.x.clamp(0.0, maxX), y: element.y.clamp(0.0, maxY));
+    }
+
+    final minSize = widget._minShapeSize;
+    final left = element.x.clamp(0.0, (board.width - minSize).clamp(0.0, board.width));
+    final top = element.y.clamp(0.0, (board.height - minSize).clamp(0.0, board.height));
+    final right = (element.x + element.width).clamp(left + minSize, board.width);
+    final bottom = (element.y + element.height).clamp(top + minSize, board.height);
 
     return element.copyWith(height: bottom - top, width: right - left, x: left, y: top);
   }

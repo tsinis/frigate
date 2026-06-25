@@ -1,10 +1,10 @@
-//! Golden + behavioural tests for the `compose` FFI entry point.
+//! Golden + behavioral tests for the `compose` FFI entry point.
 //!
 //! `compose` applies the unified background-tool pipeline (original image space, crop last):
 //! full-image blur → tint → draw shapes → composite a sharp foreground → crop.
 //!
 //! Goldens cover blur-only, tint-only, shapes-then-foreground ordering, crop, and the full
-//! pipeline. Behavioural tests cover passthrough, JPEG output, and the error paths.
+//! pipeline. Behavioral tests cover passthrough, JPEG output, and the error paths.
 #![allow(unsafe_code)]
 
 use std::ffi::CString;
@@ -12,7 +12,9 @@ use std::path::{Path, PathBuf};
 
 use image::RgbaImage;
 
-use frigate::{FfiElement, FfiErrorCode, RectanglePayload};
+use frigate::{
+    FfiArena, FfiElement, FfiErrorCode, OvalPayload, PolygonPayload, RectanglePayload, TextPayload,
+};
 
 fn assets_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets")
@@ -311,7 +313,7 @@ fn golden_compose_full_pipeline() {
     std::fs::remove_file(&fg_path).ok();
 }
 
-// ── Behavioural / error-path coverage ──────────────────────────────────────────
+// ── Behavioral / error-path coverage ──────────────────────────────────────────
 
 #[test]
 #[cfg(not(miri))]
@@ -386,7 +388,7 @@ fn compose_nonexistent_file_returns_io_error() {
 
 #[test]
 fn compose_bad_foreground_returns_decode_error() {
-    let out = temp_path("frigate_compose_badfg.png");
+    let out = temp_path("frigate_compose_bad_foreground.png");
     let status = call_compose(
         assets_dir().join("paint.jpg").to_str().unwrap(),
         out.to_str().unwrap(),
@@ -401,7 +403,7 @@ fn compose_bad_foreground_returns_decode_error() {
 
 #[test]
 fn compose_degenerate_crop_returns_invalid_arg() {
-    let out = temp_path("frigate_compose_badcrop.png");
+    let out = temp_path("frigate_compose_bad_crop.png");
     let status = call_compose(
         assets_dir().join("paint.jpg").to_str().unwrap(),
         out.to_str().unwrap(),
@@ -413,4 +415,318 @@ fn compose_degenerate_crop_returns_invalid_arg() {
     );
     assert_eq!(status, FfiErrorCode::InvalidArg as u8);
     std::fs::remove_file(&out).ok();
+}
+
+// ── Coverage: font/text path, per-shape blur clone, and the defensive FFI guards ──
+
+#[test]
+#[cfg(not(miri))]
+fn compose_renders_text_via_font_and_arena() {
+    let img = cstr(assets_dir().join("paint.jpg").to_str().unwrap());
+    let out = temp_path("frigate_compose_text.png");
+    let out_c = cstr(out.to_str().unwrap());
+    let font = cstr(
+        assets_dir()
+            .join("RobotoMono-VariableFont_wght.ttf")
+            .to_str()
+            .unwrap(),
+    );
+
+    let text = "Compose";
+    let elements = [FfiElement::Text(TextPayload::new(
+        10.0,
+        10.0,
+        24.0,
+        0xFF_FF_00_00,
+        0,
+        0,
+        text.len() as u32,
+    ))];
+    let mut arena = FfiArena {
+        text_buf: text.as_ptr(),
+        text_len: text.len(),
+        image_buf: std::ptr::null(),
+        image_len: 0,
+        error: vec![0u8; 256].into_boxed_slice().into(),
+    };
+
+    // SAFETY: every pointer is valid for the duration of the call; the buffers outlive it.
+    let status = unsafe {
+        frigate::compose(
+            img.as_ptr(),
+            out_c.as_ptr(),
+            font.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            elements.as_ptr(),
+            elements.len(),
+            100,
+            &raw mut arena,
+        )
+    };
+    assert_eq!(status, FfiErrorCode::Success as u8);
+    assert!(image::open(&out).is_ok(), "text composite decodes");
+    std::fs::remove_file(&out).ok();
+}
+
+#[test]
+#[cfg(not(miri))]
+fn compose_clones_clean_image_for_oval_and_polygon_blur() {
+    let out = temp_path("frigate_compose_oval_poly.png");
+    let verts: [f64; 6] = [20.0, 20.0, 120.0, 20.0, 70.0, 120.0];
+    // The sharp oval comes first so `needs_clean_img`'s `.any(..)` does not short-circuit before it
+    // evaluates the (blurred) polygon arm — both per-shape-blur arms must execute.
+    let elements = [
+        FfiElement::Oval(OvalPayload {
+            x: 10.0,
+            y: 10.0,
+            width: 80.0,
+            height: 60.0,
+            rotation_deg: 0,
+            fill_color_argb: 0x80_00_00_FF,
+            outline_color_argb: 0,
+            outline_thickness: 0,
+            blur: 0,
+            _pad: [0; 2],
+        }),
+        FfiElement::Polygon(PolygonPayload::new(
+            20.0,
+            20.0,
+            100.0,
+            100.0,
+            verts.as_ptr(),
+            (verts.len() / 2) as u32,
+            0x80_00_FF_00,
+            0,
+            0,
+            6,
+            0,
+        )),
+    ];
+
+    let status = call_compose(
+        assets_dir().join("paint.jpg").to_str().unwrap(),
+        out.to_str().unwrap(),
+        None,
+        None,
+        &elements,
+        100,
+    );
+    assert_eq!(status, FfiErrorCode::Success as u8);
+    std::fs::remove_file(&out).ok();
+}
+
+#[test]
+#[cfg(not(miri))]
+fn compose_null_output_overwrites_input() {
+    let src = temp_path("frigate_compose_overwrite_src.png");
+    base_image()
+        .save(&src)
+        .expect("failed to seed the overwrite source image");
+    let img = cstr(src.to_str().unwrap());
+
+    // SAFETY: a null output path is the case under test — compose overwrites the input path.
+    let status = unsafe {
+        frigate::compose(
+            img.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            &treatment(0.0, 0.0, 50.0, 40.0, 4, 0),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            100,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, FfiErrorCode::Success as u8);
+    let result = image::open(&src).unwrap();
+    assert_eq!(
+        (result.width(), result.height()),
+        (50, 40),
+        "input file is overwritten with the cropped output"
+    );
+    std::fs::remove_file(&src).ok();
+}
+
+#[test]
+fn compose_null_elements_pointer_with_count_returns_invalid_arg() {
+    let img = cstr(assets_dir().join("paint.jpg").to_str().unwrap());
+    let out = cstr(
+        temp_path("frigate_compose_null_elements.png")
+            .to_str()
+            .unwrap(),
+    );
+
+    // SAFETY: `elements_count > 0` with a null `elements_ptr` is the case under test.
+    let status = unsafe {
+        frigate::compose(
+            img.as_ptr(),
+            out.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            1,
+            100,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, FfiErrorCode::InvalidArg as u8);
+}
+
+#[test]
+fn compose_null_text_buffer_with_text_len_returns_invalid_arg() {
+    let img = cstr(assets_dir().join("paint.jpg").to_str().unwrap());
+    let out = cstr(temp_path("frigate_compose_null_text.png").to_str().unwrap());
+    let mut arena = FfiArena {
+        text_buf: std::ptr::null(),
+        text_len: 5,
+        image_buf: std::ptr::null(),
+        image_len: 0,
+        error: vec![0u8; 256].into_boxed_slice().into(),
+    };
+
+    // SAFETY: `text_len > 0` with a null `text_buf` is the case under test.
+    let status = unsafe {
+        frigate::compose(
+            img.as_ptr(),
+            out.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            100,
+            &raw mut arena,
+        )
+    };
+    assert_eq!(status, FfiErrorCode::InvalidArg as u8);
+}
+
+/// "f" + an invalid UTF-8 byte + NUL: a valid C string whose bytes are not valid UTF-8.
+const BAD_UTF8: [u8; 3] = [0x66, 0xFF, 0x00];
+
+#[test]
+#[cfg(not(miri))]
+fn compose_non_image_background_returns_decode_error() {
+    let bad = temp_path("frigate_compose_not_an_image.jpg");
+    std::fs::write(&bad, b"this is plainly not an image").unwrap();
+    let out = temp_path("frigate_compose_decode_out.png");
+    let status = call_compose(
+        bad.to_str().unwrap(),
+        out.to_str().unwrap(),
+        None,
+        None,
+        &[],
+        100,
+    );
+
+    assert_eq!(status, FfiErrorCode::Decode as u8);
+    std::fs::remove_file(&bad).ok();
+}
+
+#[test]
+#[cfg(not(miri))]
+fn compose_truncated_jpeg_background_returns_truncated() {
+    // A real JPEG with its trailing EOI marker (0xFF 0xD9) chopped off: starts with the SOI marker
+    // but is incomplete, so `read_image` reports it as truncated rather than a generic decode error.
+    let full = std::fs::read(assets_dir().join("paint.jpg")).unwrap();
+    let truncated = &full[..full.len() - 2];
+    let bad = temp_path("frigate_compose_truncated.jpg");
+    std::fs::write(&bad, truncated).unwrap();
+    let out = temp_path("frigate_compose_truncated_out.png");
+    let status = call_compose(
+        bad.to_str().unwrap(),
+        out.to_str().unwrap(),
+        None,
+        None,
+        &[],
+        100,
+    );
+
+    assert_eq!(status, FfiErrorCode::Truncated as u8);
+    std::fs::remove_file(&bad).ok();
+}
+
+#[test]
+fn compose_invalid_utf8_image_path_returns_utf8_error() {
+    let out = cstr(temp_path("frigate_compose_utf8_img.png").to_str().unwrap());
+    // SAFETY: a NUL-terminated C string with non-UTF-8 content in the image path.
+    let status = unsafe {
+        frigate::compose(
+            BAD_UTF8.as_ptr().cast(),
+            out.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            100,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, FfiErrorCode::Utf8 as u8);
+}
+
+#[test]
+fn compose_invalid_utf8_output_path_returns_utf8_error() {
+    let img = cstr(assets_dir().join("paint.jpg").to_str().unwrap());
+    // SAFETY: a NUL-terminated C string with non-UTF-8 content in the output path.
+    let status = unsafe {
+        frigate::compose(
+            img.as_ptr(),
+            BAD_UTF8.as_ptr().cast(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            100,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, FfiErrorCode::Utf8 as u8);
+}
+
+#[test]
+fn compose_invalid_utf8_font_path_returns_utf8_error() {
+    let img = cstr(assets_dir().join("paint.jpg").to_str().unwrap());
+    let out = cstr(temp_path("frigate_compose_utf8_font.png").to_str().unwrap());
+    // SAFETY: a NUL-terminated C string with non-UTF-8 content in the font path.
+    let status = unsafe {
+        frigate::compose(
+            img.as_ptr(),
+            out.as_ptr(),
+            BAD_UTF8.as_ptr().cast(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            100,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, FfiErrorCode::Utf8 as u8);
+}
+
+#[test]
+fn compose_invalid_utf8_foreground_path_returns_utf8_error() {
+    let img = cstr(assets_dir().join("paint.jpg").to_str().unwrap());
+    let out = cstr(temp_path("frigate_compose_utf8_fg.png").to_str().unwrap());
+    // SAFETY: a NUL-terminated C string with non-UTF-8 content in the foreground path.
+    let status = unsafe {
+        frigate::compose(
+            img.as_ptr(),
+            out.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            BAD_UTF8.as_ptr().cast(),
+            std::ptr::null(),
+            0,
+            100,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, FfiErrorCode::Utf8 as u8);
 }

@@ -414,7 +414,7 @@ void main() {
         expect(_wasNotified, isTrue);
       });
 
-      test('commitBackgroundTreatment is undoable / redoable', () {
+      test('commitBackgroundTreatment supports undo and redo', () {
         controller.enterBackgroundMode(const Size(100, 100));
         const before = BackgroundElement.cover(height: 100, width: 100);
         final after = before.copyWith(blur: 50);
