@@ -850,6 +850,84 @@ void main() => group(DrawPainter, () {
       }
     });
   });
+
+  group('background treatment', () {
+    test('full-canvas blur treatment draws the blur clip path', () async {
+      final recorder = PictureRecorder();
+      _drawOpaquePixel(recorder);
+      final image = await recorder.endRecording().toImage(1, 1);
+      addTearDown(image.dispose);
+
+      final canvas = _DrawPainterTest();
+      const treatment = BackgroundElement(blur: 30, height: 200, width: 200, x: 0, y: 0);
+      DrawPainter(
+        const [],
+        backgroundImage: image,
+        backgroundTreatment: treatment,
+      ).paint(canvas, const Size(200, 200));
+
+      expect(canvas.drawPathCount, greaterThanOrEqualTo(1), reason: 'full-canvas blur clip drawn');
+    });
+
+    test('tint treatment fills the whole canvas', () {
+      final canvas = _DrawPainterTest();
+      const treatment = BackgroundElement(fillColor: .black, height: 200, width: 200, x: 0, y: 0);
+      const DrawPainter([], backgroundTreatment: treatment).paint(canvas, const Size(200, 200));
+
+      expect(
+        canvas.drawRectCount,
+        greaterThanOrEqualTo(1),
+        reason: 'tint paints a full-canvas rect',
+      );
+    });
+
+    test('crop overlay dims the area outside a smaller crop rect with black54', () {
+      final canvas = _DrawPainterTest();
+      const treatment = BackgroundElement(height: 80, width: 80, x: 10, y: 10);
+      const DrawPainter([], backgroundTreatment: treatment).paint(canvas, const Size(200, 200));
+
+      expect(canvas.drawPathCount, 1, reason: 'the crop dim uses one even-odd path');
+      expect(canvas.lastPaintColorAlpha, 138, reason: 'Colors.black54 is 0x8A (138) alpha');
+    });
+
+    test('no crop dim when the treatment covers the full canvas', () {
+      final canvas = _DrawPainterTest();
+      const treatment = BackgroundElement.cover(height: 200, width: 200);
+      const DrawPainter([], backgroundTreatment: treatment).paint(canvas, const Size(200, 200));
+
+      expect(canvas.drawPathCount, isZero, reason: 'a full-cover treatment draws no dim overlay');
+    });
+
+    test('draws 8 crop handles (no rotation knob) when armed', () {
+      final canvas = _DrawPainterTest();
+      const treatment = BackgroundElement(height: 80, width: 80, x: 10, y: 10);
+      const DrawPainter(
+        [],
+        backgroundTreatment: treatment,
+        shouldShowBackgroundHandles: true,
+      ).paint(canvas, const Size(200, 200));
+
+      // _paintHandle draws a fill + a border circle per handle → 8 handles × 2 = 16; no knob.
+      expect(canvas.drawCircleCount, 16);
+    });
+
+    test('shouldRepaint reacts to treatment and handle-visibility changes', () {
+      const a = BackgroundElement(blur: 10, height: 80, width: 80, x: 0, y: 0);
+      const b = BackgroundElement(blur: 20, height: 80, width: 80, x: 0, y: 0);
+      const base = DrawPainter([], backgroundTreatment: a);
+
+      expect(const DrawPainter([], backgroundTreatment: b).shouldRepaint(base), isTrue);
+      expect(
+        const DrawPainter(
+          [],
+          backgroundTreatment: a,
+          shouldShowBackgroundHandles: true,
+        ).shouldRepaint(base),
+        isTrue,
+      );
+      expect(const DrawPainter([], backgroundTreatment: a).shouldRepaint(base), isFalse);
+    });
+  });
 });
 
 void _drawOpaquePixel(PictureRecorder recorder) {

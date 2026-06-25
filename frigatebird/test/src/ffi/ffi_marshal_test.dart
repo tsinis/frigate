@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:frigatebird/src/ffi/ffi_element_type.dart';
 import 'package:frigatebird/src/ffi/ffi_marshal.dart';
 import 'package:frigatebird/src/ffi/ffi_test_helpers.dart';
 import 'package:frigatebird/src/model/draw_element.dart';
@@ -79,6 +80,30 @@ void main() {
         expect(result.outlineColor.argb, transparentArgb);
         expect(result.outlineThickness, isZero);
         expect(result.blur, mask.blur);
+      } finally {
+        bundle.free();
+      }
+    });
+
+    test('BackgroundElement encodes as a rectangle payload (rotation/outline zeroed)', () {
+      // BackgroundElement is normally routed through compose's treatment param, but the marshal
+      // switch must still encode it defensively as a plain blur/tint rectangle.
+      const background = BackgroundElement(blur: 18, height: 80, width: 120, x: 12, y: 24);
+
+      final bundle = FfiMarshal.encodeElements([background], malloc);
+      try {
+        final ref = bundle.elementsPtr.ref;
+        expect(ref.tag, FfiElementType.rectangle.value, reason: 'encoded as a rectangle tag');
+
+        final rect = ref.payload.rectangle;
+        expect((rect.x, rect.y, rect.width, rect.height), (12.0, 24.0, 120.0, 80.0));
+        expect(rect.blur, 18);
+        expect(rect.rotationDeg, isZero, reason: 'background treatment is never rotated');
+        expect(rect.outlineThickness, isZero);
+        expect(rect.cornerRadius, isZero);
+        final transparentArgb = FfiColor.transparent.argb;
+        expect(rect.fillColorArgb, transparentArgb);
+        expect(rect.outlineColorArgb, transparentArgb);
       } finally {
         bundle.free();
       }

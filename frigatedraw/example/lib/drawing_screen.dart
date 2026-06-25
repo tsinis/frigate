@@ -61,7 +61,9 @@ class _DrawingScreenState extends State<DrawingScreen> {
 
   void _onControllerChanged() {
     final activeTool = _controller.activeTool;
-    final isDrawing = activeTool != null && activeTool != .select;
+    // Background mode shows handles on the canvas but the toolbar must stay visible so the user
+    // can switch to another tool or dismiss the mode — treat it like `.select`.
+    final isDrawing = activeTool != null && activeTool != .select && activeTool != .background;
 
     if (_selectedTool != activeTool) {
       if (isDrawing) {
@@ -124,7 +126,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
         x: 0,
         y: 0,
       ),
-      .select || .text || null => null,
+      .background || .select || .text || null => null,
     };
   }
 
@@ -155,10 +157,16 @@ class _DrawingScreenState extends State<DrawingScreen> {
         final downloadDir = await widget.destination.create(recursive: true);
         final finalFile = File('${downloadDir.path}/blurred_background_image.$ext');
 
-        await RenderImage.blurFullImage(
-          imagePath: _originalBgImageFile.path,
+        // Full-image blur via `compose`: a treatment covering the whole image (no crop) carrying
+        // the chosen blur radius.
+        final info = await ImageInformation.probe(_originalBgImageFile.path);
+        await RenderImage.compose(
+          backgroundPath: _originalBgImageFile.path,
+          backgroundTreatment: BackgroundElement.cover(
+            height: info.height.toDouble(),
+            width: info.width.toDouble(),
+          ).copyWith(blur: resultBlur.round()),
           outputPath: finalFile.path,
-          radius: resultBlur.round(),
         );
 
         await FileImage(finalFile).evict(); // ignore: avoid-ignoring-return-values, example only.
@@ -225,15 +233,20 @@ class _DrawingScreenState extends State<DrawingScreen> {
 
   Future<void> _handleSave() async {
     if (_isExporting.value) return;
-    if (_controller.elements.isEmpty) return _showSnackBar('No elements to export');
+    final treatment = _controller.backgroundTreatment;
+    if (_controller.elements.isEmpty && treatment == null) {
+      return _showSnackBar('Nothing to export');
+    }
     _isExporting.value = true;
 
     try {
       final tempDir = widget.tempDir;
       final outFile = File('${tempDir.path}/frigate_export.jpg');
 
-      await RenderImage.run(
+      // `compose` burns the background treatment (blur/tint/crop) and the shapes in one pass.
+      await RenderImage.compose(
         backgroundPath: _bgImageFile.path,
+        backgroundTreatment: treatment,
         elements: _controller.elements,
         fontPath: widget.fontFile.path,
         outputPath: outFile.path,
@@ -286,6 +299,22 @@ class _DrawingScreenState extends State<DrawingScreen> {
   }
 
   void _handleBlurSliderChanged(double val) {
+    // In background mode the slider drives the full-image treatment: 0 → black tint, else blur
+    // (mirrors how the shape blur/black toggle works).
+    if (_controller.isBackgroundMode) {
+      final background = _controller.backgroundTreatment;
+      if (background != null) {
+        final blurVal = val.round();
+        _controller.updateBackgroundTreatment(
+          blurVal == 0
+              ? background.copyWith(blur: 0, fillColor: .black)
+              : background.copyWith(blur: blurVal, fillColor: .transparent),
+        );
+      }
+
+      return;
+    }
+
     final isSelected = _controller.selectedElement != null;
     if (isSelected) {
       final index = _controller.selectedIndex;
@@ -323,6 +352,9 @@ class _DrawingScreenState extends State<DrawingScreen> {
   void _handleToolSelectionChanged(DrawTool? tool) {
     if (tool == .text) {
       unawaited(_handleRenderText());
+    } else if (tool == .background) {
+      // `selectTool` already armed background mode; the editor sizes the full-image treatment.
+      setState(() => _selectedTool = tool);
     } else {
       _selectedTool = tool;
       setState(_updateCreationTemplate);

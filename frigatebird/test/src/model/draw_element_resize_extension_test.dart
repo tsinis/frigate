@@ -94,6 +94,9 @@ void main() {
 
         case MaskRegionElement():
           fail('movedPoly is a MaskRegionElement');
+
+        case BackgroundElement():
+          fail('movedPoly is a BackgroundElement');
       }
     });
   });
@@ -185,6 +188,9 @@ void main() {
 
         case MaskRegionElement():
           fail('resizedPoly is a MaskRegionElement');
+
+        case BackgroundElement():
+          fail('resizedPoly is a BackgroundElement');
       }
     });
 
@@ -240,6 +246,9 @@ void main() {
 
           case MaskRegionElement():
             fail('resizedPoly is a MaskRegionElement');
+
+          case BackgroundElement():
+            fail('resizedPoly is a BackgroundElement');
         }
       },
     );

@@ -198,6 +198,23 @@ sealed class FfiMarshal {
               ..outlineThickness = item.outlineThickness.clamp(0, 255)
               ..blur = item.blur.clamp(0, 255)
               ..cornerRadius = 0;
+
+          case BackgroundElement():
+            // A BackgroundElement is normally routed through `compose`'s treatment parameter,
+            // not the element array. Encoding it as a plain blur/tint rectangle here keeps the
+            // sealed switch exhaustive and is harmless if one ever slips into the list.
+            assert(item.blur >= 0 && item.blur <= 255, 'blur must be in 0..255');
+            (ref..tag = FfiElementType.rectangle.value).payload.rectangle
+              ..x = item.x
+              ..y = item.y
+              ..width = item.width
+              ..height = item.height
+              ..rotationDeg = 0
+              ..fillColorArgb = item.fillColor.argb
+              ..outlineColorArgb = item.outlineColor.argb
+              ..outlineThickness = 0
+              ..blur = item.blur.clamp(0, 255)
+              ..cornerRadius = 0;
         }
       }
 

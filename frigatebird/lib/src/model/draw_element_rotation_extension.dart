@@ -108,7 +108,7 @@ extension DrawElementRotationExtension on DrawElement {
     final isInShape = switch (self) {
       OvalElement() => _isInEllipse(posX, posY, slop),
       PolygonElement() => _RotationMath.isInPolygon(posX, posY, self.vertices),
-      RectElement() || TextElement() || MaskRegionElement() => true,
+      RectElement() || TextElement() || MaskRegionElement() || BackgroundElement() => true,
     };
 
     return !isOutside && isInShape;

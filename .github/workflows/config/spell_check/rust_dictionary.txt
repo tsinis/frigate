@@ -4,6 +4,7 @@ ffi
 aabb
 argb
 bbox
+imm
 zune
 idct
 conv

@@ -41,7 +41,8 @@ class DrawExportButton extends DrawIconButton {
   final VoidCallback? _onExport;
 
   @override
-  VoidCallback? get callback => controller.elements.isEmpty ? null : _onExport;
+  VoidCallback? get callback =>
+      controller.elements.isEmpty && controller.backgroundTreatment == null ? null : _onExport;
 
   @override
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {

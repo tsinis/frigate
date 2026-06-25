@@ -27,6 +27,7 @@ class DrawToolSegmentedButton extends StatelessWidget {
     .oval: Icons.circle_outlined,
     .polygon: Icons.hexagon_outlined,
     .text: Icons.text_fields_outlined,
+    .background: Icons.wallpaper_outlined,
   };
 
   final DrawController _controller;

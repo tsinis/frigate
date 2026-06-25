@@ -97,8 +97,6 @@ sealed class RenderImage {
       fontCStr = fontPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
       handle = FfiMarshal.encodeElements(elements, calloc);
 
-      // Handle properties are not all unpacked at once because they are used sequentially, and
-      // some are nullable. Destructuring them all upfront would be less readable.
       final code = ffi.draw_elements(
         backgroundCStr,
         outputCStr,
@@ -115,6 +113,127 @@ sealed class RenderImage {
       if (backgroundCStr != nullptr) calloc.free(backgroundCStr);
       if (outputCStr != nullptr) calloc.free(outputCStr);
       if (fontCStr != nullptr) calloc.free(fontCStr);
+      handle?.free();
+    }
+  }
+
+  /// Background-treatment + foreground composite: the unified background tool's save path.
+  ///
+  /// Reads [backgroundPath], then applies the canonical pipeline (original image space, crop last):
+  /// full-image **blur** → **tint** → draw [elements] → composite the sharp **foreground** →
+  /// **crop**, writing the result to [outputPath] (or overwriting [backgroundPath] when null).
+  ///
+  /// - [backgroundTreatment] (a [BackgroundElement]) carries the crop rect (`x/y/width/height`),
+  ///   the full-image background `blur`, and the `fillColor` tint. Null = no treatment, in which
+  ///   case this behaves like [run] (just shapes).
+  /// - [foregroundPath] is an alpha PNG composited sharp at (0,0) **after** shapes and **before**
+  ///   crop; it must match the background's pixel dimensions (clipped, never scaled).
+  /// - [fontPath] is required when [elements] contains any [TextElement].
+  ///
+  /// Output format is dispatched by [outputPath]'s extension. [imageQuality] is clamped (see [run]).
+  /// Runs in a background isolate via [Isolate.run].
+  // ignore: parameters-ordering, required param 'backgroundPath' precedes all optional params, then optional params are alphabetical.
+  static Future<void> compose({
+    required String backgroundPath,
+    BackgroundElement? backgroundTreatment,
+    List<DrawElement> elements = const [],
+    String? fontPath,
+    String? foregroundPath,
+    int imageQuality = DrawConstants.defaultImageQuality,
+    String? outputPath,
+  }) {
+    FfiAbi.assertAll();
+    if (backgroundPath.isEmpty) {
+      throw const RenderException(.invalidArg, 'backgroundPath cannot be empty');
+    }
+    assert(
+      !elements.any((e) => e is TextElement) || fontPath != null,
+      'fontPath must be supplied when elements contains a TextElement',
+    );
+    assert(
+      imageQuality >= DrawConstants.minImageQuality &&
+          imageQuality <= DrawConstants.maxImageQuality,
+      'imageQuality must be in [${DrawConstants.minImageQuality}, '
+      '${DrawConstants.maxImageQuality}], got $imageQuality',
+    );
+
+    final clampedQuality = imageQuality.clamp(
+      DrawConstants.minImageQuality,
+      DrawConstants.maxImageQuality,
+    );
+
+    return Isolate.run(
+      () => _runComposeWorker(
+        backgroundPath: backgroundPath,
+        backgroundTreatment: backgroundTreatment,
+        elements: elements,
+        fontPath: fontPath,
+        foregroundPath: foregroundPath,
+        imageQuality: clampedQuality,
+        outputPath: outputPath,
+      ),
+    );
+  }
+
+  // ignore: avoid-long-parameter-list, mirrors the compose FFI surface 1:1.
+  static void _runComposeWorker({
+    required String backgroundPath,
+    required BackgroundElement? backgroundTreatment,
+    required List<DrawElement> elements,
+    required String? fontPath,
+    required String? foregroundPath,
+    required int imageQuality,
+    required String? outputPath,
+  }) {
+    Pointer<Utf8> backgroundCStr = nullptr;
+    Pointer<Utf8> outputCStr = nullptr;
+    Pointer<Utf8> fontCStr = nullptr;
+    Pointer<Utf8> foregroundCStr = nullptr;
+    Pointer<RectanglePayload> treatmentPtr = nullptr;
+    FfiElementsHandle? handle;
+    try {
+      backgroundCStr = backgroundPath.toNativeUtf8(allocator: calloc);
+      outputCStr = outputPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
+      fontCStr = fontPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
+      foregroundCStr = foregroundPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
+
+      final bgTreatment = backgroundTreatment;
+      if (bgTreatment != null) {
+        treatmentPtr = calloc<RectanglePayload>()
+          ..ref.x = bgTreatment.x
+          ..ref.y = bgTreatment.y
+          ..ref.width = bgTreatment.width
+          ..ref.height = bgTreatment.height
+          ..ref.rotationDeg = 0
+          ..ref.fillColorArgb = bgTreatment.fillColor.argb
+          ..ref.outlineColorArgb = bgTreatment.outlineColor.argb
+          ..ref.outlineThickness = 0
+          ..ref.blur = bgTreatment.blur.clamp(0, 255)
+          ..ref.cornerRadius = 0;
+      }
+
+      handle = FfiMarshal.encodeElements(elements, calloc);
+
+      final code = ffi.compose(
+        backgroundCStr,
+        outputCStr,
+        fontCStr,
+        treatmentPtr,
+        foregroundCStr,
+        handle.elementsPtr,
+        handle.count,
+        imageQuality,
+        handle.arena.ptr,
+      );
+
+      final domainResult = handle.arena.readResult(code);
+      if (domainResult is ErrUnit) throw RenderException(domainResult.code, domainResult.message);
+    } finally {
+      if (backgroundCStr != nullptr) calloc.free(backgroundCStr);
+      if (outputCStr != nullptr) calloc.free(outputCStr);
+      if (fontCStr != nullptr) calloc.free(fontCStr);
+      if (foregroundCStr != nullptr) calloc.free(foregroundCStr);
+      if (treatmentPtr != nullptr) calloc.free(treatmentPtr);
       handle?.free();
     }
   }
@@ -184,61 +303,6 @@ sealed class RenderImage {
       if (imageCStr != nullptr) calloc.free(imageCStr);
       if (outputCStr != nullptr) calloc.free(outputCStr);
       if (payloadPtr != nullptr) calloc.free(payloadPtr);
-      arena?.free();
-    }
-  }
-
-  /// Standalone full-image blur: applies a Gaussian blur to the entire image and writes the output.
-  ///
-  /// File I/O is performed entirely in Rust. Runs in a background isolate via [Isolate.run].
-  static Future<void> blurFullImage({
-    required String imagePath,
-    required int radius,
-    String? outputPath,
-    int imageQuality = DrawConstants.defaultImageQuality,
-  }) {
-    FfiAbi.assertAll();
-    if (imagePath.isEmpty) {
-      throw const RenderException(.invalidArg, 'imagePath cannot be empty');
-    }
-    assert(radius >= 0 && radius <= 255, 'radius must be in 0..255');
-    final clampedRadius = radius.clamp(0, 255);
-    final clampedQuality = imageQuality.clamp(
-      DrawConstants.minImageQuality,
-      DrawConstants.maxImageQuality,
-    );
-
-    return Isolate.run(
-      () => _runBlurFullImageWorker(
-        imagePath: imagePath,
-        imageQuality: clampedQuality,
-        outputPath: outputPath,
-        radius: clampedRadius,
-      ),
-    );
-  }
-
-  static void _runBlurFullImageWorker({
-    required String imagePath,
-    required int imageQuality,
-    required String? outputPath,
-    required int radius,
-  }) {
-    Pointer<Utf8> imageCStr = nullptr;
-    Pointer<Utf8> outputCStr = nullptr;
-    FfiArenaHandle? arena;
-    try {
-      imageCStr = imagePath.toNativeUtf8(allocator: calloc);
-      outputCStr = outputPath?.toNativeUtf8(allocator: calloc) ?? nullptr;
-      arena = FfiArenaHandle.allocate(errorCapacity: FfiAbi.errorCapBytes);
-
-      final code = ffi.blur(imageCStr, outputCStr, radius, imageQuality, arena.ptr);
-
-      final domainResult = arena.readResult(code);
-      if (domainResult is ErrUnit) throw RenderException(domainResult.code, domainResult.message);
-    } finally {
-      if (imageCStr != nullptr) calloc.free(imageCStr);
-      if (outputCStr != nullptr) calloc.free(outputCStr);
       arena?.free();
     }
   }
@@ -375,9 +439,7 @@ sealed class RenderImage {
     int imageQuality = DrawConstants.defaultImageQuality,
   }) {
     FfiAbi.assertAll();
-    if (imagePath.isEmpty) {
-      throw const RenderException(.invalidArg, 'imagePath cannot be empty');
-    }
+    if (imagePath.isEmpty) throw const RenderException(.invalidArg, 'imagePath cannot be empty');
     if (width <= 0 || height <= 0) {
       throw const RenderException(.invalidArg, 'width and height must be > 0');
     }

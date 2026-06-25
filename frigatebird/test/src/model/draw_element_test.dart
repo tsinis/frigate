@@ -109,6 +109,7 @@ void main() {
           y: 0,
         ),
         const MaskRegionElement(height: 1, width: 1, x: 0, y: 0),
+        const BackgroundElement(height: 1, width: 1, x: 0, y: 0),
       ];
       final types = elements
           .map(
@@ -118,12 +119,13 @@ void main() {
               OvalElement() => 'oval',
               PolygonElement() => 'polygon',
               MaskRegionElement() => 'mask',
+              BackgroundElement() => 'background',
             },
           )
           .toSet();
       expect(
         types,
-        const {'rect', 'text', 'oval', 'polygon', 'mask'}, // Dart 3.8 format.
+        const {'rect', 'text', 'oval', 'polygon', 'mask', 'background'}, // Dart 3.8 format.
         reason: 'switch is exhaustive over all types',
       );
     });

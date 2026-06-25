@@ -129,6 +129,44 @@ external int draw_elements(
   Pointer<FfiArena> arena,
 );
 
+/// Background-treatment + foreground composite render: reads the image from [imagePath], applies
+/// the optional [treatmentPtr] (full-image blur + tint + crop rect), draws all [elementsPtr]
+/// shapes, composites the optional sharp foreground from [foregroundPath], crops, and writes the
+/// result to [outputPath].
+///
+/// Pipeline (original image space, crop last): blur → tint → shapes → foreground → crop.
+/// [treatmentPtr] and [foregroundPath] may be null. [fontPath] may be null when no element has a
+/// text tag. Variable-length text and error data are exchanged through [arena] (same as
+/// [draw_elements]).
+///
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
+///
+/// **Not `isLeaf: true`** — CPU-heavy; run via `Isolate.run`.
+@Native<
+  Uint8 Function(
+    Pointer<Utf8>,
+    Pointer<Utf8>,
+    Pointer<Utf8>,
+    Pointer<RectanglePayload>,
+    Pointer<Utf8>,
+    Pointer<FfiElement>,
+    Size,
+    Uint8,
+    Pointer<FfiArena>,
+  )
+>()
+external int compose(
+  Pointer<Utf8> imagePath,
+  Pointer<Utf8> outputPath,
+  Pointer<Utf8> fontPath,
+  Pointer<RectanglePayload> treatmentPtr,
+  Pointer<Utf8> foregroundPath,
+  Pointer<FfiElement> elementsPtr,
+  int elementsCount,
+  int imageQuality,
+  Pointer<FfiArena> arena,
+);
+
 /// Standalone region blur: applies a Gaussian blur to a region in the image.
 ///
 /// Returns a `u8` status code (0 for success, see `FfiErrorCode`).

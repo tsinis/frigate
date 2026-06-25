@@ -1,1 +1,1 @@
-enum DrawTool { oval, polygon, rectangle, select, text }
+enum DrawTool { background, oval, polygon, rectangle, select, text }
