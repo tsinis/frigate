@@ -81,6 +81,41 @@ extension DrawElementExtension on DrawElement {
   HandlePosition? hitTestHandle(Offset point, [double customHandleRadius = 12]) =>
       handleHitTest((x: point.dx, y: point.dy), customHandleRadius);
 
+  /// Screen-space center of [handle] inset into the element by [inset] along each relevant axis.
+  /// Only valid for axis-aligned (rotation = 0) elements such as [BackgroundElement].
+  /// Clamps the shift to half the extent on each axis so handles never cross on a small element.
+  Offset insetHandleCenter(HandlePosition handle, double inset) {
+    // Floor each half-extent at 0 so a degenerate (zero/negative) dimension can't invert the
+    // clamp range — `clamp(0, negative)` throws. Handles then collapse to the origin corner.
+    final dx = width > 0 ? inset.clamp(0.0, width / 2) : 0.0;
+    final dy = height > 0 ? inset.clamp(0.0, height / 2) : 0.0;
+
+    return switch (handle) {
+      .topLeft => Offset(x + dx, y + dy),
+      .topCenter => Offset(x + width / 2, y + dy),
+      .topRight => Offset(x + width - dx, y + dy),
+      .centerLeft => Offset(x + dx, y + height / 2),
+      .centerRight => Offset(x + width - dx, y + height / 2),
+      .bottomLeft => Offset(x + dx, y + height - dy),
+      .bottomCenter => Offset(x + width / 2, y + height - dy),
+      .bottomRight => Offset(x + width - dx, y + height - dy),
+    };
+  }
+
+  /// Like [hitTestHandle] but tests against inset centers from [insetHandleCenter].
+  /// Only valid for axis-aligned (rotation = 0) elements such as [BackgroundElement].
+  // ignore: parameters-ordering, (point, radius, inset) mirrors hitTestHandle's (point, radius).
+  HandlePosition? hitTestInsetHandle(Offset point, double radius, double inset) {
+    for (final handle in HandlePosition.values) {
+      final center = insetHandleCenter(handle, inset);
+      final dx = point.dx - center.dx;
+      final dy = point.dy - center.dy;
+      if (dx * dx + dy * dy <= radius * radius) return handle;
+    }
+
+    return null;
+  }
+
   bool isPointOnRotationKnob(double knobDistance, double knobRadius, Offset point) =>
       isPointOnKnob(knobDistance, knobRadius, (x: point.dx, y: point.dy));
 

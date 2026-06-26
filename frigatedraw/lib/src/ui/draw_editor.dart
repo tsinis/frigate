@@ -389,7 +389,7 @@ class _DrawEditorState extends State<DrawEditor> {
     final background = _draw.backgroundTreatment;
     if (background == null) return;
 
-    final handle = background.hitTestHandle(point, _handleRadius);
+    final handle = background.hitTestInsetHandle(point, _handleRadius, _handleRadius);
     if (handle == null && !background.isPointOnShape(point)) return;
 
     if (_pointerCount == 1) _dragStartMatrix = _transform.value;
@@ -869,7 +869,8 @@ class _DrawEditorState extends State<DrawEditor> {
                     willChange: _isDragging.value || _isCreating,
                     child: image,
                   ),
-                  if (info != null) ?widget._builder?.call(_draw, info, _transform),
+                  if (widget._builder case final builder? when info != null)
+                    SizedBox.fromSize(size: info.size, child: builder(_draw, info, _transform)),
                 ],
               ),
               listenable: Listenable.merge([_draw, _isDragging, _transform]),
