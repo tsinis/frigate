@@ -85,8 +85,9 @@ extension DrawElementExtension on DrawElement {
   /// Only valid for axis-aligned (rotation = 0) elements such as [BackgroundElement].
   /// Clamps the shift to half the extent on each axis so handles never cross on a small element.
   Offset insetHandleCenter(HandlePosition handle, double inset) {
-    // Floor each half-extent at 0 so a degenerate (zero/negative) dimension can't invert the
-    // clamp range — `clamp(0, negative)` throws. Handles then collapse to the origin corner.
+    // Guard the clamp: for a zero/negative extent `width / 2` is <= 0, and `clamp(0, <0)`
+    // throws. Falling back to a 0 inset keeps this total; a zero-size element then resolves
+    // every handle to its (x, y) origin (negative extents are not a valid element state).
     final dx = width > 0 ? inset.clamp(0.0, width / 2) : 0.0;
     final dy = height > 0 ? inset.clamp(0.0, height / 2) : 0.0;
 

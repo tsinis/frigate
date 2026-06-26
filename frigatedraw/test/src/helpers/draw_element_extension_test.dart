@@ -153,6 +153,15 @@ void main() => group('DrawElementExtension', () {
         expect(degenerate.insetHandleCenter(handle, 20), const Offset(7, 9));
       }
     });
+
+    test('stays total (never throws the clamp) for negative dimensions', () {
+      // Negative extents are not a valid element state, but the clamp guard must keep the
+      // method total rather than throwing ArgumentError on clamp(0, negative).
+      const negative = RectElement(height: -10, width: -20, x: 0, y: 0);
+      for (final handle in HandlePosition.values) {
+        expect(() => negative.insetHandleCenter(handle, 20), returnsNormally);
+      }
+    });
   });
 
   group('hitTestInsetHandle', () {
