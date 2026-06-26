@@ -65,6 +65,9 @@ class DrawPainter extends CustomPainter {
   /// Black fill for selection handles.
   static final _handleFillPaint = Paint()..color = const Color(0xFF000000);
 
+  /// Semi-transparent white fill for inset background crop handles.
+  static final _handleSquareFillPaint = Paint()..color = const Color(0x66FFFFFF);
+
   /// White fill for the rotation knob (inverted vs handles).
   static final _knobFillPaint = Paint()..color = const Color(0xFFFFFFFF);
 
@@ -388,12 +391,18 @@ class DrawPainter extends CustomPainter {
     }
 
     if (shouldShowBackgroundHandles) {
-      final handlePaint = Paint()
+      final borderPaint = Paint()
         ..color = const Color(0xFFFFFFFF)
         ..style = .stroke
+        ..isAntiAlias = false
         ..strokeWidth = handleBorderWidth;
       for (final handle in HandlePosition.values) {
-        _paintHandle(canvas, handlePaint, background.handleCenter(handle), handleRadius);
+        _paintBackgroundHandle(
+          canvas,
+          borderPaint,
+          background.insetHandleCenter(handle, handleRadius),
+          handleRadius,
+        );
       }
     }
   }
@@ -798,6 +807,19 @@ class DrawPainter extends CustomPainter {
     canvas
       ..drawCircle(center, radius, _handleFillPaint)
       ..drawCircle(center, radius, borderPaint);
+  }
+
+  // ignore: parameters-ordering, canvas must be first by Flutter convention.
+  static void _paintBackgroundHandle(
+    Canvas canvas,
+    Paint borderPaint,
+    Offset center,
+    double radius,
+  ) {
+    final rect = Rect.fromCenter(center: center, height: radius * 2, width: radius * 2);
+    canvas
+      ..drawRect(rect, _handleSquareFillPaint)
+      ..drawRect(rect, borderPaint);
   }
 
   /// Runs [render] with the canvas rotated about [element]'s center, matching the

@@ -95,6 +95,24 @@ external int merge(
   Pointer<ByteBuffer> out,
 );
 
+/// Reads the image at [path], applies EXIF orientation (tags 1–8), encodes to [outFormat]
+/// (0 = PNG, 1 = JPEG), and returns the result as a byte buffer owned by Rust.
+///
+/// The output has no EXIF orientation tag — pixels are already physically rotated.
+/// The `foreground_path` supplied to `compose` must already be in this oriented pixel space.
+///
+/// Returns a `u8` status code (0 for success, see `FfiErrorCode`). Buffer written to `*out`.
+///
+/// **Not `isLeaf: true`** — CPU-heavy; run via `Isolate.run`.
+@Native<Uint8 Function(Pointer<Utf8>, Uint8, Uint8, Pointer<FfiArena>, Pointer<ByteBuffer>)>()
+external int oriented_bytes(
+  Pointer<Utf8> path,
+  int outFormat,
+  int imageQuality,
+  Pointer<FfiArena> arena,
+  Pointer<ByteBuffer> out,
+);
+
 /// Unified render call: reads the image from [imagePath], composites all [FfiElement]s
 /// (rectangles, text, future shapes), writes the result to [outputPath].
 ///
@@ -138,6 +156,9 @@ external int draw_elements(
 /// [treatmentPtr] and [foregroundPath] may be null. [fontPath] may be null when no element has a
 /// text tag. Variable-length text and error data are exchanged through [arena] (same as
 /// [draw_elements]).
+///
+/// **EXIF asymmetry**: the background is decoded with EXIF orientation applied; the foreground is
+/// decoded raw (no EXIF). Supply the foreground already in the background's oriented pixel space.
 ///
 /// Returns a `u8` status code (0 for success, see `FfiErrorCode`).
 ///

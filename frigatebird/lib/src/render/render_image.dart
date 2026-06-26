@@ -1,16 +1,19 @@
-// ignore_for_file: prefer-class-destructuring
+// ignore_for_file: avoid-long-files, prefer-class-destructuring
 import 'dart:ffi';
 import 'dart:isolate' show Isolate;
+import 'dart:typed_data' show Uint8List;
 
 import 'package:ffi/ffi.dart';
 
 import '../constants/draw_constants.dart';
 import '../ffi/bindings.dart' as ffi;
+import '../ffi/byte_buffer.dart';
 import '../ffi/ffi_abi.dart';
 import '../ffi/ffi_arena_handle.dart';
 import '../ffi/ffi_element.dart';
 import '../ffi/ffi_marshal.dart';
 import '../ffi/ffi_result_unit.dart';
+import '../ffi/image_info.dart' show ImageFormat;
 import '../model/draw_element.dart';
 import 'render_exception.dart';
 import 'render_image_args.dart';
@@ -129,6 +132,8 @@ sealed class RenderImage {
   ///   (just shapes).
   /// - [foregroundPath] is an alpha PNG composited sharp at (0,0) **after** shapes and **before**
   ///   crop; it must match the background's pixel dimensions (clipped, never scaled).
+  ///   **No EXIF orientation is applied to the foreground** — it must already be in the
+  ///   background's oriented pixel space. Use [orientedBytes] to pre-rotate a foreground image.
   /// - [fontPath] is required when [elements] contains any [TextElement].
   ///
   /// Output format is dispatched by [outputPath]'s extension. [imageQuality] is clamped (see [run]).
@@ -494,6 +499,76 @@ sealed class RenderImage {
       if (imageCStr != nullptr) calloc.free(imageCStr);
       if (outputCStr != nullptr) calloc.free(outputCStr);
       arena?.free();
+    }
+  }
+
+  /// Reads the image at [imagePath], applies EXIF orientation (tags 1–8), and returns the
+  /// result as a [Uint8List] owned by Dart.
+  ///
+  /// The returned bytes have no EXIF orientation tag — the pixels are already physically rotated,
+  /// preventing double-rotation. Use this to prepare a foreground for [compose]: since [compose]
+  /// applies EXIF to the background but not the foreground, supply the foreground already in the
+  /// background's oriented pixel space (which this method produces).
+  ///
+  /// [format] selects the output codec (default [ImageFormat.png]).
+  /// [imageQuality] is clamped (see [run]).
+  ///
+  /// Runs in a background isolate via [Isolate.run] — never blocks the calling thread.
+  static Future<Uint8List> orientedBytes({
+    required String imagePath,
+    ImageFormat format = .png,
+    int imageQuality = DrawConstants.defaultImageQuality,
+  }) {
+    FfiAbi.assertAll();
+    if (imagePath.isEmpty) {
+      throw const RenderException(.invalidArg, 'imagePath cannot be empty');
+    }
+    assert(
+      imageQuality >= DrawConstants.minImageQuality &&
+          imageQuality <= DrawConstants.maxImageQuality,
+      'imageQuality must be in [${DrawConstants.minImageQuality}, '
+      '${DrawConstants.maxImageQuality}], got $imageQuality',
+    );
+
+    final clampedQuality = imageQuality.clamp(
+      DrawConstants.minImageQuality,
+      DrawConstants.maxImageQuality,
+    );
+
+    return Isolate.run(() => _doOrientedBytes(imagePath, format.wire, clampedQuality));
+  }
+
+  // ignore: parameters-ordering, (path, formatWire, quality) matches the call-site read order.
+  static Uint8List _doOrientedBytes(String path, int formatWire, int quality) {
+    Pointer<Utf8> pathCStr = nullptr;
+    Pointer<ByteBuffer> outPtr = nullptr;
+    FfiArenaHandle? arenaHandle;
+    try {
+      pathCStr = path.toNativeUtf8(allocator: calloc);
+      assert(pathCStr != nullptr, 'Failed to convert imagePath to C string');
+
+      outPtr = calloc<ByteBuffer>();
+      arenaHandle = FfiArenaHandle.allocate();
+
+      final code = ffi.oriented_bytes(pathCStr, formatWire, quality, arenaHandle.ptr, outPtr);
+      final result = arenaHandle.readResult(code);
+      if (result is ErrUnit) throw RenderException(result.code, result.message);
+
+      final out = outPtr.ref;
+      if (out.ptr == nullptr) {
+        throw const RenderException(.io, 'oriented_bytes returned null buffer');
+      }
+
+      // Zero-copy view into Rust memory; fromList copies into Dart-owned memory before the
+      // finally block calls free_byte_buffer and invalidates the Rust buffer.
+      return Uint8List.fromList(out.ptr.asTypedList(out.len));
+    } finally {
+      if (pathCStr != nullptr) calloc.free(pathCStr);
+      if (outPtr != nullptr) {
+        if (outPtr.ref.ptr != nullptr) ffi.free_byte_buffer(outPtr.ref);
+        calloc.free(outPtr);
+      }
+      arenaHandle?.free();
     }
   }
 }

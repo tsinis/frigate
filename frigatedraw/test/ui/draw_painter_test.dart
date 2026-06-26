@@ -907,8 +907,9 @@ void main() => group(DrawPainter, () {
         shouldShowBackgroundHandles: true,
       ).paint(canvas, const Size(200, 200));
 
-      // _paintHandle draws a fill + a border circle per handle → 8 handles × 2 = 16; no knob.
-      expect(canvas.drawCircleCount, 16);
+      // _paintBackgroundHandle draws a fill + a border rect per handle → 8 handles × 2; no knob.
+      expect(canvas.drawCircleCount, isZero, reason: 'background handles are squares, not circles');
+      expect(canvas.drawRectCount, 16);
     });
 
     test('shouldRepaint reacts to treatment and handle-visibility changes', () {

@@ -389,7 +389,7 @@ class _DrawEditorState extends State<DrawEditor> {
     final background = _draw.backgroundTreatment;
     if (background == null) return;
 
-    final handle = background.hitTestHandle(point, _handleRadius);
+    final handle = background.hitTestInsetHandle(point, _handleRadius, _handleRadius);
     if (handle == null && !background.isPointOnShape(point)) return;
 
     if (_pointerCount == 1) _dragStartMatrix = _transform.value;
@@ -840,37 +840,45 @@ class _DrawEditorState extends State<DrawEditor> {
           child: FfiImageFile(
             widget._image,
             builder: (displayImage, info, uiImage) => ListenableBuilder(
-              builder: (_, image) => Stack(
-                alignment: widget.alignment ?? .topStart,
-                clipBehavior: widget.clipBehavior,
-                fit: widget._fit,
-                textDirection: widget._textDirection,
-                children: [
-                  CustomPaint(
-                    foregroundPainter: DrawPainter(
-                      _draw.elements,
-                      activeTool: _draw.activeTool,
-                      backgroundImage: uiImage,
-                      backgroundTreatment: _draw.backgroundTreatment,
-                      creationTemplate: _draw.creationTemplate,
-                      cursorPosition: _draw.cursorPosition,
-                      handleBorderWidth: _handleBorderWidth,
-                      handleRadius: _handleRadius,
-                      outlineStrokeWidth: _outlineStrokeWidth,
-                      pendingVertices: _draw.pendingVertices,
-                      rotationKnobDistance: _rotationKnobDistance,
-                      rotationKnobRadius: _rotationKnobRadius,
-                      selectedIndex: _draw.selectedIndex,
-                      shouldShowBackgroundHandles: _draw.isBackgroundMode,
-                      shouldShowRotationKnob: _isSelectionRotatable,
-                      tolerance: _closeTolerance / _viewScale,
+              // Bound the Stack to the image size so overlays using SizedBox.expand /
+              // Image(fit: fill) get finite constraints. The builder output stays a *direct*
+              // Stack child (wrapping it in a SizedBox would break Positioned overlays with a
+              // ParentDataWidget error), so it can be either positioned or non-positioned.
+              builder: (_, image) => SizedBox.fromSize(
+                size: info.size,
+                child: Stack(
+                  alignment: widget.alignment ?? .topStart,
+                  clipBehavior: widget.clipBehavior,
+                  fit: widget._fit,
+                  textDirection: widget._textDirection,
+                  children: [
+                    CustomPaint(
+                      foregroundPainter: DrawPainter(
+                        _draw.elements,
+                        activeTool: _draw.activeTool,
+                        backgroundImage: uiImage,
+                        backgroundTreatment: _draw.backgroundTreatment,
+                        creationTemplate: _draw.creationTemplate,
+                        cursorPosition: _draw.cursorPosition,
+                        handleBorderWidth: _handleBorderWidth,
+                        handleRadius: _handleRadius,
+                        outlineStrokeWidth: _outlineStrokeWidth,
+                        pendingVertices: _draw.pendingVertices,
+                        rotationKnobDistance: _rotationKnobDistance,
+                        rotationKnobRadius: _rotationKnobRadius,
+                        selectedIndex: _draw.selectedIndex,
+                        shouldShowBackgroundHandles: _draw.isBackgroundMode,
+                        shouldShowRotationKnob: _isSelectionRotatable,
+                        tolerance: _closeTolerance / _viewScale,
+                      ),
+                      size: info.size,
+                      willChange: _isDragging.value || _isCreating,
+                      child: image,
                     ),
-                    size: info.size,
-                    willChange: _isDragging.value || _isCreating,
-                    child: image,
-                  ),
-                  if (info != null) ?widget._builder?.call(_draw, info, _transform),
-                ],
+                    if (widget._builder case final builder? when info != null)
+                      builder(_draw, info, _transform),
+                  ],
+                ),
               ),
               listenable: Listenable.merge([_draw, _isDragging, _transform]),
               child: displayImage,

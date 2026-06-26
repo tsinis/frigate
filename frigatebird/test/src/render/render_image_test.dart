@@ -526,6 +526,47 @@ void main() {
       );
     });
   });
+
+  group('RenderImage.orientedBytes', () {
+    // EXIF fixture: 128×64 landscape stored with orientation tag 6 → decoded → 64×128 portrait.
+    final orientationFixtures = cwd.endsWith('frigatebird')
+        ? '$cwd/rust/tests/fixtures/orientation'
+        : '$cwd/frigatebird/rust/tests/fixtures/orientation';
+    final exif6 = '$orientationFixtures/exif_6.jpg';
+
+    test('throws RenderException when imagePath is empty', () {
+      expect(
+        // ignore: avoid-async-call-in-sync-function, throws synchronously.
+        () => RenderImage.orientedBytes(format: .jpg, imagePath: ''),
+        throwsA(isA<RenderException>().having((e) => e.code, 'code', FfiErrorCode.invalidArg)),
+      );
+    });
+
+    test('returns non-empty PNG bytes with EXIF orientation baked in', () async {
+      final bytes = await RenderImage.orientedBytes(imagePath: exif6);
+      expect(bytes, isNotEmpty, reason: 'PNG output must be non-empty');
+
+      // PNG header: 8-byte signature.
+      expect(bytes[0], 0x89, reason: 'PNG signature byte 0');
+      expect(bytes[1], 0x50, reason: 'PNG signature byte 1 (P)');
+    });
+
+    test('returns non-empty JPEG bytes when format is jpg', () async {
+      final bytes = await RenderImage.orientedBytes(format: .jpg, imagePath: exif6);
+      expect(bytes, isNotEmpty, reason: 'JPEG output must be non-empty');
+
+      // JPEG header: SOI marker 0xFF 0xD8.
+      expect(bytes[0], 0xFF, reason: 'JPEG SOI marker byte 0');
+      expect(bytes[1], 0xD8, reason: 'JPEG SOI marker byte 1');
+    });
+
+    test('throws RenderException for missing file', () async {
+      await expectLater(
+        RenderImage.orientedBytes(imagePath: '${Directory.systemTemp.path}/no_such_file.jpg'),
+        throwsA(isA<RenderException>().having((e) => e.code, 'code', FfiErrorCode.io)),
+      );
+    });
+  });
 }
 
 String _ensureTempFileAbsent(String name) {

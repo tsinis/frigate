@@ -431,6 +431,73 @@ void main() => group(DrawEditor, () {
     expect(receivedTransform, isNotNull);
   });
 
+  testWidgets('builder overlay with SizedBox.expand does not throw and is bounded to image size', (
+    tester,
+  ) async {
+    final restore = FfiImageFile.setInfoBuilder(
+      (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+    );
+    addTearDown(restore);
+
+    const overlayKey = ValueKey('overlay_marker');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            width: 800,
+            child: DrawEditor(
+              file,
+              builder: (controller, info, transform) =>
+                  const SizedBox.expand(child: SizedBox.shrink(key: overlayKey)),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // SizedBox.expand would throw "RenderBox was given infinite constraints" without
+    // the SizedBox.fromSize wrapper — verify it renders without exception.
+    await tester.pumpAndSettle();
+    expect(find.byKey(overlayKey), findsOneWidget);
+
+    // The parent SizedBox.fromSize constrains the overlay to info.size (800×600).
+    final overlayBox = tester.renderObject<RenderBox>(find.byKey(overlayKey));
+    expect(overlayBox.size, const Size(800, 600));
+  });
+
+  testWidgets('builder overlay returning Positioned stays a direct Stack child', (tester) async {
+    final restore = FfiImageFile.setInfoBuilder(
+      (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+    );
+    addTearDown(restore);
+
+    const overlayKey = ValueKey('positioned_overlay');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            width: 800,
+            // The example app's overlay returns Positioned; it must remain a direct Stack child.
+            // Wrapping the builder output in a SizedBox would break it with a ParentDataWidget error.
+            child: DrawEditor(
+              file,
+              builder: (controller, info, transform) =>
+                  const Positioned(bottom: 16, left: 16, child: SizedBox.shrink(key: overlayKey)),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull, reason: 'Positioned overlay must not raise ParentData');
+    expect(find.byKey(overlayKey), findsOneWidget);
+  });
+
   testWidgets('builder overlay is replaced by external controller when one is provided', (
     tester,
   ) async {
@@ -1780,8 +1847,8 @@ void main() => group(DrawEditor, () {
       await tester.pump();
 
       final topLeft = tester.getTopLeft(find.byType(InteractiveViewer));
-      // Bottom-right handle center is at scene (500, 400) (fit scale is 1:1).
-      final gesture = await tester.startGesture(topLeft + const Offset(500, 400));
+      // Bottom-right inset center at scene (479, 379): corner (500, 400) minus handleRadius (21).
+      final gesture = await tester.startGesture(topLeft + const Offset(479, 379));
       await tester.pump();
       await gesture.moveBy(const Offset(-100, -50));
       await tester.pump();

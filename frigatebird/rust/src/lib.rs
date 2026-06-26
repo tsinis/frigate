@@ -347,6 +347,73 @@ pub fn merge(
     }
 }
 
+/// Reads the image at `path`, applies EXIF orientation (tags 1–8), encodes to `out_format`
+/// (0 = PNG, 1 = JPEG), and returns the result as a byte buffer owned by Rust.
+///
+/// The output has no EXIF orientation tag — pixels are already physically rotated.
+/// Returns a `u8` status code (`FfiErrorCode` cast to `u8`). Result buffer is written to `*out`.
+#[allow(unsafe_code)]
+#[ffi_export]
+pub fn oriented_bytes(
+    path: Option<char_p::Ref<'_>>,
+    out_format: u8,
+    image_quality: u8,
+    arena: Option<&mut FfiArena>,
+    out: &mut ByteBuffer,
+) -> u8 {
+    let mut arena_opt = arena;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let inner: Result<Vec<u8>, (FfiErrorCode, String)> = (|| {
+            let p = if let Some(p) = path {
+                p.to_str()
+            } else {
+                return Err((FfiErrorCode::InvalidArg, "Missing path".to_string()));
+            };
+
+            let img = io::read_image(Path::new(p)).map_err(|e| match e {
+                io::IoError::Read => (FfiErrorCode::Io, "Failed to read image".to_string()),
+                io::IoError::Truncated => (
+                    FfiErrorCode::Truncated,
+                    "Image is truncated/incomplete (missing JPEG EOI marker)".to_string(),
+                ),
+                _ => (FfiErrorCode::Decode, "Failed to decode image".to_string()),
+            })?;
+
+            let mut buf = std::io::Cursor::new(Vec::new());
+            if out_format == 0 {
+                // PNG
+                img.write_to(&mut buf, image::ImageFormat::Png)
+                    .map_err(|_| (FfiErrorCode::Encode, "Failed to encode PNG".to_string()))?;
+            } else {
+                // JPEG
+                let rgb_img = img.into_rgb8();
+                image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, image_quality)
+                    .encode_image(&rgb_img)
+                    .map_err(|_| (FfiErrorCode::Encode, "Failed to encode JPEG".to_string()))?;
+            }
+
+            Ok(buf.into_inner())
+        })();
+        inner
+    }));
+
+    match result {
+        Ok(Ok(bytes)) => {
+            unsafe { std::ptr::write(out, bytes.into_boxed_slice().into()) };
+            FfiErrorCode::Success as u8
+        }
+        Ok(Err((code, msg))) => {
+            unsafe { std::ptr::write(out, Vec::new().into_boxed_slice().into()) };
+            write_error_to_arena(arena_opt.as_deref_mut(), code, &msg).code
+        }
+        Err(payload) => {
+            unsafe { std::ptr::write(out, Vec::new().into_boxed_slice().into()) };
+            handle_panic(arena_opt, payload)
+        }
+    }
+}
+
 /// # Safety
 ///
 /// The `ptr` must be valid or null. This function just returns it back.
@@ -795,6 +862,8 @@ fn compose_safe(
     let mut img = surface.into_rgba();
 
     // 4) Sharp foreground composite (after shapes, before crop) at (0,0). Clipped, never scaled.
+    // NOTE: foreground is decoded via `image::open` (no EXIF orientation applied). Caller must
+    // supply it already in the background's oriented pixel space; use `oriented_bytes` to do so.
     if let Some(fg_p) = foreground_path {
         let fg = image::open(Path::new(fg_p))
             .map_err(|_| {

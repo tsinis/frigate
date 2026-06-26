@@ -20,9 +20,9 @@ void main() {
 
         ffi_zero_element(ptr);
 
-        expect(ref.tag, 0);
-        expect(rect.x, 0.0);
-        expect(rect.rotationDeg, 0);
+        expect(ref.tag, isZero);
+        expect(rect.x, isZero);
+        expect(rect.rotationDeg, isZero);
       } finally {
         calloc.free(ptr);
       }
@@ -36,7 +36,7 @@ void main() {
         final ref = ptr.ref;
         final rect = ref.payload.rectangle;
         expect(ref.tag, 0xAA);
-        expect(rect.x, isNot(0.0)); // 0xAAAAAAAAAAAAAAAA as double is some non-zero value.
+        expect(rect.x, isNot(0.0), reason: '0xAAAAAAAAAAAAAAAA as double is some non-zero value');
         expect(rect.rotationDeg, 0xAAAAAAAA.toSigned(32));
       } finally {
         calloc.free(ptr);

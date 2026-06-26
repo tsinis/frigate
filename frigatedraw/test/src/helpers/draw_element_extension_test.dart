@@ -117,6 +117,71 @@ void main() => group('DrawElementExtension', () {
     });
   });
 
+  // Rect: x=50, y=30, width=200, height=100.
+  group('insetHandleCenter', () {
+    test('shifts corners inward on both axes', () {
+      // Inset=20: dx=20, dy=20.
+      expect(rect.insetHandleCenter(.topLeft, 20), const Offset(70, 50));
+      expect(rect.insetHandleCenter(.topRight, 20), const Offset(230, 50));
+      expect(rect.insetHandleCenter(.bottomLeft, 20), const Offset(70, 110));
+      expect(rect.insetHandleCenter(.bottomRight, 20), const Offset(230, 110));
+    });
+
+    test('shifts edge-midpoints inward on one axis only', () {
+      expect(rect.insetHandleCenter(.topCenter, 20), const Offset(150, 50));
+      expect(rect.insetHandleCenter(.bottomCenter, 20), const Offset(150, 110));
+      expect(rect.insetHandleCenter(.centerLeft, 20), const Offset(70, 80));
+      expect(rect.insetHandleCenter(.centerRight, 20), const Offset(230, 80));
+    });
+
+    test('zero inset returns the same as handleCenter for axis-aligned element', () {
+      for (final handle in HandlePosition.values) {
+        expect(rect.insetHandleCenter(handle, 0), rect.handleCenter(handle));
+      }
+    });
+
+    test('clamps to half the extent so handles do not cross on a small element', () {
+      // 10x10 rect, inset=20 > 5 (half of 10): clamps to 5.
+      const small = RectElement(height: 10, width: 10, x: 0, y: 0);
+      expect(small.insetHandleCenter(.topLeft, 20), const Offset(5, 5));
+      expect(small.insetHandleCenter(.bottomRight, 20), const Offset(5, 5));
+    });
+
+    test('collapses to the origin corner for a zero-dimension element without throwing', () {
+      const degenerate = RectElement(height: 0, width: 0, x: 7, y: 9);
+      for (final handle in HandlePosition.values) {
+        expect(degenerate.insetHandleCenter(handle, 20), const Offset(7, 9));
+      }
+    });
+
+    test('stays total (never throws the clamp) for negative dimensions', () {
+      // Negative extents are not a valid element state, but the clamp guard must keep the
+      // method total rather than throwing ArgumentError on clamp(0, negative).
+      const negative = RectElement(height: -10, width: -20, x: 0, y: 0);
+      for (final handle in HandlePosition.values) {
+        expect(() => negative.insetHandleCenter(handle, 20), returnsNormally);
+      }
+    });
+  });
+
+  group('hitTestInsetHandle', () {
+    test('tap on the inset center returns the matching handle', () {
+      // TopLeft inset center with inset=20: (70, 50).
+      expect(rect.hitTestInsetHandle(const Offset(70, 50), 20, 20), HandlePosition.topLeft);
+      expect(rect.hitTestInsetHandle(const Offset(150, 50), 20, 20), HandlePosition.topCenter);
+      expect(rect.hitTestInsetHandle(const Offset(230, 110), 20, 20), HandlePosition.bottomRight);
+    });
+
+    test('tap on the old bare corner no longer hits when handles are inset', () {
+      // TopLeft corner is (50, 30); inset center is (70, 50); distance ≈ 28.3 > radius 20.
+      expect(rect.hitTestInsetHandle(const Offset(50, 30), 20, 20), isNull);
+    });
+
+    test('returns null when point is outside all inset handle radii', () {
+      expect(rect.hitTestInsetHandle(const Offset(150, 80), 20, 20), isNull);
+    });
+  });
+
   group('isPointOnShape', () {
     test('returns false for zero-dimension elements', () {
       final zeroRect = rect.copyWith(height: 0, width: 100);
