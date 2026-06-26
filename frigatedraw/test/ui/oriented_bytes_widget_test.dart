@@ -1,5 +1,5 @@
 // Integration widget test: verifies bytes from RenderImage.orientedBytes decode and render in
-// Flutter's image pipeline. Requires the compiled native library (skips if not found).
+// Flutter's image pipeline. Skipped when the EXIF fixture is not on disk (e.g. partial checkout).
 import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
@@ -61,7 +61,7 @@ void main() {
       });
     },
     skip: fixturePath.isEmpty
-        ? 'Native lib not built; skipping RenderImage.orientedBytes integration tests'
+        ? 'EXIF fixture not found on disk; skipping RenderImage.orientedBytes integration tests'
         : null,
   );
 }

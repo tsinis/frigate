@@ -467,6 +467,37 @@ void main() => group(DrawEditor, () {
     expect(overlayBox.size, const Size(800, 600));
   });
 
+  testWidgets('builder overlay returning Positioned stays a direct Stack child', (tester) async {
+    final restore = FfiImageFile.setInfoBuilder(
+      (_) => Future.value(const ImageInformation(height: 600, width: 800)),
+    );
+    addTearDown(restore);
+
+    const overlayKey = ValueKey('positioned_overlay');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            width: 800,
+            // The example app's overlay returns Positioned; it must remain a direct Stack child.
+            // Wrapping the builder output in a SizedBox would break it with a ParentDataWidget error.
+            child: DrawEditor(
+              file,
+              builder: (controller, info, transform) =>
+                  const Positioned(bottom: 16, left: 16, child: SizedBox.shrink(key: overlayKey)),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull, reason: 'Positioned overlay must not raise ParentData');
+    expect(find.byKey(overlayKey), findsOneWidget);
+  });
+
   testWidgets('builder overlay is replaced by external controller when one is provided', (
     tester,
   ) async {
