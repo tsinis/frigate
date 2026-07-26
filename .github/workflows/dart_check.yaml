@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: 📚 Git checkout
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7.0.1
 
       - name: 🧹 Pubspec Flutter Removal
         uses: actions/github-script@v9.0.0
