@@ -45,7 +45,7 @@ jobs:
             await fs.writeFile(f, c.replace(/^.*frigatedraw.*$/gm, m => '#' + m))
 
       - name: 🎯 Setup Dart
-        uses: dart-lang/setup-dart@v1.7.2
+        uses: dart-lang/setup-dart@v1.8.1
 
       - name: 📦 Install dependencies
         run: dart pub upgrade
